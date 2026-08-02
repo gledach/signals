@@ -104,6 +104,24 @@ section('2. Cron entrypoint child-process targets');
       if (!fs.existsSync(path.resolve(ROOT, t))) { bad(`cron spawns missing file: ${t}`); missing++; }
     }
     if (!missing && uniq.length) ok(`${uniq.length} spawn targets exist`);
+
+    // Every watcher must be SCHEDULED or explicitly opted out. Two watchers once existed
+    // that the cron never ran — one of them for months — so a deployment silently
+    // collected nothing from those sources while every command and test passed. "Not
+    // scheduled" has to be a decision someone wrote down, not an omission.
+    const OPTED_OUT = new Set([
+      // id → why. Add here rather than leaving a watcher silently unscheduled.
+    ]);
+    const watcherDir = path.join(ROOT, 'watchers');
+    if (fs.existsSync(watcherDir)) {
+      const watchers = fs.readdirSync(watcherDir).filter((f) => f.endsWith('.mjs'));
+      const unscheduled = watchers.filter((w) => !src.includes(`watchers/${w}`) && !OPTED_OUT.has(w));
+      if (unscheduled.length) {
+        bad(`watchers never run by the cron: ${unscheduled.join(', ')} — schedule them or add to OPTED_OUT with a reason`);
+      } else {
+        ok(`all ${watchers.length} watchers scheduled${OPTED_OUT.size ? ` (${OPTED_OUT.size} opted out)` : ''}`);
+      }
+    }
   }
 }
 

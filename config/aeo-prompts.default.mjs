@@ -71,10 +71,20 @@ export const prompts = [
 // COST: one call per prompt per engine per run. 10 x 4 = 40 calls; ~$0.01 on small
 // models, more on frontier ones. `npm run watch:aeo:dry` prints the bill without storing.
 export const engines = [
-  'anthropic/claude-haiku-4.5',            // control: small and fast
-  'openai/gpt-4o-mini',                    // control
-  'google/gemini-2.5-flash',
-  'meta-llama/llama-3.3-70b-instruct',     // open-weights perspective
+  // The surfaces buyers actually ask. Frontier models, because the run above showed a
+  // small model recommends the tools it was trained on rather than the ones that exist.
+  'anthropic/claude-sonnet-4.5',
+  'openai/gpt-4o',
+  'google/gemini-2.5-pro',
+
+  // Search-grounded, and genuinely different in kind: it RETRIEVES before answering, so
+  // it reflects the current web rather than a training snapshot. Where it disagrees with
+  // the others, the gap is roughly "what has changed since they were trained".
+  'perplexity/sonar-pro',
+
+  // Control. Keep one small model in the set — the gap between it and the frontier is
+  // roughly how much of a brand's visibility depends on being RECENT rather than good.
+  'anthropic/claude-haiku-4.5',
 ];
 
 export default { prompts, engines };

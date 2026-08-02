@@ -58,6 +58,7 @@ run('watch:certs',         'node --env-file-if-exists=.env watchers/cert-watch.m
 run('watch:youtube',       'node --env-file-if-exists=.env watchers/youtube-watch.mjs');
 run('watch:tavily',        'node --env-file-if-exists=.env watchers/tavily-watch.mjs');
 run('watch:trends',        'node --env-file-if-exists=.env watchers/trends-watch.mjs');
+run('watch:github',        'node --env-file-if-exists=.env watchers/github-watch.mjs');
 run('correlate',           'node --env-file-if-exists=.env pipeline/correlate.mjs');
 run('refresh battlecards', 'node --env-file-if-exists=.env cli/refresh-battlecards.mjs');
 
@@ -75,6 +76,12 @@ const isWeeklyRun = isDailyRun && dayOfWeek === 1;
 if (isWeeklyRun) {
   run('deep analysis (all competitors)', 'node --env-file-if-exists=.env cli/analyst.mjs --mode=deep --all-competitors --force');
   run('weekly report',                    'node --env-file-if-exists=.env cli/weekly-report.mjs');
+
+  // Answer-engine visibility is WEEKLY, not every run. It costs one LLM call per prompt
+  // per engine, and what it measures — which brands a model names — moves on the timescale
+  // of model releases, not hours. Four runs a day would multiply the bill by 28 and
+  // produce a flat line.
+  run('watch:aeo', 'node --env-file-if-exists=.env watchers/aeo-watch.mjs');
 }
 
 // ── Log finish to Turso ─────────────────────────────────────────────────────
