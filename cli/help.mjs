@@ -229,7 +229,7 @@ const KEY_ENV = [
   { name: 'CI_TOAST_THRESHOLD', role: 'Min impactScore to fire Windows toast (0–100, 101 disables)', required: false, default: '80' },
   { name: 'CI_TOAST_MAX_PER_RUN', role: 'Max toasts per single run of fetch/watch (prevents flood)', required: false, default: '5' },
   { name: 'CI_VIEWER_URL', role: 'Base URL clicked toasts open (for Tailscale Funnel etc.)', required: false, default: 'http://localhost:5180' },
-  { name: 'CI_WHISPER_ENABLED', role: 'Enable local Whisper fallback when captions missing (install nodejs-whisper + @distube/ytdl-core first)', required: false, default: 'false' },
+  { name: 'CI_WHISPER_ENABLED', role: 'Enable local Whisper fallback when captions missing (install nodejs-whisper, plus yt-dlp and ffmpeg on PATH)', required: false, default: 'false' },
   { name: 'CI_WHISPER_MODEL', role: 'Whisper model to use (base.en, tiny.en, small.en, medium.en)', required: false, default: 'base.en' },
 ];
 

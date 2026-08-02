@@ -3,11 +3,14 @@
 // We prefer the FIRST non-empty value for any given key.
 
 import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ENV_FILE } from './paths.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ENV_PATH = path.join(__dirname, '.env');
+// Resolved from the project root, NOT from this file's location. When this module moved
+// into runtime/ it began looking for runtime/.env and silently found nothing — every
+// script kept working only because they also pass node's --env-file-if-exists flag,
+// which is resolved against the working directory. Anything launched from elsewhere
+// (an MCP client, a cron with a different cwd) got no configuration at all.
+const ENV_PATH = ENV_FILE;
 
 let loaded = false;
 

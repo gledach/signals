@@ -68,7 +68,6 @@
     "mcp": "node --env-file-if-exists=.env mcp-server.mjs"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^4.16.12",
     "@libsql/client": "^0.17.2",
     "google-trends-api": "^4.9.2",
     "node-notifier": "^10.0.1",

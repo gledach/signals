@@ -183,7 +183,7 @@ section('4. Runtime directories');
   // No module may derive a project path from its own location — that is what makes a
   // file move change application behaviour. runtime/paths.mjs is the single resolver.
   const dirnameOffenders = SOURCES.filter((f) => {
-    if (rel(f).startsWith('runtime/')) return false;   // the resolver itself
+    if (rel(f) === 'runtime/paths.mjs') return false;   // the resolver itself
     const src = fs.readFileSync(f, 'utf8');
     return /path\.(join|resolve)\(\s*__dirname/.test(src);
   });

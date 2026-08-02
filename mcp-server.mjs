@@ -16,6 +16,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+
+// Load configuration BEFORE anything imports the store.
+//
+// An MCP client spawns this process from ITS OWN working directory, not from the project
+// root, so node's `--env-file-if-exists=.env` flag resolves to nothing and the server
+// silently connects to an empty local database instead of the configured one. Loading it
+// here, from a root-anchored path, makes the server work no matter who launches it or
+// from where — which is the whole point of an agent-facing entrypoint.
+import { loadEnv } from './runtime/env.mjs';
+loadEnv();
+
 import { BATTLECARDS_DIR } from './runtime/paths.mjs';
 import { COMPANIES, MARKETS, OUR_COMPANY_ID, CONFIG_FILE } from './config/companies.mjs';
 import { loadAllSignals, listBriefs, loadBrief } from './core/store.mjs';

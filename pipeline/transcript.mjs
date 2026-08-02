@@ -4,13 +4,14 @@
 //
 // Whisper opt-in:
 //   1. npm install nodejs-whisper  (adds ~200MB: whisper.cpp binary + base.en model download)
+//   1b. install yt-dlp and ffmpeg on PATH — audio download uses yt-dlp, not an npm library
 //   2. set CI_WHISPER_ENABLED=true in .env
 //   3. set CI_WHISPER_MODEL=base.en  (optional; default 'base.en'; alternatives: tiny.en, small.en, medium.en)
 
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 // `youtube-transcript` has a broken dual-package setup:
 // package.json has "type": "module" AND main: CJS file, but no "exports" field,
@@ -19,10 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { YoutubeTranscript } from 'youtube-transcript/dist/youtube-transcript.esm.js';
 import { TRANSCRIPTS_DIR } from '../runtime/paths.mjs';
 
-const __dirname_t = path.dirname(fileURLToPath(import.meta.url));
 const TRANSCRIPT_ROOT = TRANSCRIPTS_DIR;
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * @param {string} videoId   — YouTube video ID (11 chars, e.g. "dQw4w9WgXcQ")
@@ -71,37 +69,67 @@ async function loadWhisper() {
 }
 
 /**
+ * Fetch a video's audio as a WAV via yt-dlp.
+ *
+ * Fails with an actionable message rather than a stack trace when yt-dlp is absent —
+ * "spawn yt-dlp ENOENT" tells an operator nothing about what to install.
+ */
+function downloadAudio(videoId, wavPath) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--quiet', '--no-warnings', '--no-playlist',
+      '-f', 'bestaudio',
+      '-x', '--audio-format', 'wav',
+      // whisper.cpp wants 16 kHz mono; converting here avoids a second pass.
+      '--postprocessor-args', 'ffmpeg:-ar 16000 -ac 1',
+      '-o', wavPath,
+      `https://www.youtube.com/watch?v=${videoId}`,
+    ];
+    const child = spawn('yt-dlp', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (d) => { stderr += d; });
+
+    child.on('error', (err) => {
+      if (err.code === 'ENOENT') {
+        reject(new Error(
+          'yt-dlp is not installed. Whisper transcription downloads audio with it.\n'
+          + '  pipx install yt-dlp   (or: brew install yt-dlp / winget install yt-dlp)\n'
+          + 'It also needs ffmpeg on PATH. Leave CI_WHISPER_ENABLED unset to skip this path entirely.',
+        ));
+      } else reject(err);
+    });
+    child.on('close', (code) => {
+      if (code === 0 && fs.existsSync(wavPath)) return resolve();
+      reject(new Error(`yt-dlp exited ${code}${stderr ? `: ${stderr.trim().slice(0, 200)}` : ''}`));
+    });
+  });
+}
+
+/**
  * Downloads audio from YouTube and runs whisper.cpp locally.
- * Uses a temp WAV file; cleaned up after transcription.
- * NOTE: audio download currently requires `@distube/ytdl-core` which is NOT pre-installed —
- *       add it when you first enable whisper: npm install @distube/ytdl-core
+ * Uses a temp WAV file, cleaned up after transcription.
+ *
+ * AUDIO DOWNLOAD USES `yt-dlp`, NOT AN NPM LIBRARY.
+ *
+ * YouTube changes its player and signature scheme constantly, so a Node library that
+ * reimplements the extraction breaks regularly and is fixed on its maintainer's
+ * schedule. yt-dlp is the actively-maintained standard, updates within days, and is
+ * invoked as a subprocess — so it costs this project zero npm dependencies and zero
+ * supply-chain surface.
+ *
+ * It is NOT bundled: Whisper transcription is opt-in (`CI_WHISPER_ENABLED`), and
+ * requiring a Python toolchain for a feature most users never turn on would break the
+ * "clone and run" promise. Install it only if you enable Whisper:
+ *
+ *   pipx install yt-dlp        (or: brew install yt-dlp / winget install yt-dlp)
  */
 async function transcribeViaWhisper(videoId) {
-  // Lazy-import ytdl-core so users who never enable Whisper don't pay the dep cost.
-  let ytdl;
-  try {
-    ytdl = (await import('@distube/ytdl-core')).default;
-  } catch {
-    throw new Error('@distube/ytdl-core not installed — run: npm install @distube/ytdl-core');
-  }
-
   const { nodewhisper } = await loadWhisper();
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'signal-whisper-'));
   const wavPath = path.join(tmpDir, `${videoId}.wav`);
 
   try {
-    // Download audio as WAV
-    await new Promise((resolve, reject) => {
-      const stream = ytdl(`https://www.youtube.com/watch?v=${videoId}`, {
-        filter: 'audioonly',
-        quality: 'lowestaudio',
-      });
-      const out = fs.createWriteStream(wavPath);
-      stream.pipe(out);
-      stream.on('error', reject);
-      out.on('finish', resolve);
-      out.on('error', reject);
-    });
+    await downloadAudio(videoId, wavPath);
 
     const model = process.env.CI_WHISPER_MODEL || 'base.en';
     const result = await nodewhisper(wavPath, {
