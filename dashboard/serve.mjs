@@ -8,7 +8,7 @@ import path from 'node:path';
 import { COMPANIES, COMPETITOR_IDS, OUR_COMPANY_ID, MAIN_COMPANY_ID } from '../config/companies.mjs';
 import { framing, winThemeHeadings } from '../core/home-brand.mjs';
 import { readJsonArtifact, writeJsonArtifact, listJsonArtifacts, removeArtifact } from '../core/artifacts.mjs';
-import { loadIndex, loadSitemapSnapshot, loadCertSnapshot, listBriefs, loadBrief, saveBrief, getLastCronRun, getCronRuns, appendSignal, updateSignal } from '../core/store.mjs';
+import { loadLlmCost, loadIndex, loadSitemapSnapshot, loadCertSnapshot, listBriefs, loadBrief, saveBrief, getLastCronRun, getCronRuns, appendSignal, updateSignal } from '../core/store.mjs';
 import { SIGNAL_TYPES as SIGNAL_TYPE_DEFS } from '../core/signal-taxonomy.mjs';
 import { renderWeeklyReport as renderWeeklyReportMd } from '../cli/weekly-report-render.mjs';
 import { chatJson, synthesisModel, hasApiKey } from '../pipeline/openrouter.mjs';
@@ -136,6 +136,44 @@ const server = http.createServer(async (req, res) => {
         categories: FEATURE_CATEGORIES,
         statusValues: FEATURE_STATUS_VALUES,
       });
+    }
+
+    // ── LLM spend — cached 60s.
+    //
+    // Surfaced here because cost you have to run a separate command to see is cost you
+    // stop looking at. This tool spends money on every classification and synthesis, so
+    // the running total belongs next to the data it produced.
+    if (pathname === '/api/cost') {
+      try {
+        const data = await cachedQuery('cost', 60_000, async () => {
+          const rows = await loadLlmCost({ since: new Date(Date.now() - 30 * 86400_000).toISOString() });
+          const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+          const weekAgo = Date.now() - 7 * 86400_000;
+
+          const sum = (list) => list.reduce((a, r) => a + (Number(r.costUsd) || 0), 0);
+          const inWindow = (from) => rows.filter((r) => new Date(r.ts).getTime() >= from);
+
+          const today = inWindow(startOfDay.getTime());
+          const week = inWindow(weekAgo);
+
+          // Where the money actually went, so a surprise total is explicable.
+          const byScript = {};
+          for (const r of week) byScript[r.script || 'unknown'] = (byScript[r.script || 'unknown'] || 0) + (Number(r.costUsd) || 0);
+
+          return {
+            today: { calls: today.length, costUsd: sum(today) },
+            week: { calls: week.length, costUsd: sum(week) },
+            month: { calls: rows.length, costUsd: sum(rows) },
+            byScript: Object.entries(byScript).sort((a, b) => b[1] - a[1]).slice(0, 6),
+            lastCallAt: rows[0]?.ts ?? null,
+          };
+        });
+        return sendJson(res, data);
+      } catch {
+        // The cost table is telemetry. If it is unavailable the dashboard must still
+        // render — a missing spend figure is not a reason to fail the page.
+        return sendJson(res, { unavailable: true });
+      }
     }
 
     // ── Cron status (last run + recent history) — cached 30s

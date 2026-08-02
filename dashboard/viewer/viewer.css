@@ -836,6 +836,21 @@ header #refresh-meta { margin-left: auto; }
 
 /* ─── cron status indicator ─── */
 .cron-status { font-size: 0.8em; cursor: default; white-space: pre-line; }
+
+/* LLM spend chip. Deliberately quiet — it should be readable at a glance and
+   ignorable the rest of the time, until the day gets expensive. */
+.cost-chip {
+  font-size: 0.8em;
+  cursor: default;
+  white-space: pre-line;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+.cost-chip.cost-high {
+  opacity: 1;
+  color: var(--warn, #d97706);
+  font-weight: 600;
+}
 .cron-ok { color: var(--low); }
 .cron-warn { color: var(--medium); }
 .cron-running { color: var(--accent); animation: pulse-fresh 1.8s ease-in-out infinite; }

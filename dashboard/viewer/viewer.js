@@ -140,6 +140,7 @@ async function init() {
   readUrlState();
   await fetchSignalsAndRender({ firstLoad: true });
   fetchCronStatus();
+  fetchCost();
   startAutoRefresh();
   state._initialized = true;
 }
@@ -233,6 +234,7 @@ async function fetchSignalsAndRender({ firstLoad = false } = {}) {
     } else {
       renderFromAutoRefresh();
       fetchCronStatus(); // piggyback on auto-refresh
+      fetchCost();
     }
   } catch (err) {
     console.error('[viewer] refresh failed:', err);
@@ -1441,6 +1443,48 @@ function renderHeader() {
   if (sc) sc.classList.toggle('has-fresh', last1h > 0);
   setText('last-update', state.lastUpdate ? `last signal ${state.lastUpdate}` : 'no data');
   setText('fetched-at', state.fetchedAt ? `refreshed ${state.fetchedAt.slice(11, 19)} (auto 2m)` : '');
+}
+
+// ────────────────────────────── LLM spend ───────────────────────────────────
+// Shown in the header because cost you have to run a separate command to see is cost
+// you stop looking at. Every classification and synthesis spends money; the running
+// total belongs next to the data it bought.
+
+async function fetchCost() {
+  try {
+    const res = await fetch('/api/cost').then((r) => r.json());
+    renderCost(res);
+  } catch { /* telemetry — never block the page on it */ }
+}
+
+function renderCost(c) {
+  const el = document.getElementById('llm-cost');
+  if (!el) return;
+
+  if (!c || c.unavailable) {
+    // Distinguish "no spend" from "cannot tell" — they mean very different things.
+    el.textContent = '$— ';
+    el.title = 'Spend tracking unavailable (the llm_cost table could not be read).';
+    return;
+  }
+
+  const money = (v) => (v >= 1 ? `$${v.toFixed(2)}` : v > 0 ? `$${v.toFixed(3)}` : '$0');
+  el.textContent = `${money(c.today.costUsd)} today`;
+
+  const lines = [
+    `Today   ${money(c.today.costUsd)}  (${c.today.calls} calls)`,
+    `7 days  ${money(c.week.costUsd)}  (${c.week.calls} calls)`,
+    `30 days ${money(c.month.costUsd)}  (${c.month.calls} calls)`,
+  ];
+  if (c.byScript?.length) {
+    lines.push('', 'Last 7 days by script:');
+    for (const [script, cost] of c.byScript) lines.push(`  ${script}  ${money(cost)}`);
+  }
+  lines.push('', 'Full history: npm run cost');
+  el.title = lines.join('\n');
+
+  // A quiet nudge when the day is unusually expensive, rather than a number nobody reads.
+  el.classList.toggle('cost-high', c.today.costUsd >= 1);
 }
 
 // ────────────────────────────── cron status ─────────────────────────────────
