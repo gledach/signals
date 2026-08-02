@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LLM_COST_LOG } from '../runtime/paths.mjs';
+import { loadLlmCost } from '../core/store.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOG = LLM_COST_LOG;
@@ -25,17 +26,49 @@ const val = (name, fallback = null) => {
   return hit ? hit.split('=')[1] : fallback;
 };
 
-function loadEntries() {
-  if (!fs.existsSync(LOG)) {
-    console.log(`[cost] no log file at ${LOG} — run anything that calls the LLM first.`);
+/**
+ * Cost entries, database first.
+ *
+ * `openrouter.mjs` writes every call to BOTH the database and a local JSONL file, but
+ * this report only ever read the file — so the DB mirror existed and nothing consumed
+ * it, and a machine that had not run the pipeline locally reported zero spend even when
+ * the shared database knew otherwise.
+ *
+ * The database is canonical. The JSONL remains a fallback because the DB write is
+ * deliberately fire-and-forget (telemetry must never slow the pipeline it measures), so
+ * a crash can lose the tail — and because a local-only run should still report.
+ */
+async function loadEntries() {
+  let fromDb = [];
+  try {
+    fromDb = await loadLlmCost({});
+  } catch (err) {
+    console.warn(`[cost] database unavailable (${err?.message || err}) — falling back to the local log.`);
+  }
+
+  const fromFile = [];
+  if (fs.existsSync(LOG)) {
+    for (const line of fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean)) {
+      try { fromFile.push(JSON.parse(line)); } catch { /* skip corrupt line */ }
+    }
+  }
+
+  // Merge and de-duplicate. The same call can appear in both stores; prefer one copy.
+  const seen = new Set();
+  const merged = [];
+  for (const e of [...fromDb, ...fromFile]) {
+    const key = e.id ?? `${e.at || e.ts || ''}|${e.model || ''}|${e.totalTokens ?? e.tokens ?? ''}|${e.costUsd ?? e.cost ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(e);
+  }
+
+  if (!merged.length) {
+    console.log('[cost] no cost records yet — run something that calls the LLM first.');
     process.exit(0);
   }
-  const lines = fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean);
-  const entries = [];
-  for (const line of lines) {
-    try { entries.push(JSON.parse(line)); } catch { /* skip corrupt */ }
-  }
-  return entries;
+  if (fromDb.length) console.log(`[cost] ${fromDb.length} from database, ${merged.length - fromDb.length} additional from the local log.`);
+  return merged;
 }
 
 function filterWindow(entries) {
@@ -98,8 +131,8 @@ function printTable(rows, keyHeader) {
   console.log();
 }
 
-function main() {
-  const all = loadEntries();
+async function main() {
+  const all = await loadEntries();
   const entries = filterWindow(all);
 
   if (flag('--raw')) {
@@ -130,4 +163,4 @@ function main() {
   printTable(groupBy(entries, (e) => e.model || 'unknown'), 'model');
 }
 
-main();
+main().catch((err) => { console.error("[cost] fatal:", err?.message || err); process.exit(1); });

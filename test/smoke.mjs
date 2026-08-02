@@ -122,6 +122,38 @@ section('3. package.json script targets');
     }
   }
   if (!missing) ok(`${names.length} scripts, all .mjs targets exist`);
+
+  // A script that reaches the database MUST load .env, or it silently runs against the
+  // local default while the operator believes they are querying their real store.
+  // `npm run cost` did exactly that: it reported from an empty local file and never
+  // said so. Reaching the DB is transitive, so follow the import graph.
+  const importsOf = (file) => {
+    const src = fs.readFileSync(file, 'utf8');
+    return [...src.matchAll(/(?:from|import\()\s*['"](\.[^'"]+)['"]/g)]
+      .map((m) => path.resolve(path.dirname(file), m[1]))
+      .filter((p) => fs.existsSync(p));
+  };
+  const STORE = path.join(ROOT, 'core', 'store.mjs');
+  const touchesStore = (entry, seen = new Set()) => {
+    if (seen.has(entry)) return false;
+    seen.add(entry);
+    if (entry === STORE) return true;
+    return importsOf(entry).some((dep) => touchesStore(dep, seen));
+  };
+
+  // Deliberately offline: these must NOT depend on a developer's .env.
+  const OFFLINE = new Set(['smoke', 'test']);
+  const needEnv = [];
+  for (const [name, cmd] of Object.entries(scripts)) {
+    if (OFFLINE.has(name)) continue;
+    if (/--env-file-if-exists/.test(cmd)) continue;
+    const target = String(cmd).match(/(?:^|\s)([\w./-]+\.mjs)/)?.[1];
+    if (!target) continue;
+    const abs = path.resolve(ROOT, target);
+    if (fs.existsSync(abs) && touchesStore(abs)) needEnv.push(name);
+  }
+  if (needEnv.length) bad(`scripts reach the database but do not load .env: ${needEnv.join(', ')}`);
+  else ok('every database-touching script loads .env');
 }
 
 // ───────────────────── 4. runtime directories resolve ────────────────────────

@@ -12,11 +12,16 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { TRANSCRIPTS_DIR } from '../runtime/paths.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TRANSCRIPT_ROOT = TRANSCRIPTS_DIR;
+
+/**
+ * Transcript body. Current archives store `excerpt` (a bounded extract plus a link back
+ * to the source); archives written before that change stored the full `text`. Reading
+ * both means an existing archive keeps working without a migration.
+ */
+const bodyOf = (t) => (t?.excerpt ?? t?.text ?? '');
 
 const BOLD = process.stdout.isTTY ? '\x1b[1m' : '';
 const DIM = process.stdout.isTTY ? '\x1b[2m' : '';
@@ -83,7 +88,7 @@ function showStats(items) {
   const rows = [];
   for (const [cid, list] of Object.entries(byCompany)) {
     const chars = list.reduce((a, x) => a + (x.charCount || 0), 0);
-    const words = list.reduce((a, x) => a + approxWords(x.text), 0);
+    const words = list.reduce((a, x) => a + approxWords(bodyOf(x)), 0);
     totalChars += chars;
     totalWords += words;
     rows.push({ cid, count: list.length, chars, words });
@@ -102,7 +107,7 @@ function showSearch(items, query, contextChars) {
   console.log(`${BOLD}${CYAN}Searching for "${query}"${COMPANY ? ` in ${COMPANY}` : ''}…${RESET}\n`);
   let totalHits = 0;
   for (const t of filtered) {
-    const text = (t.text || '').replace(/\s+/g, ' ');
+    const text = bodyOf(t).replace(/\s+/g, ' ');
     const hits = findAll(text, q);
     if (!hits.length) continue;
     totalHits += hits.length;
@@ -131,7 +136,9 @@ function showOne(videoId) {
   console.log(`${BOLD}${CYAN}${t.title}${RESET}`);
   console.log(`${DIM}company=${t.companyId}  videoId=${t.videoId}  source=${t.source}  chars=${t.charCount}  fetchedAt=${t.fetchedAt}${RESET}`);
   console.log(`${DIM}https://www.youtube.com/watch?v=${t.videoId}${RESET}\n`);
-  console.log(t.text);
+  console.log(bodyOf(t));
+  if (t.truncated) console.log(`
+[excerpt: ${t.charCount} of ${t.originalCharCount} chars — full video: ${t.sourceUrl}]`);
 }
 
 // ────────────────────────────── helpers ─────────────────────────────────────

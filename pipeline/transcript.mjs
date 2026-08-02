@@ -159,10 +159,27 @@ export function hasTranscript(companyId, videoId) {
  * Payload is the raw transcript + useful metadata (title, channel, source, lang, fetchedAt).
  * No-op if file already exists unless `overwrite: true`.
  */
+/**
+ * How much transcript text is retained.
+ *
+ * We used to store the full caption track — the entire work — which is the largest
+ * copyright and terms-of-service exposure in the codebase, and it bought nothing:
+ * `truncateForClassifier()` proves the pipeline never reads beyond ~6k characters.
+ *
+ * What is kept is an excerpt for classification plus a permanent link back to the
+ * source, which is the shape of a citation rather than an archive. Raise this only with
+ * a reason better than "it might be useful later".
+ */
+export const RETAINED_CHARS = 6000;
+
 export function saveTranscript(companyId, videoId, { title, channelId, source, lang, text, extra }, { overwrite = false } = {}) {
   const file = transcriptPath(companyId, videoId);
   if (!overwrite && fs.existsSync(file)) return false;
   fs.mkdirSync(path.dirname(file), { recursive: true });
+
+  const full = text || '';
+  const excerpt = truncateForClassifier(full, RETAINED_CHARS);
+
   const payload = {
     videoId,
     companyId,
@@ -171,8 +188,12 @@ export function saveTranscript(companyId, videoId, { title, channelId, source, l
     source: source || 'unknown',
     lang: lang || null,
     fetchedAt: new Date().toISOString(),
-    charCount: (text || '').length,
-    text: text || '',
+    // The original length is kept so the excerpt is never mistaken for the whole thing.
+    originalCharCount: full.length,
+    charCount: excerpt.length,
+    truncated: excerpt.length < full.length,
+    sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
+    excerpt,
     ...(extra || {}),
   };
   fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
