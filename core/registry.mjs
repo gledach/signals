@@ -81,14 +81,69 @@ export function buildRegistry({ companies, ambiguousBareTokens = [] }) {
       for (const n of [c.name, ...(c.aliases || [])]) {
         const needle = String(n || '').toLowerCase();
         if (!needle || needle.length <= bestLen) continue;
-        if (ambiguous.has(needle)) continue;
-        if (matchesWholeToken(lower, needle)) {
-          bestId = c.id;
-          bestLen = needle.length;
-        }
+        if (!needleMatches(c, needle, text, lower)) continue;
+        bestId = c.id;
+        bestLen = needle.length;
       }
     }
     return bestId;
+  }
+
+  /**
+   * EVERY company named in a piece of text, not just the best match.
+   *
+   * `matchCompanyInText` answers "who is this item about", which is the right question
+   * for a news article. Answer-engine visibility asks a different one — "which brands did
+   * the model name" — where an answer listing four tools is four data points, not one.
+   *
+   * Same suppression rules apply: a bare ambiguous token is not evidence, so an answer
+   * saying "move your cursor to the menu" does not count as naming that vendor.
+   *
+   * @returns {Array<{id, matched, position}>} in order of first appearance.
+   */
+  function matchAllCompaniesInText(text) {
+    if (!text) return [];
+    const lower = text.toLowerCase();
+    const hits = [];
+    for (const c of Object.values(COMPANIES)) {
+      let best = null;
+      for (const n of [c.name, ...(c.aliases || [])]) {
+        const needle = String(n || '').toLowerCase();
+        if (!needle) continue;
+
+        if (!needleMatches(c, needle, text, lower)) continue;
+
+        // Keep the longest form that matched, for reporting.
+        if (!best || needle.length > best.length) best = needle;
+      }
+      if (best) hits.push({ id: c.id, matched: best, position: lower.indexOf(best) });
+    }
+    return hits.sort((a, b) => a.position - b.position);
+  }
+
+  const capitalise = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  /**
+   * Does one name-or-alias genuinely occur in this text? ONE rule, used by both matchers,
+   * so "who is this about" and "who was named" can never disagree about the same string.
+   *
+   * A qualified form matches case-insensitively. An AMBIGUOUS bare token normally proves
+   * nothing — but a company may opt in with `matchCapitalizedBare`, where capitalisation
+   * carries the meaning: a lowercase occurrence is the ordinary word, a capitalised
+   * one is the product.
+   *
+   * That opt-in matters because blanket suppression under-counts exactly the brands whose
+   * names are ordinary words. They get named constantly in bare form and scored as
+   * invisible — a measurement artefact posing as a finding.
+   *
+   * Only opt in where capitalisation is DECISIVE. Never for a name that is also a
+   * capitalised proper noun — a person or a place — because capitalising cannot separate
+   * those, and they stay fully suppressed.
+   */
+  function needleMatches(company, needle, text, lower) {
+    if (!ambiguous.has(needle)) return matchesWholeToken(lower, needle);
+    if (!company.matchCapitalizedBare) return false;
+    return matchesWholeToken(text, capitalise(needle));
   }
 
   return {
@@ -101,5 +156,6 @@ export function buildRegistry({ companies, ambiguousBareTokens = [] }) {
     getCompany,
     companiesInMarket,
     matchCompanyInText,
+    matchAllCompaniesInText,
   };
 }

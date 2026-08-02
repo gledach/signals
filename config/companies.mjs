@@ -61,6 +61,7 @@ export const {
   getCompany,
   companiesInMarket,
   matchCompanyInText,
+  matchAllCompaniesInText,
 } = registry;
 
 export default registry;

@@ -65,7 +65,9 @@
     "demo:seed": "node --env-file-if-exists=.env cli/demo.mjs seed",
     "demo:clear": "node --env-file-if-exists=.env cli/demo.mjs clear",
     "test": "npm run smoke && node test/fixtures/correlation/parse-fixtures.mjs && node test/fixtures/artifacts/parse-fixtures.mjs && node test/fixtures/mcp/parse-fixtures.mjs && node test/fixtures/github/parse-fixtures.mjs && node test/fixtures/reddit/parse-fixtures.mjs",
-    "mcp": "node --env-file-if-exists=.env mcp-server.mjs"
+    "mcp": "node --env-file-if-exists=.env mcp-server.mjs",
+    "watch:aeo": "node --env-file-if-exists=.env watchers/aeo-watch.mjs",
+    "watch:aeo:dry": "node --env-file-if-exists=.env watchers/aeo-watch.mjs --dry-run"
   },
   "dependencies": {
     "@libsql/client": "^0.17.2",

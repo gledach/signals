@@ -4,6 +4,10 @@
 
 export const SIGNAL_TYPES = {
   product_launch: { weight: 100, label: 'Product launch / major feature' },
+  // Visibility in AI answer engines. Weighted LOW on purpose: one citation is a standing
+  // condition, not an event, and should never outrank a funding round. The value is in
+  // the trend and the share across many rows, not in any single mention.
+  aeo_mention: { weight: 30, label: 'Named by an AI answer engine' },
   pricing_change: { weight: 90, label: 'Pricing or packaging change' },
   funding: { weight: 85, label: 'Funding / valuation event' },
   mna: { weight: 95, label: 'M&A / acquisition' },

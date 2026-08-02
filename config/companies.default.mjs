@@ -46,6 +46,7 @@ export const companies = {
     aliases: ['Cursor AI', 'cursor.com', 'cursor.sh', 'Anysphere'],
     query: '"Cursor AI" OR "cursor.com" OR "Anysphere"',
     collidesWith: 'a mouse cursor, a database cursor, the CSS property',
+    matchCapitalizedBare: true,   // "use Cursor" is the product; "the cursor" is not
     repos: ['cursor/cursor'],   // verified 200; getcursor/cursor 301-redirects here
     subreddits: ['cursor'],
     segments: ['dev', 'enterprise'], personas: ['engineer', 'engineering-manager'],
@@ -68,6 +69,7 @@ export const companies = {
     aliases: ['Windsurf Editor', 'Windsurf IDE', 'windsurf.com', 'Codeium'],
     query: '"Windsurf Editor" OR "Windsurf IDE" OR "Codeium Windsurf"',
     collidesWith: 'the watersport',
+    matchCapitalizedBare: true,   // "Windsurf" the product; "windsurfing" is a different token anyway
     repos: [],
     subreddits: ['windsurf', 'Codeium'],
     segments: ['dev', 'enterprise'], personas: ['engineer'],
@@ -85,6 +87,7 @@ export const companies = {
     // NEVER a bare `Copilot` — Microsoft applies that name to a dozen unrelated products.
     query: '"GitHub Copilot" OR "Copilot Workspace"',
     collidesWith: 'Microsoft 365 Copilot, Copilot Studio, Security Copilot and every other Copilot-branded product',
+    matchCapitalizedBare: true,   // qualified forms still preferred; bare Copilot in a coding answer means this one
     repos: ['microsoft/vscode-copilot-release'],   // verified 200
     subreddits: ['GithubCopilot'],
     segments: ['dev', 'enterprise'], personas: ['engineer', 'engineering-manager'],
@@ -96,6 +99,7 @@ export const companies = {
     aliases: ['Aider AI', 'aider.chat'],
     query: '"Aider AI" OR "aider.chat"',
     collidesWith: 'the ordinary word "aid"/"aider" in French and in accessibility writing',
+    matchCapitalizedBare: true,
     repos: ['Aider-AI/aider'],                     // verified 200
     subreddits: ['ChatGPTCoding'],
     segments: ['dev'], personas: ['engineer'],

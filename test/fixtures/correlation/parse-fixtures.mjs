@@ -139,5 +139,30 @@ Disallow: /*.pdf$
   ok(robotsChecker('User-agent: *\nDisallow:')('https://x.com/a'), 'empty Disallow means allow all');
 }
 
+// ── multi-brand detection (answer-engine visibility) ────────────────────────
+// Attribution asks "who is this about"; visibility asks "who was named". An answer
+// listing three tools is three data points, not one.
+console.log('\nmatchAllCompaniesInText');
+{
+  const reg = await import('../../../config/companies.mjs');
+  const all = (t) => reg.matchAllCompaniesInText(t).map((h) => h.id);
+
+  const answer = 'For a large repo I would use Cursor or Claude Code. GitHub Copilot is fine too.';
+  ok(all(answer).length === 3, `three brands named → three hits (got ${all(answer).length})`);
+  ok(['cursor', 'claudecode', 'copilot'].every((id) => all(answer).includes(id)), 'each named brand detected');
+
+  // Ambiguous bare tokens must not count, or every UI answer becomes a citation.
+  ok(all('Move your cursor to the menu and click').length === 0, 'a bare ambiguous token is not a mention');
+  ok(all('Microsoft 365 Copilot summarises your email').length === 0, 'an unrelated same-named product is not a mention');
+  ok(all('').length === 0, 'empty text names nobody');
+
+  // Order follows the answer, so "listed first" stays recoverable.
+  const ordered = reg.matchAllCompaniesInText('Try Replit first, then Cursor.');
+  ok(ordered[0]?.id === 'replit', 'hits are ordered by first appearance');
+
+  // Visibility is additive — single-best attribution must be unchanged.
+  ok(reg.matchCompanyInText('Cursor ships a new agent') === 'cursor', 'single-best attribution unchanged');
+}
+
 console.log(fails ? `\nRED  ${fails} assertion(s) failed\n` : '\nGREEN  correlation fixtures\n');
 process.exit(fails ? 1 : 0);
