@@ -28,6 +28,7 @@ import { COMPANIES, matchAllCompaniesInText, CONFIG_FILE } from '../config/compa
 import { PROMPTS, ENGINES, AEO_FILE } from '../config/aeo-prompts.mjs';
 import { chat, hasApiKey } from '../pipeline/openrouter.mjs';
 import { appendSignal, alreadySeen } from '../core/store.mjs';
+import { writeArtifact } from '../core/artifacts.mjs';
 import { impactBand } from '../core/scoring.mjs';
 
 const argv = process.argv.slice(2);
@@ -75,6 +76,7 @@ async function main() {
 
   const day = runDay();
   const citations = [];   // one per (prompt, engine, brand)
+  const allAnswers = [];  // one per (prompt, engine) — including those naming nobody
   let answered = 0;
   let failed = 0;
 
@@ -96,13 +98,50 @@ async function main() {
       const named = hits.map((h) => h.id);
       console.log(`   ${model.padEnd(38)} ${named.length ? named.join(', ') : '(named nobody tracked)'}`);
 
+      allAnswers.push({ prompt: p, model, answer });
       for (const hit of hits) {
         citations.push({ prompt: p, model, hit, answer });
       }
     }
   }
 
-  // ── store ────────────────────────────────────────────────────────────────
+  // ── keep the answers themselves ──────────────────────────────────────────
+  //
+  // Each citation carries only an excerpt around the matched name. The FULL answer is
+  // stored once per (prompt, engine) as its own artifact, because the raw answer is the
+  // primary source and the citations are a derived reading of it.
+  //
+  // Without this you could never add a company and re-scan what the engines already said,
+  // never audit why a brand went undetected, and never show your working. Re-deriving it
+  // would mean paying for the calls again — and the answers would have changed, so it is
+  // not even the same measurement.
+  if (!DRY_RUN) {
+    const byAnswer = new Map();
+    for (const c of citations) byAnswer.set(`${c.prompt.id}|${c.model}`, c);
+    // Answers that named nobody matter too — an engine that mentions no tracked brand is
+    // a finding, and it vanishes entirely if only cited answers are kept.
+    for (const a of allAnswers) byAnswer.set(`${a.prompt.id}|${a.model}`, a);
+
+    for (const [key, a] of byAnswer) {
+      const [promptId, model] = key.split('|');
+      await writeArtifact({
+        kind: 'aeo-answer',
+        artifactKey: `${day}/${promptId}/${slug(model)}`,
+        scope: promptId,
+        body: a.answer,
+        metadata: {
+          day, promptId, model,
+          prompt: a.prompt.prompt,
+          topic: a.prompt.topic ?? null,
+          named: matchAllCompaniesInText(a.answer).map((h) => h.id),
+          chars: a.answer.length,
+        },
+      });
+    }
+    console.log(`[aeo] archived ${byAnswer.size} full answers (kind=aeo-answer)`);
+  }
+
+  // ── store citations ──────────────────────────────────────────────────────
   let stored = 0;
   let dup = 0;
   for (const c of citations) {
@@ -122,6 +161,7 @@ async function main() {
       link: `aeo://${c.model}/${c.prompt.id}`,
       pubDate: new Date().toISOString(),
       summary: excerptAround(c.answer, c.hit.matched),
+      // Full answer archived separately — see artifact kind 'aeo-answer'.
       signalType: 'aeo_mention',
       confidence: 0.9,          // deterministic matcher, not a model judgement
       rationale: `Answer engine ${c.model} named "${c.hit.matched}" when asked: ${c.prompt.prompt}`,

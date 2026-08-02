@@ -2378,13 +2378,68 @@ function wireObjectionSearch() {
   });
 }
 
+/**
+ * Which company Battle anchors on.
+ *
+ * Order: an explicit user choice for this session, then the configured anchor
+ * (`isUs` or `isMain`), then the first tracked company. That last fallback used to be
+ * INVISIBLE — the view silently compared against whatever came first in the roster
+ * object, so reordering config changed the comparison with nothing indicating it.
+ */
+function battleAnchorId() {
+  if (state.battleAnchor && state.companies.some((c) => c.id === state.battleAnchor)) {
+    return state.battleAnchor;
+  }
+  return state.mainId
+    || state.companies.find((c) => c.isUs)?.id
+    || state.companies.find((c) => c.isMain)?.id
+    || state.companies[0]?.id
+    || null;
+}
+
+/** True when the anchor is a fallback rather than something the operator configured. */
+function anchorIsImplicit() {
+  return !state.battleAnchor && !state.mainId
+    && !state.companies.some((c) => c.isUs || c.isMain);
+}
+
 function populateBattleSelector() {
-  const sel = document.getElementById('battle-competitor-select');
-  if (!sel) return;
-  const competitors = state.companies.filter((c) => !c.isUs);
-  const current = state.battleCompetitor || competitors[0]?.id;
-  sel.innerHTML = competitors.map((c) => `<option value="${esc(c.id)}" ${c.id === current ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  const anchorId = battleAnchorId();
+
+  // Legacy hidden select, kept so existing wiring still finds something to target.
+  const legacy = document.getElementById('battle-competitor-select');
+  const others = state.companies.filter((c) => c.id !== anchorId);
+  const current = (state.battleCompetitor && state.battleCompetitor !== anchorId)
+    ? state.battleCompetitor
+    : others[0]?.id;
+  if (legacy) {
+    legacy.innerHTML = others.map((c) => `<option value="${esc(c.id)}" ${c.id === current ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  }
   if (current) state.battleCompetitor = current;
+
+  // Visible anchor row.
+  const anchorSel = document.getElementById('battle-anchor-select');
+  const themSel = document.getElementById('battle-them-select');
+  const note = document.getElementById('battle-anchor-note');
+
+  if (anchorSel) {
+    anchorSel.innerHTML = state.companies
+      .map((c) => `<option value="${esc(c.id)}" ${c.id === anchorId ? 'selected' : ''}>${esc(c.name)}</option>`)
+      .join('');
+  }
+  if (themSel) {
+    themSel.innerHTML = others
+      .map((c) => `<option value="${esc(c.id)}" ${c.id === current ? 'selected' : ''}>${esc(c.name)}</option>`)
+      .join('');
+  }
+  if (note) {
+    note.textContent = anchorIsImplicit()
+      ? 'no anchor configured — set isMain in config/companies.local.mjs to pin one'
+      : '';
+    note.title = anchorIsImplicit()
+      ? 'Battle needs a side to compare from. With none configured it uses the first tracked company.'
+      : '';
+  }
 }
 
 async function renderBattle() {
@@ -2399,12 +2454,10 @@ async function renderBattle() {
   // company marked `isMain` otherwise, and — failing both — simply the first tracked
   // company, so a pure market-watch deployment still gets a usable comparison instead of
   // an permanently empty view.
-  const us = state.companies.find((c) => c.id === state.mainId)
-    || state.companies.find((c) => c.isUs)
-    || state.companies.find((c) => c.isMain)
-    || state.companies[0];
-  const themId = state.battleCompetitor
-    || state.companies.find((c) => c.id !== us?.id)?.id;
+  const us = state.companies.find((c) => c.id === battleAnchorId());
+  const themId = (state.battleCompetitor && state.battleCompetitor !== us?.id)
+    ? state.battleCompetitor
+    : state.companies.find((c) => c.id !== us?.id)?.id;
   const them = state.companies.find((c) => c.id === themId);
   if (!us || !them) {
     grid.innerHTML = '<p class="empty">Add at least two companies to config/companies.local.mjs to compare.</p>';

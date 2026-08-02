@@ -123,6 +123,16 @@
     <main id="battle-mode" class="mode">
       <header class="page-header">
         <h1>Battle <span class="page-subtitle" id="battle-subtitle"></span></h1>
+        <!-- The comparison anchor, shown rather than implied. Without this the view
+             silently anchored on whichever company happened to be first in the roster,
+             and reordering config changed the comparison with nothing saying so. -->
+        <div class="battle-anchor" id="battle-anchor-row">
+          <label for="battle-anchor-select">Comparing</label>
+          <select id="battle-anchor-select" aria-label="Anchor company"></select>
+          <span class="battle-anchor-vs">vs</span>
+          <select id="battle-them-select" aria-label="Compared against"></select>
+          <span class="battle-anchor-note" id="battle-anchor-note"></span>
+        </div>
         <div class="page-actions">
           <button class="btn-primary" id="btn-talktrack">Generate talk-track</button>
           <a id="btn-sheet" class="btn-secondary" target="_blank" rel="noopener">1-pager PDF</a>
