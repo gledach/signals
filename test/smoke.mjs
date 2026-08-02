@@ -630,6 +630,57 @@ section('12. Docs reference only real npm scripts');
   if (!stale) ok(`${docs.length} docs, every documented npm script exists`);
 }
 
+// ────── 13. all three anchor modes produce a usable configuration ────────────
+// A deployment either IS a vendor (`isUs`), tracks one as its subject (`isMain`), or
+// anchors on nobody. All three must work. Before `isMain` existed the third mode left
+// the Battle view with no anchor and it rendered permanently empty — so the mode a
+// public demo user is most likely to click was the one that did nothing.
+
+section('13. Anchor modes');
+{
+  const { buildRegistry } = await import('../core/registry.mjs');
+  const { framing } = await import('../core/home-brand.mjs');
+
+  const base = {
+    acme: { id: 'acme', name: 'Acme Corp', domain: 'acme.com' },
+    globex: { id: 'globex', name: 'Globex', domain: 'globex.com' },
+  };
+  const withFlag = (id, flag) => ({
+    ...base, [id]: { ...base[id], [flag]: true },
+  });
+
+  const modes = [
+    ['home-brand   ', withFlag('acme', 'isUs'), { our: 'acme', main: 'acme', hasHome: true }],
+    ['anchored     ', withFlag('acme', 'isMain'), { our: null, main: 'acme', hasHome: false }],
+    ['market-watch ', base, { our: null, main: null, hasHome: false }],
+  ];
+
+  for (const [label, companies, want] of modes) {
+    const reg = buildRegistry({ companies });
+    const f = framing(companies);
+    const okAnchor = reg.OUR_COMPANY_ID === want.our && reg.MAIN_COMPANY_ID === want.main;
+    // Whatever the mode, the framing must be complete enough to render.
+    const okFraming = f.hasHome === want.hasHome
+      && typeof f.sheetTitle === 'function'
+      && typeof f.sheetTitle('X') === 'string'
+      && !!f.winThemesHeading && !!f.audience;
+    if (okAnchor && okFraming) ok(`${label} → our=${reg.OUR_COMPANY_ID} main=${reg.MAIN_COMPANY_ID}`);
+    else bad(`${label} → our=${reg.OUR_COMPANY_ID} main=${reg.MAIN_COMPANY_ID}, framing incomplete`);
+  }
+
+  // `isUs` implies being the subject — you are always your own focus.
+  const both = buildRegistry({ companies: { ...base, acme: { ...base.acme, isUs: true, isMain: true } } });
+  if (both.MAIN_COMPANY_ID === 'acme') ok('isUs implies isMain');
+  else bad(`isUs should imply isMain, got ${both.MAIN_COMPANY_ID}`);
+
+  // A title must never contain the literal string "null" — that is what a missing
+  // anchor used to render as, including in a file path.
+  for (const [, companies] of modes) {
+    const t = framing(companies).sheetTitle('Cursor');
+    if (/\bnull\b|undefined/.test(t)) { bad(`sheet title leaks a missing anchor: "${t}"`); break; }
+  }
+}
+
 // ────────────────────────────────── verdict ─────────────────────────────────
 
 console.log(FAIL ? '\nRED — smoke failed\n' : '\nGREEN — smoke passed\n');

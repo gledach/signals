@@ -49,9 +49,25 @@ export function buildRegistry({ companies, ambiguousBareTokens = [] }) {
 
   const COMPETITOR_IDS = Object.values(COMPANIES).filter((c) => !c.isUs).map((c) => c.id);
 
-  // Optional home brand. A market-watch deployment omits `isUs` entirely; the self-card
-  // and "us vs them" framing are then skipped rather than broken.
+  // Two different anchors, deliberately separate.
+  //
+  // `isUs` means WE ARE THIS VENDOR. It turns on partisan framing: a self-card, win
+  // themes, "how do we beat them" talk tracks.
+  //
+  // `isMain` means THIS IS THE SUBJECT, without claiming to be it — an analyst tracking
+  // the category leader, an investor watching a holding, a team evaluating a tool they do
+  // not sell. Comparison anchors here, but the framing stays neutral: no "we", no win
+  // themes, no self-card.
+  //
+  // Conflating them was a real limitation. Without `isUs` the whole Battle view had no
+  // anchor and rendered permanently empty, even though "compare everything against the
+  // leader" is exactly what a market-watch deployment wants.
+  //
+  // Being `isUs` implies being the subject — you are always your own focus.
   const OUR_COMPANY_ID = Object.values(COMPANIES).find((c) => c.isUs)?.id ?? null;
+  const MAIN_COMPANY_ID = OUR_COMPANY_ID
+    ?? Object.values(COMPANIES).find((c) => c.isMain)?.id
+    ?? null;
 
   function getCompany(id) {
     const c = COMPANIES[id];
@@ -151,6 +167,8 @@ export function buildRegistry({ companies, ambiguousBareTokens = [] }) {
     COMPETITOR_IDS,
     OUR_COMPANY_ID,
     HAS_OUR_COMPANY: OUR_COMPANY_ID !== null,
+    MAIN_COMPANY_ID,
+    HAS_MAIN_COMPANY: MAIN_COMPANY_ID !== null,
     MARKETS,
     AMBIGUOUS_BARE_TOKENS: ambiguous,
     getCompany,

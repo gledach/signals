@@ -22,13 +22,46 @@ export function homeBrand(COMPANIES) {
  * evaluation ("an evaluator comparing vendors") instead of partisan positioning
  * ("position us against them"). Same feature, different and equally valid audience.
  */
+/** The comparison anchor: the home brand if there is one, else the declared `isMain`. */
+export function mainBrand(COMPANIES) {
+  return homeBrand(COMPANIES) || Object.values(COMPANIES).find((c) => c.isMain) || null;
+}
+
 export function framing(COMPANIES, { marketLabel = 'this market' } = {}) {
   const us = homeBrand(COMPANIES);
+  const main = mainBrand(COMPANIES);
+
+  // Anchored but NOT partisan: a company is declared the subject without the deployment
+  // claiming to be it. An analyst tracking the category leader, an investor watching a
+  // holding, a team evaluating a tool they do not sell. Comparison has a fixed side;
+  // the language does not take one.
+  if (!us && main) {
+    return {
+      hasHome: false,
+      hasMain: true,
+      usName: null,
+      usId: null,
+      mainName: main.name,
+      mainId: main.id,
+      audience: `an independent competitive analyst covering ${marketLabel}`,
+      scenario: `A buyer is comparing ${main.name} against the alternatives and needs an `
+        + 'even-handed, evidence-grounded read on both.',
+      openerGoal: `2-3 sentence framing of how ${main.name} and this vendor actually differ`,
+      questionGoal: `5 diligence questions that would separate ${main.name} from this vendor in practice`,
+      winThemesHeading: `Where ${main.name} Wins`,
+      selfCardHeading: `${main.name} — reference profile`,
+      sheetTitle: (them) => `${main.name} vs ${them}`,
+    };
+  }
+
   if (us) {
     return {
       hasHome: true,
+      hasMain: true,
       usName: us.name,
       usId: us.id,
+      mainName: us.name,
+      mainId: us.id,
       audience: `a sales-enablement strategist for ${us.name}`,
       scenario: `A seller is about to join a call where the prospect is evaluating ${us.name} against a competitor.`,
       openerGoal: `2-3 sentence call opener that positions ${us.name} without naming the competitor first`,
@@ -40,8 +73,11 @@ export function framing(COMPANIES, { marketLabel = 'this market' } = {}) {
   }
   return {
     hasHome: false,
+    hasMain: false,
     usName: null,
     usId: null,
+    mainName: null,
+    mainId: null,
     audience: `an independent competitive analyst covering ${marketLabel}`,
     scenario:
       'A buyer is evaluating vendors in this category and needs an even-handed, ' +

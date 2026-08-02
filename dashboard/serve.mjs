@@ -5,7 +5,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { COMPANIES, COMPETITOR_IDS, OUR_COMPANY_ID } from '../config/companies.mjs';
+import { COMPANIES, COMPETITOR_IDS, OUR_COMPANY_ID, MAIN_COMPANY_ID } from '../config/companies.mjs';
 import { framing, winThemeHeadings } from '../core/home-brand.mjs';
 import { readJsonArtifact, writeJsonArtifact, listJsonArtifacts, removeArtifact } from '../core/artifacts.mjs';
 import { loadIndex, loadSitemapSnapshot, loadCertSnapshot, listBriefs, loadBrief, saveBrief, getLastCronRun, getCronRuns, appendSignal, updateSignal } from '../core/store.mjs';
@@ -114,6 +114,7 @@ const server = http.createServer(async (req, res) => {
         id: c.id,
         name: c.name,
         isUs: !!c.isUs,
+        isMain: c.id === MAIN_COMPANY_ID,
         domain: c.domain,
         category: c.category,           // needed by Market table grouping
         market: c.market,                // 'pro-dev' | 'vibe-coding' — drives grid scoping
@@ -123,7 +124,7 @@ const server = http.createServer(async (req, res) => {
       // `markets` lets the header describe the live roster instead of naming a
       // hardcoded home brand — market-watch deployments have no "us" at all.
       const markets = [...new Set(companies.map((c) => c.market).filter(Boolean))];
-      return sendJson(res, { companies, ourId: OUR_COMPANY_ID, signalTypes, markets });
+      return sendJson(res, { companies, ourId: OUR_COMPANY_ID, mainId: MAIN_COMPANY_ID, signalTypes, markets });
     }
 
     // ── Canonical feature registry (drives the Features Comparison matrix).
@@ -730,8 +731,8 @@ async function generateTalkTrack({ competitorId, vertical = '', size = '', notes
   const theirMd = fs.existsSync(path.join(BATTLECARDS_DIR, `${competitorId}.md`))
     ? fs.readFileSync(path.join(BATTLECARDS_DIR, `${competitorId}.md`), 'utf8')
     : '(no battlecard)';
-  const ourMd = fs.existsSync(path.join(BATTLECARDS_DIR, `${OUR_COMPANY_ID}.md`))
-    ? fs.readFileSync(path.join(BATTLECARDS_DIR, `${OUR_COMPANY_ID}.md`), 'utf8')
+  const ourMd = MAIN_COMPANY_ID && fs.existsSync(path.join(BATTLECARDS_DIR, `${MAIN_COMPANY_ID}.md`))
+    ? fs.readFileSync(path.join(BATTLECARDS_DIR, `${MAIN_COMPANY_ID}.md`), 'utf8')
     : '(no self-card)';
 
   const contextBits = [];
@@ -957,12 +958,14 @@ async function deleteTalkTrack(companyId, slug) {
 
 function renderBattleSheet(id) {
   const competitor = COMPANIES[id];
-  if (!competitor || competitor.isUs) return null;
+  if (!competitor || competitor.id === MAIN_COMPANY_ID) return null;
   const file = path.join(BATTLECARDS_DIR, `${id}.md`);
   if (!fs.existsSync(file)) return null;
   const md = fs.readFileSync(file, 'utf8');
-  const ourFile = path.join(BATTLECARDS_DIR, `${OUR_COMPANY_ID}.md`);
-  const ourMd = fs.existsSync(ourFile) ? fs.readFileSync(ourFile, 'utf8') : '';
+  // Reference card for the comparison anchor. Null-guarded: with no anchor configured
+  // this used to build a path from the literal string "null".
+  const ourFile = MAIN_COMPANY_ID ? path.join(BATTLECARDS_DIR, `${MAIN_COMPANY_ID}.md`) : null;
+  const ourMd = ourFile && fs.existsSync(ourFile) ? fs.readFileSync(ourFile, 'utf8') : '';
 
   const positioning = matchSection(md, 'Positioning') || matchSection(md, 'Public one-liner') || '';
   const targetSegment = matchSection(md, 'Target Segment') || matchSection(md, 'Likely target segment') || '';

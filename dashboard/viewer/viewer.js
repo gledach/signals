@@ -79,6 +79,7 @@ async function init() {
   // is legitimately null; the previous default named a company that no longer exists,
   // so every "us" lookup silently resolved to undefined.
   state.ourId = cfgRes.ourId || null;
+  state.mainId = cfgRes.mainId || null;
   state.markets = cfgRes.markets || [];
   state.signalTypes = (cfgRes.signalTypes || []).map((t) => t.id);
 
@@ -98,7 +99,8 @@ async function init() {
     state.features = [];
     state.featureCategories = [];
   }
-  const firstCompetitor = state.companies.find((c) => !c.isUs);
+  const firstCompetitor = state.companies.find((c) => !c.isUs && c.id !== (cfgRes.mainId || null))
+    || state.companies.find((c) => !c.isUs);
   state.currentCompany = firstCompetitor ? firstCompetitor.id : state.ourId;
   state.battleCompetitor = firstCompetitor ? firstCompetitor.id : null;
 
@@ -1717,7 +1719,7 @@ function renderCompetitorCard() {
   if (!co.isUs) {
     try {
       const theirMd = state.battlecards?.[id];
-      const ourMd = state.battlecards?.[state.ourId];
+      const ourMd = state.battlecards?.[state.mainId ?? state.ourId];
       if (theirMd && ourMd && typeof parseFeatureMatrix === 'function') {
         const oursMap = parseFeatureMatrix(ourMd) || new Map();
         const theirsMap = parseFeatureMatrix(theirMd) || new Map();
@@ -2393,11 +2395,19 @@ async function renderBattle() {
   const subtitle = document.getElementById('battle-subtitle');
   const sheetBtn = document.getElementById('btn-sheet');
 
-  const us = state.companies.find((c) => c.id === state.ourId) || state.companies.find((c) => c.isUs);
-  const themId = state.battleCompetitor || state.companies.find((c) => !c.isUs)?.id;
+  // Anchor on the MAIN company. That is the home brand when one is configured, the
+  // company marked `isMain` otherwise, and — failing both — simply the first tracked
+  // company, so a pure market-watch deployment still gets a usable comparison instead of
+  // an permanently empty view.
+  const us = state.companies.find((c) => c.id === state.mainId)
+    || state.companies.find((c) => c.isUs)
+    || state.companies.find((c) => c.isMain)
+    || state.companies[0];
+  const themId = state.battleCompetitor
+    || state.companies.find((c) => c.id !== us?.id)?.id;
   const them = state.companies.find((c) => c.id === themId);
   if (!us || !them) {
-    grid.innerHTML = '<p class="empty">Select a competitor to prepare head-to-head.</p>';
+    grid.innerHTML = '<p class="empty">Add at least two companies to config/companies.local.mjs to compare.</p>';
     return;
   }
   if (sheetBtn) sheetBtn.href = `/battle-sheet/${them.id}`;

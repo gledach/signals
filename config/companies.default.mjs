@@ -13,6 +13,23 @@
 // The demo watches AI coding agents and prompt-to-app builders, in market-watch mode:
 // no entry carries `isUs`, so there is no home team and the analysis is neutral.
 //
+// CHOOSING AN ANCHOR — three modes, and you pick by setting at most one flag.
+//
+//   isUs: true    You ARE this vendor. Turns on partisan framing: a self-card, win
+//                 themes, "how do we beat them" talk tracks. The classic sales setup.
+//
+//   isMain: true  This company is the SUBJECT, but you are not it. An analyst tracking
+//                 the category leader, an investor watching a holding, a team evaluating
+//                 a tool they do not sell. Comparison anchors here; the language stays
+//                 neutral — no "we", no win themes, no self-card.
+//
+//   neither       Pure market-watch. Every company is peer to every other, and the
+//                 dashboard compares any two.
+//
+// Nothing breaks in any of them. Before `isMain` existed, a deployment without `isUs`
+// left the Battle view with no anchor and it rendered permanently empty — the most
+// useful comparison in a market-watch setup was the one you could not have.
+//
 // FIELD NOTES
 //   query       REQUIRED and must be QUALIFIED. Several names here are ordinary English
 //               or code tokens, so an unqualified query returns mostly junk. Blocking a

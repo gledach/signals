@@ -116,7 +116,17 @@ Several files were machine-scrubbed during the retarget and read oddly. `README.
 the fold still has stale content that was only partly fixed. It is the front door of a
 public repo.
 
-### 4. Smaller, known, unfixed
+### 4. Battlecard reads still bypass the artifact layer
+
+`dashboard/serve.mjs` reads battlecards with `fs.readFileSync` in five places
+(lines ~170, 508, 731, 777, 962) rather than through `core/artifacts.mjs`. Talk tracks
+were migrated; battlecards were not. Consequence: the dashboard cannot see a battlecard
+that exists only in the database, which is the state `signals-web` will be in.
+
+Not urgent — reads fall back to disk correctly today — but it is the last inconsistency
+in the "database canonical" story.
+
+### 5. Smaller, known, unfixed
 
 - **`classify.mjs`'s `WRONG_ENTITY_TERMS`** is the last per-company map still living in
   code. It belongs in `config/` as a `wrongEntityPattern` field, like `collidesWith`.
