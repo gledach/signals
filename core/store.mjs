@@ -627,6 +627,19 @@ export async function listArtifacts({ kind, companyId = null, limit = 500 } = {}
   return res.rows;
 }
 
+/**
+ * Remove one artifact. Idempotent — deleting something absent is not an error, because
+ * callers routinely race a user who already deleted it in another tab.
+ */
+export async function deleteArtifact(kind, artifactKey) {
+  const client = getClient();
+  const res = await client.execute({
+    sql: 'DELETE FROM artifacts WHERE kind = ? AND artifactKey = ?',
+    args: [kind, artifactKey],
+  });
+  return { deleted: Number(res.rowsAffected || 0) };
+}
+
 // Read-modify-write helper. This is the ONLY safe way to change an artifact
 // that two writers touch (the cron regenerating the AUTO section, and a rep
 // capturing a kill shot into the HUMAN section). `mutate` receives the current

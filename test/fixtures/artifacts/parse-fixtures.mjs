@@ -17,9 +17,12 @@ const tmpDb = path.join(os.tmpdir(), `signal-artifacts-${process.pid}.db`);
 process.env.TURSO_DATABASE_URL = `file:${tmpDb.replace(/\\/g, '/')}`;
 delete process.env.TURSO_AUTH_TOKEN;
 
-const { ROOT, BATTLECARDS_DIR } = await import('../../../runtime/paths.mjs');
-const { readArtifact, writeArtifact, updateArtifact, updateAutoSection, spliceAutoSection, AUTO_START, AUTO_END } =
-  await import('../../../core/artifacts.mjs');
+const { ROOT, BATTLECARDS_DIR, TALK_TRACKS_DIR } = await import('../../../runtime/paths.mjs');
+const {
+  readArtifact, writeArtifact, updateArtifact, updateAutoSection, spliceAutoSection,
+  readJsonArtifact, writeJsonArtifact, listJsonArtifacts, removeArtifact,
+  AUTO_START, AUTO_END,
+} = await import('../../../core/artifacts.mjs');
 
 // Apply the schema to the scratch database.
 const { execSync } = await import('node:child_process');
@@ -104,6 +107,48 @@ try {
 
     const onDisk = fs.readFileSync(cardFile, 'utf8');
     ok(onDisk === final, 'disk mirror agrees with the database');
+  }
+
+  // ── JSON artifacts (talk tracks) ──────────────────────────────────────────
+  console.log('\nJSON artifacts');
+  {
+    const key = `acme/${`prep-${process.pid}`}`;
+    ok(await readJsonArtifact('talktrack', key) === null, 'absent JSON artifact reads as null');
+
+    await writeJsonArtifact({
+      kind: 'talktrack', artifactKey: key, companyId: 'acme',
+      value: { id: 'prep', competitorId: 'acme', savedAt: '2026-08-02T00:00:00Z' },
+    });
+    const back = await readJsonArtifact('talktrack', key);
+    ok(back?.competitorId === 'acme', 'JSON round-trips through the database');
+
+    const listed = await listJsonArtifacts('talktrack', { companyId: 'acme' });
+    ok(listed.some((r) => r._key === key), 'appears in the listing');
+    ok(listed.find((r) => r._key === key)?._source === 'db', 'listing reports the database as the source');
+
+    const { deleted } = await removeArtifact('talktrack', key);
+    ok(deleted >= 1, 'delete reports what it removed');
+    ok(await readJsonArtifact('talktrack', key) === null, 'gone after delete');
+    ok((await removeArtifact('talktrack', key)).deleted === 0, 'deleting twice is not an error');
+  }
+
+  // ── records written before adoption stay visible ──────────────────────────
+  // Dropping pre-existing files silently would be the same class of data loss this
+  // layer exists to prevent, just quieter.
+  console.log('\nlegacy disk records');
+  {
+    const legacyKey = `acme/legacy-${process.pid}`;
+    const legacyFile = path.join(TALK_TRACKS_DIR, `${legacyKey}.json`);
+    fs.mkdirSync(path.dirname(legacyFile), { recursive: true });
+    fs.writeFileSync(legacyFile, JSON.stringify({ id: 'legacy', competitorId: 'acme', savedAt: '2026-01-01T00:00:00Z' }));
+
+    const listed = await listJsonArtifacts('talktrack', { companyId: 'acme' });
+    const found = listed.find((r) => r._key === legacyKey);
+    ok(!!found, 'a file written before adoption still appears');
+    ok(found?._source === 'disk', 'and is reported as coming from disk');
+
+    await removeArtifact('talktrack', legacyKey);
+    ok(!fs.existsSync(legacyFile), 'delete removes the disk mirror too');
   }
 
   // ── creation from nothing ─────────────────────────────────────────────────

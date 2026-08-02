@@ -93,5 +93,8 @@
     "llm",
     "cli",
     "libsql"
-  ]
+  ],
+  "overrides": {
+    "uuid": "^11.1.0"
+  }
 }

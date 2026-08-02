@@ -74,3 +74,34 @@ permanent `sourceUrl` — the shape of a citation rather than an archive. Reader
 Talk tracks remain file-based CRUD in `dashboard/serve.mjs`. They are lower risk than
 battlecards — no AUTO/HUMAN split, so no silent-erasure hazard — but they belong behind
 `core/artifacts.mjs` for the same reason: `signals-web` cannot read one laptop's disk.
+
+## Update — talk tracks migrated (2026-08-02)
+
+Talk tracks now go through `core/artifacts.mjs` like every other generated document.
+They previously lived only as JSON files on one laptop, which meant `signals-web` could
+never see them and a second operator saw an empty list.
+
+The artifact key is `<companyId>/<slug>`, so the disk mirror keeps the exact nested
+layout an existing archive already has — no migration is needed to keep reading one.
+`listJsonArtifacts()` merges a database query with a disk sweep and reports `_source`
+per record, so files written before adoption stay visible rather than silently
+disappearing. That would have been the same class of data loss this layer exists to
+prevent, just quieter.
+
+Verified end to end against a running server: POST → LIST → GET → DELETE, with the
+record landing in the database rather than only on disk.
+
+**Nothing in the codebase writes an artifact file directly any more.**
+
+## Dependencies
+
+`npm audit` reports **zero** vulnerabilities. Both high-severity advisories (`undici` via
+`@distube/ytdl-core`, `ws` via `@libsql/client`) were resolved by `npm audit fix`.
+
+The remaining `uuid` advisory came through `node-notifier` and needed judgement rather
+than a version bump: npm's suggested "fix" was `node-notifier@6.0.0`, a **downgrade**
+from the installed 10.0.1. The advisory covers a missing bounds check in `v3/v5/v6`
+**when `buf` is provided**; `node-notifier` calls `v4()` with no buffer
+(`notifiers/toaster.js:51`), so the vulnerable path was never reachable. Resolved
+properly with an `overrides` entry pinning `uuid@^11`, verified by loading both
+`node-notifier` and the `toaster` module that consumes it.

@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { COMPANIES, COMPETITOR_IDS, OUR_COMPANY_ID } from '../config/companies.mjs';
 import { framing, winThemeHeadings } from '../core/home-brand.mjs';
+import { readJsonArtifact, writeJsonArtifact, listJsonArtifacts, removeArtifact } from '../core/artifacts.mjs';
 import { loadIndex, loadSitemapSnapshot, loadCertSnapshot, listBriefs, loadBrief, saveBrief, getLastCronRun, getCronRuns, appendSignal, updateSignal } from '../core/store.mjs';
 import { SIGNAL_TYPES as SIGNAL_TYPE_DEFS } from '../core/signal-taxonomy.mjs';
 import { renderWeeklyReport as renderWeeklyReportMd } from '../cli/weekly-report-render.mjs';
@@ -16,7 +17,7 @@ import { FEATURES, FEATURE_CATEGORIES, FEATURE_STATUS_VALUES } from '../core/fea
 // Paths come from the shared resolver, never from this file's own location — that is
 // what let moving serve.mjs silently break static serving while /api kept returning 200.
 import {
-  VIEWER_DIR, BATTLECARDS_DIR, TRANSCRIPTS_DIR, TALK_TRACKS_DIR,
+  VIEWER_DIR, BATTLECARDS_DIR, TRANSCRIPTS_DIR,
 } from '../runtime/paths.mjs';
 // data/snapshots/ no longer read from disk as of Plan 10 — readSnapshots()
 // now pulls from the Turso sitemap_snapshots / cert_snapshots tables.
@@ -330,23 +331,23 @@ const server = http.createServer(async (req, res) => {
     // ── Saved call-preps (talk-track persistence)
     if (pathname === '/api/talk-tracks' && req.method === 'GET') {
       const companyId = url.searchParams.get('companyId') || null;
-      return sendJson(res, { items: listTalkTracks(companyId) });
+      return sendJson(res, { items: await listTalkTracks(companyId) });
     }
     if (pathname === '/api/talk-tracks' && req.method === 'POST') {
       const body = await readBody(req);
-      const out = saveTalkTrack(body);
+      const out = await saveTalkTrack(body);
       return sendJson(res, out);
     }
     const tt = pathname.match(/^\/api\/talk-tracks\/([a-z0-9_-]+)\/([a-z0-9_-]+)$/i);
     if (tt) {
       const [, companyId, slug] = tt;
       if (req.method === 'GET') {
-        const saved = readTalkTrack(companyId, slug);
+        const saved = await readTalkTrack(companyId, slug);
         if (!saved) return send(res, 404, JSON.stringify({ error: 'not found' }), MIME['.json']);
         return sendJson(res, saved);
       }
       if (req.method === 'DELETE') {
-        const out = deleteTalkTrack(companyId, slug);
+        const out = await deleteTalkTrack(companyId, slug);
         return sendJson(res, out);
       }
     }
@@ -887,17 +888,20 @@ function faviconFor(targetUrl) {
 
 // ────────────────────────────── saved talk-tracks ──────────────────────────
 
-function talkTrackDir(companyId) {
-  return path.join(TALK_TRACKS_DIR, sanitizeSlug(companyId));
-}
-function talkTrackPath(companyId, slug) {
-  return path.join(talkTrackDir(companyId), `${sanitizeSlug(slug)}.json`);
-}
 function sanitizeSlug(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
 }
 
-function saveTalkTrack({ competitorId, dealLabel, vertical, size, notes, talkTrack } = {}) {
+// Talk tracks go through core/artifacts.mjs like every other generated document:
+// database canonical, disk mirrored. They previously lived only as files on one laptop,
+// which meant signals-web could never see them and a second operator saw an empty list.
+//
+// The artifact key is `<companyId>/<slug>`, so the disk mirror keeps the same nested
+// layout an existing archive already has — no migration needed to keep reading it.
+
+const talkTrackKey = (companyId, slug) => `${sanitizeSlug(companyId)}/${sanitizeSlug(slug)}`;
+
+async function saveTalkTrack({ competitorId, dealLabel, vertical, size, notes, talkTrack } = {}) {
   if (!competitorId || !COMPANIES[competitorId]) return { error: 'competitorId required' };
   if (!talkTrack || typeof talkTrack !== 'object') return { error: 'talkTrack payload required' };
   const now = new Date();
@@ -909,63 +913,44 @@ function saveTalkTrack({ competitorId, dealLabel, vertical, size, notes, talkTra
     competitorId,
     competitorName: COMPANIES[competitorId].name,
     dealLabel: dealLabel || '',
-    context: {
-      vertical: vertical || '',
-      size: size || '',
-      notes: notes || '',
-    },
+    context: { vertical: vertical || '', size: size || '', notes: notes || '' },
     savedAt: now.toISOString(),
     talkTrack,
     outcome: null,
     outcomeNote: '',
   };
-  fs.mkdirSync(talkTrackDir(competitorId), { recursive: true });
-  fs.writeFileSync(talkTrackPath(competitorId, slug), JSON.stringify(record, null, 2), 'utf8');
+  await writeJsonArtifact({
+    kind: 'talktrack',
+    artifactKey: talkTrackKey(competitorId, slug),
+    companyId: competitorId,
+    value: record,
+  });
   return { ok: true, id: slug, competitorId, savedAt: record.savedAt };
 }
 
-function listTalkTracks(companyFilter) {
-  if (!fs.existsSync(TALK_TRACKS_DIR)) return [];
-  const out = [];
-  const companies = companyFilter
-    ? [companyFilter].filter((id) => fs.existsSync(talkTrackDir(id)))
-    : fs.readdirSync(TALK_TRACKS_DIR).filter((d) => {
-      try { return fs.statSync(path.join(TALK_TRACKS_DIR, d)).isDirectory(); } catch { return false; }
-    });
-  for (const cid of companies) {
-    const dir = talkTrackDir(cid);
-    if (!fs.existsSync(dir)) continue;
-    for (const f of fs.readdirSync(dir)) {
-      if (!f.endsWith('.json')) continue;
-      try {
-        const j = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-        // Summary record only — omit full talkTrack payload to keep list light.
-        out.push({
-          id: j.id,
-          competitorId: j.competitorId,
-          competitorName: j.competitorName,
-          dealLabel: j.dealLabel,
-          context: j.context,
-          savedAt: j.savedAt,
-          outcome: j.outcome,
-        });
-      } catch {}
-    }
-  }
-  return out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
+async function listTalkTracks(companyFilter) {
+  const rows = await listJsonArtifacts('talktrack', { companyId: companyFilter || null });
+  // Summary only — the full talkTrack payload stays out of the list response.
+  return rows
+    .map((j) => ({
+      id: j.id,
+      competitorId: j.competitorId,
+      competitorName: j.competitorName,
+      dealLabel: j.dealLabel,
+      context: j.context,
+      savedAt: j.savedAt,
+      outcome: j.outcome,
+    }))
+    .sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
 }
 
-function readTalkTrack(companyId, slug) {
-  const file = talkTrackPath(companyId, slug);
-  if (!fs.existsSync(file)) return null;
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+async function readTalkTrack(companyId, slug) {
+  return readJsonArtifact('talktrack', talkTrackKey(companyId, slug));
 }
 
-function deleteTalkTrack(companyId, slug) {
-  const file = talkTrackPath(companyId, slug);
-  if (!fs.existsSync(file)) return { error: 'not found' };
-  fs.unlinkSync(file);
-  return { ok: true, id: slug };
+async function deleteTalkTrack(companyId, slug) {
+  const { deleted } = await removeArtifact('talktrack', talkTrackKey(companyId, slug));
+  return deleted ? { ok: true, id: slug } : { error: 'not found' };
 }
 
 // ────────────────────────────── battle sheet (printable 1-pager) ────────────

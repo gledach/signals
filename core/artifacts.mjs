@@ -21,7 +21,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadArtifact, saveArtifact } from './store.mjs';
+import { loadArtifact, saveArtifact, listArtifacts, deleteArtifact } from './store.mjs';
 import { BATTLECARDS_DIR, BRIEFS_DIR, TALK_TRACKS_DIR, ensureDir } from '../runtime/paths.mjs';
 
 export const AUTO_START = '<!-- AUTO:START -->';
@@ -32,6 +32,13 @@ const MIRROR = {
   battlecard: (key) => path.join(BATTLECARDS_DIR, `${key}.md`),
   brief: (key) => path.join(BRIEFS_DIR, `${key}.md`),
   talktrack: (key) => path.join(TALK_TRACKS_DIR, `${key}.json`),
+};
+
+/** Base directory each kind mirrors under, for disk sweeps. */
+const KIND_ROOT = {
+  battlecard: BATTLECARDS_DIR,
+  brief: BRIEFS_DIR,
+  talktrack: TALK_TRACKS_DIR,
 };
 
 function mirrorPath(kind, artifactKey) {
@@ -85,6 +92,79 @@ export async function updateArtifact({ kind, artifactKey, companyId = null, scop
   const next = await mutate(current || '');
   if (typeof next !== 'string') throw new Error('updateArtifact: mutate must return a string body');
   return writeArtifact({ kind, artifactKey, companyId, scope, body: next, metadata });
+}
+
+// ── JSON artifacts ──────────────────────────────────────────────────────────
+// Talk tracks and similar structured records. Same canonical-database, mirror-to-disk
+// contract as the markdown documents; the only difference is the body is serialised JSON.
+
+/** Read a JSON artifact. Returns null when absent or unparseable. */
+export async function readJsonArtifact(kind, artifactKey) {
+  const { body } = await readArtifact(kind, artifactKey);
+  if (!body) return null;
+  try { return JSON.parse(body); } catch { return null; }
+}
+
+/** Write a JSON artifact — database first, then the disk mirror. */
+export async function writeJsonArtifact({ kind, artifactKey, companyId = null, scope = null, value, metadata = null }) {
+  return writeArtifact({
+    kind, artifactKey, companyId, scope, metadata,
+    body: JSON.stringify(value, null, 2),
+  });
+}
+
+/**
+ * Every artifact of a kind, database first with a disk sweep merged in.
+ *
+ * The disk sweep is what keeps records written before adoption visible — dropping them
+ * silently would be the same failure this whole layer exists to prevent, just quieter.
+ */
+export async function listJsonArtifacts(kind, { companyId = null } = {}) {
+  const byKey = new Map();
+
+  try {
+    for (const row of await listArtifacts({ kind, companyId })) {
+      const value = await readJsonArtifact(kind, row.artifactKey);
+      if (value) byKey.set(row.artifactKey, { ...value, _key: row.artifactKey, _source: 'db' });
+    }
+  } catch { /* table missing or unreachable — the disk sweep still answers */ }
+
+  const root = KIND_ROOT[kind];
+  if (root) {
+    for (const key of sweepDisk(kind, root, companyId)) {
+      if (byKey.has(key)) continue;
+      const value = await readJsonArtifact(kind, key);
+      if (value) byKey.set(key, { ...value, _key: key, _source: 'disk' });
+    }
+  }
+
+  return [...byKey.values()];
+}
+
+/** Enumerate `<root>/<companyId>/<slug>.json` mirrors as artifact keys. */
+function sweepDisk(kind, root, companyId) {
+  const keys = [];
+  if (!fs.existsSync(root)) return keys;
+  const dirs = companyId ? [companyId] : fs.readdirSync(root);
+  for (const dir of dirs) {
+    const full = path.join(root, dir);
+    let stat;
+    try { stat = fs.statSync(full); } catch { continue; }
+    if (!stat.isDirectory()) continue;
+    for (const f of fs.readdirSync(full)) {
+      if (f.endsWith('.json')) keys.push(`${dir}/${f.slice(0, -5)}`);
+    }
+  }
+  return keys;
+}
+
+/** Delete an artifact and its disk mirror. Idempotent. */
+export async function removeArtifact(kind, artifactKey) {
+  let deleted = 0;
+  try { ({ deleted } = await deleteArtifact(kind, artifactKey)); } catch { /* table may not exist */ }
+  const file = mirrorPath(kind, artifactKey);
+  if (file && fs.existsSync(file)) { fs.rmSync(file, { force: true }); deleted = Math.max(deleted, 1); }
+  return { deleted };
 }
 
 /**
