@@ -18,7 +18,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { BATTLECARDS_DIR } from './runtime/paths.mjs';
 import { COMPANIES, MARKETS, OUR_COMPANY_ID, CONFIG_FILE } from './config/companies.mjs';
-import { loadAllSignals, listBriefs, loadBrief } from './store.mjs';
+import { loadAllSignals, listBriefs, loadBrief } from './core/store.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
 const SERVER = { name: 'signal', version: '0.1.0' };

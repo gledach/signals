@@ -13,10 +13,9 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { SCREENSHOTS_DIR } from '../runtime/paths.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
+// ROOT comes from the shared resolver, not from this file's own location.
 const OUT_DIR = path.join(ROOT, 'screenshots');
 fs.mkdirSync(OUT_DIR, { recursive: true });
 

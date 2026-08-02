@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseRss } from '../../../rss.mjs';
+import { parseRss } from '../../../watchers/adapters/rss.mjs';
 import {
   normalizeRssItems,
   parsePublicJson,
@@ -14,7 +14,7 @@ import {
   parseShredditHtml,
   parseRedditFeedUrl,
   isRedditUrl,
-} from '../../../reddit.mjs';
+} from '../../../watchers/adapters/reddit.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const load = (name) => readFileSync(join(__dir, name), 'utf8');

@@ -37,7 +37,7 @@ const at = (...segs) => path.join(ROOT, ...segs);
 export const SQL_DIR = at('sql');
 export const CONFIG_DIR = at('config');
 export const ANALYST_DIR = at('analyst');
-export const VIEWER_DIR = at('viewer');
+export const VIEWER_DIR = at('dashboard', 'viewer');
 export const TEST_DIR = at('test');
 export const FIXTURES_DIR = at('test', 'fixtures');
 

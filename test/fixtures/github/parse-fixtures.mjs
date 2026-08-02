@@ -11,7 +11,7 @@ import {
   parseIssues,
   parseRateLimitHeaders,
   GITHUB_REPOS,
-} from '../../../github-watch.mjs';
+} from '../../../watchers/github-watch.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const load = (name) => JSON.parse(readFileSync(join(__dir, name), 'utf8'));

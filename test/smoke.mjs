@@ -80,11 +80,19 @@ section(`1. Import graph (${SOURCES.length} .mjs files)`);
 // These are execSync child processes, invisible to import checking. If one of these
 // paths is wrong the cron deploy starts, runs, and silently does nothing.
 
-section('2. cron-entry.mjs child-process targets');
+section('2. Cron entrypoint child-process targets');
 {
-  const cronPath = path.join(ROOT, 'cron-entry.mjs');
-  if (!fs.existsSync(cronPath)) {
-    bad('cron-entry.mjs not found — this is the Railway entrypoint (npm start)');
+  // Derive the entrypoint from `npm start` rather than hardcoding a path — that script
+  // IS the deployment contract, and hardcoding here just means the check breaks
+  // whenever the file moves, which is exactly when it is most needed.
+  const pkgJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  const entry = (pkgJson.scripts?.start || '').match(/([\w./-]+\.mjs)/)?.[1];
+  const cronPath = entry ? path.join(ROOT, entry) : null;
+
+  if (!entry) {
+    bad('no .mjs entrypoint found in the `start` script — what does the deploy run?');
+  } else if (!fs.existsSync(cronPath)) {
+    bad(`\`npm start\` points at ${entry}, which does not exist`);
   } else {
     const src = fs.readFileSync(cronPath, 'utf8');
     const targets = [...src.matchAll(/node\s+(?:--[\w-]+(?:=[^\s'"]+)?\s+)*([\w./-]+\.mjs)/g)]
@@ -131,6 +139,43 @@ section('4. Runtime directories');
   const sqlFiles = fs.existsSync(SQL_DIR) ? fs.readdirSync(SQL_DIR).filter((f) => f.endsWith('.sql')) : [];
   if (sqlFiles.length) ok(`sql/ holds ${sqlFiles.length} migrations`);
   else bad('sql/ has no .sql files — db:migrate would silently apply nothing');
+
+  // The static assets the dashboard serves. Moving serve.mjs once broke these while
+  // /api kept returning 200, so the failure looked like a viewer bug rather than a
+  // path bug. Checking VIEWER_DIR alone is not enough — the FILES have to be there.
+  for (const asset of ['index.html', 'viewer.js', 'viewer.css']) {
+    if (fs.existsSync(path.join(VIEWER_DIR, asset))) ok(`viewer asset ${asset}`);
+    else bad(`viewer asset missing: ${rel(path.join(VIEWER_DIR, asset))}`);
+  }
+
+  // No module may derive a project path from its own location — that is what makes a
+  // file move change application behaviour. runtime/paths.mjs is the single resolver.
+  const dirnameOffenders = SOURCES.filter((f) => {
+    if (rel(f).startsWith('runtime/')) return false;   // the resolver itself
+    const src = fs.readFileSync(f, 'utf8');
+    return /path\.(join|resolve)\(\s*__dirname/.test(src);
+  });
+  if (dirnameOffenders.length) {
+    bad(`derive project paths from runtime/paths.mjs, not __dirname: ${dirnameOffenders.map(rel).join(', ')}`);
+  } else {
+    ok('no module builds project paths from __dirname');
+  }
+
+  // And the resolver's own values must land at the project root, not inside a code
+  // directory. When serve.mjs moved to dashboard/, `__dirname`-derived paths silently
+  // became dashboard/battlecards and cli/briefs — present-looking, and wrong.
+  const paths = await import('../runtime/paths.mjs');
+  const CODE_DIRS = /^(cli|pipeline|watchers|core|ops|dashboard|tools|runtime|test)\//;
+  const misplaced = [];
+  for (const key of ['BRIEFS_DIR', 'BATTLECARDS_DIR', 'ANALYST_DIR', 'TRANSCRIPTS_DIR',
+    'TALK_TRACKS_DIR', 'LLM_COST_LOG', 'DEBUG_DIR', 'SCREENSHOTS_DIR', 'DATA_DIR', 'SQL_DIR']) {
+    const value = paths[key];
+    if (!value) { misplaced.push(`${key} (undefined)`); continue; }
+    const r = rel(value);
+    if (CODE_DIRS.test(r)) misplaced.push(`${key} → ${r}`);
+  }
+  if (misplaced.length) bad(`data paths resolve inside code directories: ${misplaced.join(', ')}`);
+  else ok('every data path resolves at the project root');
 }
 
 // ───────── 5. no hardcoded brand names outside config/ (operator rule) ────────
@@ -142,9 +187,7 @@ section('5. Brand literals confined to config/');
   let roster = null;
   try {
     roster = await import('../config/companies.mjs');
-  } catch {
-    try { roster = await import('../companies.mjs'); } catch { /* not built yet */ }
-  }
+  } catch { /* not resolvable */ }
 
   if (!roster?.COMPANIES) {
     console.log('  --   skipped (company registry not resolvable yet)');
@@ -188,8 +231,10 @@ section('6. Contract modules load');
 {
   const expected = [
     ['../runtime/paths.mjs', ['ROOT', 'SQL_DIR', 'DEFAULT_DB_URL', 'fromRoot']],
-    ['../scoring.mjs', []],
-    ['../signal-taxonomy.mjs', []],
+    ['../core/scoring.mjs', []],
+    ['../core/signal-taxonomy.mjs', []],
+    ['../core/events.mjs', ['clusterIntoEvents', 'scoreFromEvidence']],
+    ['../core/robots.mjs', ['robotsChecker']],
   ];
   for (const [spec, exports] of expected) {
     const target = path.resolve(path.join(ROOT, 'test'), spec);
@@ -319,7 +364,7 @@ section('9. Correlation rules name no brands');
 {
   let rulesMod = null, registry = null;
   try {
-    rulesMod = await import('../correlation-rules.mjs');
+    rulesMod = await import('../config/correlation-rules.mjs');
     registry = await import('../config/companies.mjs');
   } catch { /* not present */ }
 
