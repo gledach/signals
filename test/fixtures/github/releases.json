@@ -1,0 +1,35 @@
+[
+  {
+    "id": 344394607,
+    "tag_name": "2.0.0",
+    "name": "2.0.0 — Breaking: rename Client options",
+    "draft": false,
+    "prerelease": false,
+    "created_at": "2026-04-01T12:00:00Z",
+    "published_at": "2026-04-01T14:30:00Z",
+    "html_url": "https://github.com/northwind/server-sdk-typescript/releases/tag/2.0.0",
+    "body": "## Breaking changes\n\n- Renamed `assistantId` → `agentId`\n- Dropped Node 16 support\n\n## Features\n\n- Streaming call events\n"
+  },
+  {
+    "id": 340000001,
+    "tag_name": "1.9.0-rc.1",
+    "name": "1.9.0-rc.1",
+    "draft": false,
+    "prerelease": true,
+    "created_at": "2026-03-20T10:00:00Z",
+    "published_at": "2026-03-20T11:00:00Z",
+    "html_url": "https://github.com/northwind/server-sdk-typescript/releases/tag/1.9.0-rc.1",
+    "body": "Release candidate for 1.9.0"
+  },
+  {
+    "id": 339999999,
+    "tag_name": "draft-never-ship",
+    "name": "Draft",
+    "draft": true,
+    "prerelease": false,
+    "created_at": "2026-03-01T10:00:00Z",
+    "published_at": null,
+    "html_url": "https://github.com/northwind/server-sdk-typescript/releases/tag/draft-never-ship",
+    "body": "Should be ignored by parser"
+  }
+]

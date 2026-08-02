@@ -1,0 +1,41 @@
+[
+  {
+    "number": 42,
+    "title": "High latency on outbound calls in us-east-1",
+    "state": "open",
+    "html_url": "https://github.com/northwind/server-sdk-typescript/issues/42",
+    "created_at": "2026-07-10T09:00:00Z",
+    "updated_at": "2026-07-28T16:20:00Z",
+    "body": "Seeing 800ms+ TTFA since Tuesday. Repro with createCall.\n\nEnvironment: Node 22, SDK 1.8.2",
+    "labels": [
+      { "name": "bug" },
+      { "name": "latency" }
+    ]
+  },
+  {
+    "number": 45,
+    "title": "SDK regeneration",
+    "state": "open",
+    "html_url": "https://github.com/northwind/server-sdk-typescript/pull/45",
+    "created_at": "2026-07-15T09:00:00Z",
+    "updated_at": "2026-07-29T12:00:00Z",
+    "body": "Automated PR — should be filtered out",
+    "labels": [],
+    "pull_request": {
+      "url": "https://api.github.com/repos/northwind/server-sdk-typescript/pulls/45",
+      "html_url": "https://github.com/northwind/server-sdk-typescript/pull/45"
+    }
+  },
+  {
+    "number": 38,
+    "title": "Breaking: webhook payload missing callId",
+    "state": "closed",
+    "html_url": "https://github.com/northwind/server-sdk-typescript/issues/38",
+    "created_at": "2026-06-01T09:00:00Z",
+    "updated_at": "2026-07-01T10:00:00Z",
+    "body": "After upgrading to 2.0.0 the webhook body no longer includes callId.",
+    "labels": [
+      { "name": "breaking-change" }
+    ]
+  }
+]

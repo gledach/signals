@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Signal — Competitive Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
+    <link rel="stylesheet" href="./viewer.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-brand">
+            <span class="brand-mark">◆</span>
+            <!-- Brand is static; the subtitle is filled from /api/config at runtime so it
+                 reflects the live roster instead of naming a hardcoded home brand. -->
+            <span class="brand-text">Signal <span class="subtle" id="brand-scope"></span></span>
+          </div>
+          <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" title="Collapse sidebar" aria-label="Collapse sidebar">◀</button>
+        </div>
+        <nav class="sidebar-nav" id="sidebar-modes" aria-label="View modes"></nav>
+        <div class="sidebar-scroll" id="sidebar-companies"></div>
+        <div class="sidebar-footer">
+          <button id="sb-conv-chip" class="sb-conv-chip hidden" aria-label="Convergences this week" title="Jump to Market · convergences this week">
+            🔥<span id="sb-conv-count">0</span>
+          </button>
+          <button id="theme-btn" class="theme-btn" aria-label="Toggle theme" title="Toggle light / dark theme">
+            <span id="theme-icon">🌙</span>
+          </button>
+        </div>
+      </aside>
+
+      <div class="main-column">
+    <header>
+      <button class="sidebar-toggle-mobile" id="sidebar-toggle-mobile" aria-label="Toggle sidebar">☰</button>
+      <!-- Legacy mode-nav kept hidden so setMode's querySelectorAll still finds buttons to toggle.
+           Visible nav now lives in the sidebar; this is a no-op shadow for existing wiring. -->
+      <nav id="mode-nav" hidden>
+        <button data-mode="feed" class="active">Live Feed</button>
+        <button data-mode="battle">Battle</button>
+        <button data-mode="market">Market</button>
+        <button data-mode="report">Report</button>
+      </nav>
+      <div class="meta" id="refresh-meta">
+        <span id="signal-count">–</span>
+        <span class="dot">•</span>
+        <span id="last-update">loading…</span>
+        <span class="dot">•</span>
+        <span id="fetched-at" title="When this page last pulled data">–</span>
+        <span class="dot">•</span>
+        <span id="cron-status" class="cron-status" title="Cron pipeline status">⏳ cron: –</span>
+        <button id="refresh-btn" class="refresh-btn" aria-label="Refresh now" title="Refresh now (r)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+        <button id="bell-btn" class="bell-btn" aria-label="Notifications" title="Recent critical signals">
+          🔔<span id="bell-count" class="bell-count hidden">0</span>
+        </button>
+      </div>
+    </header>
+
+    <div id="ticker" class="ticker hidden" aria-label="Recent critical signals">
+      <div class="ticker-track" id="ticker-track"></div>
+    </div>
+
+    <div id="notif-dropdown" class="notif-dropdown hidden" role="dialog">
+      <div class="notif-header">
+        <strong>Recent critical signals</strong>
+        <button class="mini-btn" id="notif-mark-seen">Mark all read</button>
+      </div>
+      <div id="notif-list"></div>
+    </div>
+
+    <!-- Former #convergence-panel replaced by #intel-mode below (a dedicated
+         mode, sidebar entry 6). Convergence cards render there, not in this
+         body-level container. This empty element is kept only so legacy JS
+         references (if any) don't break on null lookups. -->
+    <div id="convergence-cards" hidden></div>
+
+    <!-- ─── FEED mode — single column: competitor card + collapsible battlecard + signals ─── -->
+    <main id="feed-mode" class="mode active">
+      <header class="page-header">
+        <h1>Live Feed <span class="page-subtitle" id="feed-subtitle"></span></h1>
+        <div class="page-actions">
+          <!-- Feed filters migrate into the signals section below; header keeps its breath. -->
+        </div>
+      </header>
+      <div class="page-content">
+        <!-- Compact per-competitor card — replaces the full-width #battlecard-section.
+             Data-populated by renderCompetitorCard(). -->
+        <section id="feed-competitor-card" class="competitor-card" aria-label="Current competitor at a glance"></section>
+
+        <!-- Collapsible full-battlecard peek for power users. Default collapsed. -->
+        <details class="battlecard-details" id="feed-battlecard-details">
+          <summary>View full battlecard</summary>
+          <article id="battlecard"></article>
+        </details>
+
+        <!-- Legacy containers kept hidden so existing JS references stay no-op safe.
+             #competitor-nav and #kpi-strip both replaced by the competitor card above. -->
+        <nav id="competitor-nav" hidden></nav>
+        <div id="kpi-strip" hidden></div>
+
+        <section id="signals-section">
+          <div class="signals-header">
+            <h2 class="section-title">Signals <span class="section-count" id="signals-context" aria-live="polite"></span></h2>
+            <div class="filters">
+              <label>Min impact <input type="range" id="impact-min" min="0" max="100" value="0" /> <span id="impact-min-val">0</span></label>
+              <label>Type
+                <select id="type-filter"><option value="">any type</option></select>
+              </label>
+              <label><input type="checkbox" id="show-noise" /> show noise</label>
+            </div>
+          </div>
+          <ul id="signals"></ul>
+        </section>
+      </div>
+    </main>
+
+    <!-- ─── BATTLE mode (us vs one competitor — primary sales view) ─── -->
+    <main id="battle-mode" class="mode">
+      <header class="page-header">
+        <h1>Battle <span class="page-subtitle" id="battle-subtitle"></span></h1>
+        <div class="page-actions">
+          <button class="btn-primary" id="btn-talktrack">Generate talk-track</button>
+          <a id="btn-sheet" class="btn-secondary" target="_blank" rel="noopener">1-pager PDF</a>
+        </div>
+      </header>
+      <div class="page-content">
+      <!-- Legacy battle-header kept minimal for populateBattleSelector to target. -->
+      <div class="battle-header" hidden>
+        <div class="battle-selector">
+          <select id="battle-competitor-select"></select>
+        </div>
+      </div>
+
+      <div class="battle-filters" id="battle-filters">
+        <div class="filter-header">
+          <span class="filter-header-title">Deal context <span class="filter-header-sub">filters rank relevance · nothing is hidden</span></span>
+          <button class="filter-clear hidden" id="filter-clear">✕ Clear all</button>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Vertical</span>
+          <button class="filter-chip active" data-filter="vertical" data-value="">any</button>
+          <button class="filter-chip" data-filter="vertical" data-value="healthcare">healthcare</button>
+          <button class="filter-chip" data-filter="vertical" data-value="finance">finance</button>
+          <button class="filter-chip" data-filter="vertical" data-value="insurance">insurance</button>
+          <button class="filter-chip" data-filter="vertical" data-value="telecom">telecom</button>
+          <button class="filter-chip" data-filter="vertical" data-value="bpo">BPO / outsourcing</button>
+          <button class="filter-chip" data-filter="vertical" data-value="realestate">real estate</button>
+          <button class="filter-chip" data-filter="vertical" data-value="retail">retail</button>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">ICP size</span>
+          <button class="filter-chip active" data-filter="size" data-value="">any</button>
+          <button class="filter-chip" data-filter="size" data-value="smb">SMB</button>
+          <button class="filter-chip" data-filter="size" data-value="mid">Mid-market</button>
+          <button class="filter-chip" data-filter="size" data-value="enterprise">Enterprise</button>
+        </div>
+        <div class="filter-group search">
+          <span class="filter-label">Prospect said</span>
+          <input type="search" id="objection-search" placeholder="paste what the prospect just said — matching responses float to top" />
+        </div>
+        <div class="filter-status hidden" id="filter-status"></div>
+      </div>
+
+      <!-- Dynamic, filter-responsive panels FIRST so clicks produce immediate visible change. -->
+      <div id="battle-killshots" class="battle-panel"></div>
+      <div id="battle-objections" class="battle-panel"></div>
+      <div id="battle-wins" class="battle-panel"></div>
+
+      <!-- Features comparison (side-by-side capability matrix, us vs them). -->
+      <div id="battle-features" class="battle-panel"></div>
+
+      <!-- Infrastructure observed (cert transparency + sitemap + robots snapshots). -->
+      <div id="battle-infrastructure" class="battle-panel"></div>
+
+      <!-- Static side-by-side comparison — collapsed by default; reference material, not action content. -->
+      <details id="battle-grid-accordion" class="battle-accordion">
+        <summary>
+          <span class="accordion-icon">▸</span>
+          <span class="accordion-title">📊 Full side-by-side comparison</span>
+          <span class="accordion-hint">positioning · target · pricing · differentiators · compliance · recent moves</span>
+        </summary>
+        <div class="battle-grid" id="battle-grid"></div>
+      </details>
+
+      <div id="battle-saved-preps" class="battle-panel"></div>
+      </div><!-- /page-content -->
+    </main>
+
+    <!-- ─── MARKET mode (all competitors side-by-side — strategy view) ─── -->
+    <main id="market-mode" class="mode">
+      <header class="page-header">
+        <h1>Market <span class="page-subtitle">All competitors · cross-market view</span></h1>
+        <div class="page-actions"></div>
+      </header>
+      <div class="page-content">
+        <div id="market-grid"></div>
+      </div>
+    </main>
+
+    <!-- ─── REPORT mode (just an iframe — /report renders standalone HTML) ─── -->
+    <main id="report-mode" class="mode">
+      <header class="page-header">
+        <h1>Weekly Report <span class="page-subtitle" id="report-subtitle">Live view — captures this week's state right now</span></h1>
+        <div class="page-actions">
+          <button class="btn-secondary" id="report-snapshot-btn" title="Save this exact view to the Briefs archive so it survives new signals arriving">Save snapshot</button>
+          <a href="/report" target="_blank" rel="noopener" class="btn-secondary">Open in new tab (Ctrl+P to print)</a>
+        </div>
+      </header>
+      <div class="page-content">
+        <iframe id="report-iframe" src="/report" title="Signal Weekly Report" width="100%" loading="lazy" style="width:100%;height:calc(100vh - 180px);min-height:600px;border:1px solid #2a3140;border-radius:8px;background:#fff;display:block;"></iframe>
+      </div>
+    </main>
+
+    <!-- ─── INTEL mode (dedicated home for convergences + cross-signal synthesis) ─── -->
+    <main id="intel-mode" class="mode">
+      <header class="page-header">
+        <h1>Intel <span class="page-subtitle" id="intel-subtitle">Cross-signal patterns · this week</span></h1>
+        <div class="page-actions"></div>
+      </header>
+      <div class="page-content intel-content">
+        <div id="intel-convergence-cards"></div>
+      </div>
+    </main>
+
+    <!-- ─── BRIEFS mode (persisted analyst briefs: scan / deep / gap / outside / brief) ─── -->
+    <main id="briefs-mode" class="mode">
+      <header class="page-header">
+        <h1>Briefs <span class="page-subtitle" id="briefs-subtitle">Persistent analyst output · grouped by date</span></h1>
+        <div class="page-actions">
+          <div class="briefs-filter-bar" id="briefs-filter-bar">
+            <select id="briefs-filter-mode" class="briefs-filter" title="Filter by analyst mode">
+              <option value="">All modes</option>
+              <option value="weekly">Weekly report</option>
+              <option value="brief">/brief</option>
+              <option value="scan">/scan</option>
+              <option value="deep">/deep</option>
+              <option value="gap">/gap</option>
+              <option value="outside">/outside</option>
+            </select>
+            <select id="briefs-filter-scope" class="briefs-filter" title="Filter to briefs that mention this competitor (strict scope for /deep + full-text for /brief/scan/weekly)">
+              <option value="">All competitors</option>
+            </select>
+            <select id="briefs-filter-since" class="briefs-filter" title="Date range">
+              <option value="7">Last 7 days</option>
+              <option value="30" selected>Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="365">Last year</option>
+            </select>
+          </div>
+        </div>
+      </header>
+      <div class="page-content briefs-content">
+        <div id="briefs-list" class="briefs-list"></div>
+      </div>
+    </main>
+
+    <!-- ─── INBOX mode (full notification history with archive + read state) ─── -->
+    <main id="inbox-mode" class="mode">
+      <header class="page-header">
+        <h1>Inbox <span class="page-subtitle">Critical signals</span></h1>
+        <div class="page-actions">
+          <button class="btn-secondary" id="inbox-mark-all-read" title="Mark every unread notification as read">Mark all read</button>
+        </div>
+      </header>
+      <div class="page-content">
+        <div class="inbox-tabs" role="tablist">
+          <button class="inbox-tab active" data-inbox-tab="unread" role="tab">
+            Unread <span class="inbox-tab-count" id="inbox-count-unread">0</span>
+          </button>
+          <button class="inbox-tab" data-inbox-tab="archived" role="tab">
+            Archived <span class="inbox-tab-count" id="inbox-count-archived">0</span>
+          </button>
+          <button class="inbox-tab" data-inbox-tab="all" role="tab">
+            All <span class="inbox-tab-count" id="inbox-count-all">0</span>
+          </button>
+        </div>
+        <ul id="inbox-list" class="inbox-list"></ul>
+      </div>
+    </main>
+      </div><!-- /main-column -->
+    </div><!-- /app-shell -->
+
+    <!-- ─── Transcript modal ─── -->
+    <div id="transcript-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <button class="modal-close" id="modal-close-btn" aria-label="Close">✕</button>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+
+    <!-- ─── Talk-track modal ─── -->
+    <div id="talktrack-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <button class="modal-close" id="talktrack-close" aria-label="Close">✕</button>
+        <div id="talktrack-body"></div>
+      </div>
+    </div>
+
+    <!-- ─── Cmd+K command palette ─── -->
+    <div id="palette" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" id="palette-backdrop"></div>
+      <div class="palette-content">
+        <input type="search" id="palette-input" placeholder="Type a competitor, keyword, or objection… (Esc to close)" autocomplete="off" />
+        <div id="palette-results"></div>
+        <div class="palette-hint">↑↓ navigate · Enter to copy · Esc to close · <kbd>Cmd+K</kbd> / <kbd>Ctrl+K</kbd> anytime</div>
+      </div>
+    </div>
+
+    <!-- ─── Capture modal ─── -->
+    <div id="capture-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content capture-modal-content">
+        <button class="modal-close" id="capture-close" aria-label="Close">✕</button>
+        <h3>Log "this landed"</h3>
+        <div id="capture-quote" class="capture-quote"></div>
+        <label>Deal / prospect (optional)
+          <input type="text" id="capture-deal" placeholder="e.g. Acme Corp, healthcare, 500-seat" />
+        </label>
+        <label>Note (what happened, optional)
+          <textarea id="capture-note" rows="3" placeholder="e.g. prospect went quiet, then asked about our pricing"></textarea>
+        </label>
+        <div class="capture-actions">
+          <button class="btn-primary" id="capture-submit">Save to battlecard</button>
+          <button class="btn-secondary" id="capture-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Copy-confirm toast ─── -->
+    <div id="copy-toast" class="copy-toast hidden">Copied ✓</div>
+
+    <!-- ─── "New signals" flash banner ─── -->
+    <div id="flash-banner" class="flash hidden"></div>
+
+    <!-- Inline theme boot to avoid FOUC on initial load (applies before any CSS paints) -->
+    <script>
+      (function () {
+        // Light is the default. A saved choice from the toggle still wins; the OS
+        // preference is deliberately NOT consulted, so a dark-mode machine still
+        // opens light on first visit.
+        try {
+          var saved = localStorage.getItem('signal.theme');
+          document.documentElement.setAttribute('data-theme', saved || 'light');
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+    <script type="module" src="./viewer.js"></script>
+  </body>
+</html>

@@ -1,0 +1,44 @@
+{
+  "kind": "Listing",
+  "data": {
+    "after": null,
+    "dist": 2,
+    "modhash": "",
+    "geo_filter": "",
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "subreddit": "AI_Agents",
+          "selftext": "We switched from Replit to Cursor last quarter. Call quality is better on Cursor for our use case.",
+          "title": "Cursor after 3 months in production",
+          "permalink": "/r/AI_Agents/comments/fixturejson01/retell_ai_after_3_months_in_production/",
+          "created_utc": 1713441600,
+          "score": 42,
+          "num_comments": 17,
+          "author": "prod_voice",
+          "url": "https://www.reddit.com/r/AI_Agents/comments/fixturejson01/retell_ai_after_3_months_in_production/",
+          "id": "fixturejson01",
+          "upvote_ratio": 0.91
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "subreddit": "LocalLLaMA",
+          "selftext": "",
+          "title": "Anyone using Cursor with local STT?",
+          "permalink": "/r/LocalLLaMA/comments/fixturejson02/anyone_using_retell_with_local_stt/",
+          "created_utc": 1713355200,
+          "score": 8,
+          "num_comments": 4,
+          "author": "ml_hobby",
+          "url": "https://www.reddit.com/r/LocalLLaMA/comments/fixturejson02/anyone_using_retell_with_local_stt/",
+          "id": "fixturejson02",
+          "upvote_ratio": 0.8
+        }
+      }
+    ],
+    "before": null
+  }
+}

@@ -1,0 +1,73 @@
+# Node
+node_modules/
+npm-debug.log
+.apsolut/
+.apsolut-agents/
+# Env
+.env
+.env.local
+.env.*.local
+
+# Debug dumps (OpenRouter raw responses on failure)
+.debug/
+
+# Local runtime logs (fetch output, etc.)
+.logs/
+
+# Playwright screenshot outputs (derivable via `npm run shot`)
+screenshots/
+
+# Analyst briefs — committed to git per Plan 13 Phase 5. Durability comes from
+# three layers now: (1) Turso brief row, (2) local markdown under briefs/,
+# (3) git history for long-term archive. Scheduled cron runs use --force so
+# daily/weekly briefs UPSERT a single file per day instead of accumulating
+# time-suffixed variants and blowing up the folder. Ad-hoc runs without
+# --force still get time-suffixed filenames (intentional: don't clobber a
+# brief you're about to pin).
+
+# The local libSQL database. `store.mjs` defaults to data/signals.db so a fresh clone
+# works with no account — that file is a user's own signal store, never repo content.
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Your own roster / feeds. These OVERRIDE the shipped defaults and are deliberately
+# untracked, so customising what you track never conflicts with `git pull`.
+config/*.local.mjs
+
+# Runtime cache / legacy import staging
+data/legacy-jsonl/
+data/*.json
+data/*.jsonl
+data/transcripts/
+data/snapshots/
+data/trends/
+data/talk-tracks/
+!data/.gitkeep
+
+# Chrome extension generated data (user-specific, regenerated via `npm run chrome-data`)
+chrome-extension/data/companies.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Generated artifacts now live in Turso (sql/009-artifacts.sql) — the markdown
+# on disk is a local mirror for editing, not the source of truth. Kept OUT of
+# git so a public repo carries the engine and demo config, never a deployment's
+# competitive analysis, kill shots or customer names. battlecards/_template.md
+# is force-added as the shape reference.
+battlecards/*.md
+!battlecards/_template.md
+briefs/*.md
+
+# Agent coordination workspace. Deliberately OUT of git: the session log
+# records infrastructure, spend and incident detail that should not ship in a
+# public repo. It was stripped from history on 2026-08-02; this keeps the
+# working copy usable without re-committing it.
+.apsolut-agents/

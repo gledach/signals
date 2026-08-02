@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <span class="logo">◆ Signal</span>
+    <div class="header-actions">
+      <button id="btn-refresh" class="icon-btn" title="Refresh">↻</button>
+      <button id="btn-open-dashboard" class="icon-btn" title="Open full dashboard">↗</button>
+      <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <!-- Tabs -->
+  <nav class="tabs">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="intel">Intel</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+
+  <!-- Error banner -->
+  <div id="error-banner" class="banner hidden"></div>
+
+  <!-- ═══════ DASHBOARD TAB ═══════ -->
+  <main id="tab-dashboard" class="tab-content active">
+    <div class="stats-row">
+      <div class="stat"><span class="stat-val" id="stat-total">—</span><span class="stat-label">signals</span></div>
+      <div class="stat"><span class="stat-val" id="stat-critical">—</span><span class="stat-label">critical</span></div>
+      <div class="stat"><span class="stat-val" id="stat-cron">—</span><span class="stat-label">last cron</span></div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <select id="filter-company"><option value="">All companies</option></select>
+      <select id="filter-band">
+        <option value="">All impact</option>
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+        <option value="noise">Noise</option>
+      </select>
+      <select id="filter-type"><option value="">All types</option></select>
+    </div>
+
+    <h3 id="signal-heading">Recent signals</h3>
+    <div id="signal-list" class="signal-list">
+      <div class="loading">Loading…</div>
+    </div>
+  </main>
+
+  <!-- ═══════ SIGNAL DETAIL OVERLAY ═══════ -->
+  <div id="signal-detail" class="detail-pane hidden">
+    <button id="detail-back" class="back-btn">← Back</button>
+    <div id="detail-content"></div>
+  </div>
+
+  <!-- ═══════ INTEL TAB ═══════ -->
+  <main id="tab-intel" class="tab-content">
+
+    <!-- Step 1: Page info + company select + check -->
+    <div id="intel-step-check">
+      <div class="intel-page-info">
+        <div class="intel-page-title" id="intel-page-title">—</div>
+        <div class="intel-page-url" id="intel-page-url">—</div>
+      </div>
+
+      <div class="form-group">
+        <label for="intel-company">Company</label>
+        <select id="intel-company"><option value="">— select competitor —</option></select>
+      </div>
+
+      <button id="btn-intel-check" class="primary-btn" disabled>Check page against intel</button>
+      <div id="intel-check-status" class="intel-status"></div>
+    </div>
+
+    <!-- AI analysis result (hidden until check runs) -->
+    <div id="intel-result" class="intel-result hidden">
+      <div class="intel-result-header">
+        <span>Analysis</span>
+        <button id="btn-intel-recheck" class="ai-btn" title="Re-run analysis">↻ Re-check</button>
+      </div>
+      <div id="intel-analysis" class="intel-analysis"></div>
+    </div>
+
+    <!-- Step 2: Clip form (hidden until check runs) -->
+    <div id="intel-step-clip" class="hidden">
+      <div class="intel-divider"></div>
+      <h3>Clip this signal to Turso</h3>
+
+      <div id="intel-ai-banner" class="ai-banner hidden">
+        <span id="intel-ai-text">🤖 AI auto-detected</span>
+      </div>
+
+      <div class="form-group">
+        <label for="intel-clip-title">Title</label>
+        <input type="text" id="intel-clip-title">
+      </div>
+
+      <div class="form-group">
+        <label for="intel-clip-type">Signal type</label>
+        <select id="intel-clip-type"><option value="">— select —</option></select>
+      </div>
+
+      <div class="form-group">
+        <label for="intel-clip-link">Source URL</label>
+        <input type="url" id="intel-clip-link" placeholder="https://…">
+      </div>
+
+      <div class="form-group">
+        <label for="intel-clip-notes">
+          Notes
+          <button id="btn-summarize-page" class="ai-btn hidden" title="Summarize page into notes">✨ Summarize</button>
+          <button id="btn-rewrite" class="ai-btn hidden" title="Rewrite notes">✨ Rewrite</button>
+        </label>
+        <textarea id="intel-clip-notes" rows="5" placeholder="What's new from the analysis…"></textarea>
+      </div>
+
+      <button id="btn-submit-clip" class="primary-btn">Save signal to Turso</button>
+      <div id="intel-clip-status"></div>
+    </div>
+
+    <p class="intel-hint">💡 Run <code>npm run chrome-data</code> in your project to pre-bake signal digests — makes Intel Check instant and offline-capable.</p>
+  </main>
+
+  <!-- ═══════ SETTINGS TAB ═══════ -->
+  <main id="tab-settings" class="tab-content">
+    <div class="form-group">
+      <label for="api-url">API URL</label>
+      <input id="api-url" type="url" placeholder="https://your-app.up.railway.app">
+      <p class="hint">Your Signal dashboard URL (Railway, localhost, etc.)</p>
+    </div>
+
+    <div class="form-group">
+      <label for="poll-min">Poll interval (minutes)</label>
+      <input id="poll-min" type="number" min="1" max="60" value="5">
+    </div>
+
+    <div class="form-group">
+      <label for="notif-threshold">Notification threshold</label>
+      <select id="notif-threshold">
+        <option value="80">Critical only (80+)</option>
+        <option value="65">High+ (65+)</option>
+        <option value="45">Medium+ (45+)</option>
+        <option value="0">All signals</option>
+      </select>
+    </div>
+
+    <div id="ai-section">
+      <h3>Chrome AI Status</h3>
+      <div id="ai-status">Checking…</div>
+    </div>
+
+    <div class="actions-row">
+      <button id="test-btn" class="secondary-btn">Test Connection</button>
+      <button id="save-btn" class="primary-btn">Save</button>
+    </div>
+    <div id="settings-status"></div>
+  </main>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

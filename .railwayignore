@@ -1,0 +1,46 @@
+# Local-only artifacts — never ship to Railway build.
+# Env is injected via Railway dashboard → process.env; --env-file-if-exists
+# in package.json makes the scripts tolerate a missing .env file.
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Dependency / build caches
+node_modules/
+
+# Local debug / observability artifacts
+.debug/
+.logs/
+screenshots/
+briefs/
+
+# Runtime caches that used to live on disk. Plan 10 migrated all watcher
+# state into Turso, so these are dead weight on a cloud deploy (the
+# operator's laptop still uses them during the safety-net window).
+data/legacy-jsonl/
+data/transcripts/
+data/snapshots/
+data/trends/
+data/talk-tracks/
+data/tavily-state.json
+data/llm-cost.jsonl
+data/*.json
+data/*.jsonl
+!data/.gitkeep
+
+# Repo-level dev tooling that never runs on a cron
+tools/
+.claude/
+.agents/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# INTENTIONALLY SHIPPED (do not add):
+#   battlecards/   — refresh reads + writes these; needed for synthesis
+#   analyst/       — persona.md loaded at runtime by analyst.mjs
+#   plans/         — not strictly needed but tiny; leave for traceability
+#   sql/           — migrations applied by db:migrate at startup

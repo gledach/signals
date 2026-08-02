@@ -1,0 +1,13 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ channel: 'msedge', headless: true });
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+await ctx.route('**/*', (r) => r.continue({ headers: { ...r.request().headers(), 'cache-control': 'no-cache' } }));
+const page = await ctx.newPage();
+await page.addInitScript(() => { try { localStorage.setItem('signal.theme', 'dark'); } catch {} });
+await page.goto('http://localhost:5180/#mode=feed', { waitUntil: 'networkidle' });
+await page.waitForTimeout(1000);
+await page.click('#bell-btn');
+await page.waitForTimeout(500);
+await page.screenshot({ path: 'screenshots/dash-feed-bell-open.png', fullPage: false });
+console.log('captured');
+await browser.close();

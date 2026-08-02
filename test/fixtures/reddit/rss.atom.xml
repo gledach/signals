@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <category term="the home vendor" label="r/the home vendor"/>
+  <updated>2026-04-18T12:00:00+00:00</updated>
+  <title>the home vendor: new posts</title>
+  <entry>
+    <author>
+      <name>/u/voice_ops</name>
+      <uri>https://www.reddit.com/user/voice_ops</uri>
+    </author>
+    <category term="AI_Agents" label="r/AI_Agents"/>
+    <content type="html">&lt;p&gt;Tried the home vendor for a support line; latency was fine after the first minute.&lt;/p&gt;</content>
+    <id>t3_fixturerss01</id>
+    <link href="https://www.reddit.com/r/AI_Agents/comments/fixturerss01/northwind_latency_notes/"/>
+    <updated>2026-04-18T11:30:00+00:00</updated>
+    <title>the home vendor latency notes from a pilot</title>
+  </entry>
+  <entry>
+    <author>
+      <name>/u/compintel</name>
+    </author>
+    <category term="SaaS" label="r/SaaS"/>
+    <content type="html">&lt;p&gt;Comparing the home vendor vs Cursor pricing for outbound.&lt;/p&gt;</content>
+    <id>t3_fixturerss02</id>
+    <link href="https://www.reddit.com/r/SaaS/comments/fixturerss02/northwind_vs_acme/"/>
+    <updated>2026-04-17T09:00:00+00:00</updated>
+    <title>the home vendor vs Cursor for outbound</title>
+  </entry>
+</feed>
