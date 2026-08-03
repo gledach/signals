@@ -740,6 +740,26 @@ section('14. Viewer vocabulary tracks the roster');
   const optionCount = DEAL_CONTEXT_DIMENSIONS.reduce((n, d) => n + d.options.length, 0);
   ok(`${DEAL_CONTEXT_DIMENSIONS.length} deal-context dimensions, ${optionCount} options, all validated on load`);
 
+  // Scoring vocabulary — the keyword tables that decide what a new subdomain or
+  // sitemap path is worth — must exist once, in config/. It used to exist twice,
+  // in watchers/cert-watch.mjs and dashboard/serve.mjs, under a comment saying
+  // the copies were kept in sync manually. They were not: one had drifted a
+  // whole entry. A duplicated scoring table fails quietly — both copies keep
+  // scoring, just differently, so the dashboard disagrees with the watcher that
+  // produced the data.
+  const inlineTables = SOURCES.filter((f) => {
+    const r = rel(f);
+    if (r.startsWith('config/') || r.startsWith('test/')) return false;
+    const src = fs.readFileSync(f, 'utf8');
+    return /const\s+[A-Z_]*(KEYWORDS|HOT_PATTERNS|HOT_PATHS)\s*=\s*\[/.test(src);
+  }).map(rel);
+  if (inlineTables.length) {
+    bad(`scoring keyword tables inlined outside config/: ${inlineTables.join(', ')}`);
+  } else {
+    const { HOT_KEYWORDS, SITEMAP_HOT_PATHS, SUBDOMAIN_SIGNALS_FILE } = await import('../config/subdomain-signals.mjs');
+    ok(`${HOT_KEYWORDS.length} subdomain patterns + ${SITEMAP_HOT_PATHS.length} sitemap paths, single source in ${SUBDOMAIN_SIGNALS_FILE}`);
+  }
+
   // A sidebar click means something different in each mode, and only the modes
   // that scope their view to a company may show one selected. Assert the hint
   // table covers every mode so a new mode cannot ship with a silent teleport.

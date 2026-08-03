@@ -14,6 +14,7 @@ import { renderWeeklyReport as renderWeeklyReportMd } from '../cli/weekly-report
 import { chatJson, synthesisModel, hasApiKey } from '../pipeline/openrouter.mjs';
 import { FEATURES, FEATURE_CATEGORIES, FEATURE_STATUS_VALUES } from '../core/features.mjs';
 import { DEAL_CONTEXT_DIMENSIONS } from '../config/deal-context.mjs';
+import { HOT_KEYWORDS as SUBDOMAIN_KEYWORDS, SITEMAP_HOT_PATHS as SITEMAP_HOT_PATTERNS } from '../config/subdomain-signals.mjs';
 
 // Paths come from the shared resolver, never from this file's own location — that is
 // what let moving serve.mjs silently break static serving while /api kept returning 200.
@@ -581,52 +582,10 @@ function esc(s) {
 
 // ────────────────────────────── snapshots endpoint ─────────────────────────
 
-// Subdomain keyword patterns (mirrors cert-watch.mjs scoring — kept in sync manually).
-// If cert-watch.mjs keyword list changes, update this too.
-const SUBDOMAIN_KEYWORDS = [
-  { pattern: /^enterprise|^biz\b/i, label: 'enterprise-push', boost: 25 },
-  { pattern: /^(healthcare|health|medical|clinical|hospital|hipaa|pharma)\b/i, label: 'healthcare', boost: 30 },
-  { pattern: /^(finance|banking|fintech|lending|wealth|bank)\b/i, label: 'finance', boost: 25 },
-  { pattern: /^(insurance|underwrit|claim)\b/i, label: 'insurance', boost: 25 },
-  { pattern: /^(realtor|realestate|real-estate|mortgage|property)\b/i, label: 'realestate', boost: 25 },
-  { pattern: /^(retail|ecommerce|shopify|merchant|commerce)\b/i, label: 'retail', boost: 20 },
-  { pattern: /^(telecom|telco|carrier|mvno)\b/i, label: 'telecom', boost: 25 },
-  { pattern: /^(bpo|contact[-_]?center|call[-_]?center)\b/i, label: 'bpo', boost: 25 },
-  { pattern: /^(eu|europe|emea|uk|de|fr|nl|es|it)\b/i, label: 'geo-eu', boost: 20 },
-  { pattern: /^(apac|asia|japan|jp|india|in|singapore|sg|korea|kr|china|cn)\b/i, label: 'geo-apac', boost: 25 },
-  { pattern: /^(latam|brazil|br|mexico|mx|argentina|ar)\b/i, label: 'geo-latam', boost: 20 },
-  { pattern: /^(partners?|integrations?|marketplace)\b/i, label: 'partnership', boost: 20 },
-  { pattern: /^(api[-_]?v[0-9]|v[0-9])\b/i, label: 'api-version', boost: 20 },
-  { pattern: /^(launch|announce|beta|preview)\b/i, label: 'launch', boost: 15 },
-  { pattern: /^(voice|audio|realtime|phone|call)\b/i, label: 'voice-product', boost: 15 },
-  { pattern: /^(agent|agents|bot|assistant)\b/i, label: 'agent-product', boost: 10 },
-  { pattern: /^(ai|ml)\b/i, label: 'ai-product', boost: 5 },
-  { pattern: /(^|[-_])msa([-_]|$)/i, label: 'customer-MSA', boost: 25 },
-  { pattern: /(^|[-_])(pilot|poc|trial|eval|evaluation)([-_]|$)/i, label: 'customer-pilot', boost: 20 },
-  { pattern: /(^|[-_])(proposal|quote|rfp)([-_]|$)/i, label: 'customer-proposal', boost: 20 },
-  { pattern: /(^|[-_])(demo|showcase)([-_]|$)/i, label: 'customer-demo', boost: 10 },
-  { pattern: /^(trust|compliance|security|privacy|soc2|iso27001)\b/i, label: 'compliance', boost: 20 },
-  { pattern: /^(mcp|mcps|anthropic|claude)\b/i, label: 'mcp-integration', boost: 20 },
-  { pattern: /^(openai|gpt|chatgpt|realtime)\b/i, label: 'openai-integration', boost: 15 },
-  { pattern: /^(hubspot|salesforce|zendesk|intercom|slack|vercel|netlify|supabase|stripe|zapier|segment|snowflake)\b/i, label: 'integration-partner', boost: 15 },
-];
+// Subdomain + sitemap scoring vocabulary. Single source in config/, imported by
+// both this server and watchers/cert-watch.mjs. This block used to be a
+// hand-maintained copy of the watcher's list; the copies had already drifted.
 
-// Sitemap path hot-keyword matcher — surfaces strategic paths from full sitemap.
-const SITEMAP_HOT_PATTERNS = [
-  /\/(healthcare|health|medical|clinical|hipaa)\//i,
-  /\/(enterprise|business)\//i,
-  /\/(finance|fintech|banking|insurance)\//i,
-  /\/(realtor|realestate|real-estate|mortgage)\//i,
-  /\/(retail|ecommerce|commerce)\//i,
-  /\/(telecom|telco|carrier)\//i,
-  /\/(bpo|contact-center|call-center)\//i,
-  /\/(partners|integrations|marketplace)\//i,
-  /\/(pricing|plans)/i,
-  /\/(customers|case-study|case-studies)\//i,
-  /\/(launch|announce|announcing|beta)/i,
-  /\/api\/v[0-9]/i,
-  /\/(docs|docs\/api)/i,
-];
 
 function scoreSubdomain(host) {
   const normalized = host.replace(/^\*\./, '');

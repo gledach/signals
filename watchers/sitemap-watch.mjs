@@ -22,6 +22,9 @@ import {
   loadSitemapSnapshot, saveSitemapPaths, saveRobotsSnapshot,
 } from '../core/store.mjs';
 import { notifySignal } from '../pipeline/notify.mjs';
+// Path patterns worth a score boost. Shared with dashboard/serve.mjs, which uses
+// the same list to decide what to surface — see config/subdomain-signals.mjs.
+import { SITEMAP_HOT_PATHS } from '../config/subdomain-signals.mjs';
 
 const USER_AGENT = 'Signal-SitemapWatch/0.1 (+https://gledach.de)';
 const TIMEOUT_MS = 20_000;
@@ -38,19 +41,6 @@ const DRY_RUN = argv.includes('--dry-run');
 const TARGETS = (COMPANY_FILTER ? [COMPANIES[COMPANY_FILTER]] : Object.values(COMPANIES)).filter(Boolean);
 
 // ── Boost keywords — new paths matching these raise impact score
-const HOT_KEYWORDS = [
-  /\/(launch|launching|launched)[-\/]/i,
-  /\/(beta|preview|alpha)[-\/]/i,
-  /\/(new|announce|announcement|announcing)[-\/]/i,
-  /\/(enterprise|pro|business)[-\/]?/i,
-  /\/(customer-story|case-study|case_study|customers)[-\/]/i,
-  /\/(integration|integrations|partner|partners|partnership)[-\/]/i,
-  /\/(pricing|plans)[-\/]?/i,
-  /\/(product|features|feature)[-\/]/i,
-  /\/(voice|phone|call|audio)[-\/]/i,
-  /\/(ai|llm|agent|agents|realtime)[-\/]/i,
-  /\/(healthcare|insurance|realestate|real-estate|finance|hospitality|retail)[-\/]/i,
-];
 
 // ─────────────────────────────── main ───────────────────────────────────────
 
@@ -240,7 +230,7 @@ async function handleSitemapDiff(company, prior, currentPaths) {
 
 function scoreNewPath(p) {
   let boost = 0;
-  for (const re of HOT_KEYWORDS) if (re.test(p)) boost += 15;
+  for (const re of SITEMAP_HOT_PATHS) if (re.test(p)) boost += 15;
   return Math.min(boost, 40);
 }
 
