@@ -80,6 +80,8 @@ async function init() {
   // so every "us" lookup silently resolved to undefined.
   state.ourId = cfgRes.ourId || null;
   state.mainId = cfgRes.mainId || null;
+  // A chosen anchor outlives the page, like the theme and sidebar state.
+  try { state.battleAnchor = localStorage.getItem('signal.battleAnchor') || null; } catch { state.battleAnchor = null; }
   state.markets = cfgRes.markets || [];
   state.signalTypes = (cfgRes.signalTypes || []).map((t) => t.id);
 
@@ -484,9 +486,22 @@ function renderSidebarCompanyRow(c) {
   const pill = pillText ? `<span class="sb-pill" title="${esc(pillText)}">${esc(pillText)}</span>` : '';
   const usPill = c.isUs ? `<span class="sb-pill sb-pill-us">us</span>` : '';
 
-  return `<button class="sb-company ${isActive ? 'active' : ''}" data-sb-company="${esc(c.id)}" title="${esc(c.name)}">
+  // Mark the comparison anchor. Without this the sidebar looked uniform while one entry
+  // behaved differently from the rest, which is what made clicking feel unpredictable.
+  const anchorId = battleAnchorId();
+  const isAnchor = c.id === anchorId && !c.isUs;
+  const anchorPill = isAnchor ? `<span class="sb-pill sb-pill-anchor" title="Comparison anchor — Battle compares others against this">anchor</span>` : '';
+
+  // Explain what a click will DO, per mode, rather than just naming the company.
+  const hint = state.mode === 'battle'
+    ? (c.id === anchorId ? 'Anchor — click another company to compare it' : `Compare against ${nameOf(anchorId)}`)
+    : state.mode === 'feed'
+      ? 'Show signals for this company'
+      : `Open Battle: ${nameOf(anchorId)} vs ${c.name}`;
+
+  return `<button class="sb-company ${isActive ? 'active' : ''} ${isAnchor ? 'is-anchor' : ''}" data-sb-company="${esc(c.id)}" title="${esc(c.name)} — ${esc(hint)}">
     <span class="sb-fav">${favHtml}</span>
-    <span class="sb-label">${esc(c.name)}${usPill}${pill}</span>
+    <span class="sb-label">${esc(c.name)}${usPill}${anchorPill}${pill}</span>
     ${fresh24 ? `<span class="sb-count" title="${fresh24} signal${fresh24 === 1 ? '' : 's'} in last 24h">${fresh24}</span>` : ''}
   </button>`;
 }
@@ -510,16 +525,34 @@ function selectCompanyFromSidebar(id) {
     writeUrlState();
     document.getElementById('battlecard-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } else if (state.mode === 'battle') {
-    // Battle mode is competitor-vs-us by design; clicking "us" has no effect.
-    if (co.isUs) return;
-    state.battleCompetitor = id;
+    // Clicking the anchor used to return silently — the click landed, nothing moved, and
+    // there was no way to tell whether the app was broken or the company was special.
+    // A company cannot be compared against itself, so make the click mean the only other
+    // sensible thing: SWAP the two sides.
+    if (id === battleAnchorId()) {
+      const other = state.battleCompetitor;
+      if (other && other !== id) {
+        state.battleAnchor = other;
+        state.battleCompetitor = id;
+        try { localStorage.setItem('signal.battleAnchor', state.battleAnchor); } catch {}
+        flashHint(`Swapped — comparing ${nameOf(other)} against ${nameOf(id)}`);
+      } else {
+        flashHint(`${nameOf(id)} is the anchor. Pick another company to compare it against.`);
+        return;
+      }
+    } else {
+      state.battleCompetitor = id;
+    }
     populateBattleSelector();
     renderBattle();
     renderSidebar();
     writeUrlState();
   } else {
-    // Market / Report: treat a sidebar click as "prep for a deal vs this competitor".
-    if (co.isUs) return;
+    // Market / Report: a sidebar click means "compare this one".
+    if (id === battleAnchorId()) {
+      flashHint(`${nameOf(id)} is the comparison anchor — open Battle to change it.`);
+      return;
+    }
     state.battleCompetitor = id;
     setMode('battle');
   }
@@ -2261,12 +2294,42 @@ const BATTLE_SECTIONS = [
 
 function wireBattleSelector() {
   const sel = document.getElementById('battle-competitor-select');
-  if (!sel) return;
-  sel.addEventListener('change', (e) => {
-    state.battleCompetitor = e.target.value;
-    writeUrlState();
-    renderBattle();
-  });
+  if (sel) {
+    sel.addEventListener('change', (e) => {
+      state.battleCompetitor = e.target.value;
+      writeUrlState();
+      renderBattle();
+    });
+  }
+
+  // The visible anchor row. These were rendered but never wired, so they showed the
+  // right values and did nothing — the worst kind of control, because it looks broken
+  // rather than absent.
+  const anchorSel = document.getElementById('battle-anchor-select');
+  if (anchorSel) {
+    anchorSel.addEventListener('change', (e) => {
+      state.battleAnchor = e.target.value;
+      // The opponent cannot be the anchor. Clear it and let the next render pick a
+      // different one rather than showing a company compared against itself.
+      if (state.battleCompetitor === state.battleAnchor) state.battleCompetitor = null;
+      try { localStorage.setItem('signal.battleAnchor', state.battleAnchor); } catch {}
+      populateBattleSelector();
+      renderSidebar();
+      writeUrlState();
+      renderBattle();
+    });
+  }
+
+  const themSel = document.getElementById('battle-them-select');
+  if (themSel) {
+    themSel.addEventListener('change', (e) => {
+      state.battleCompetitor = e.target.value;
+      populateBattleSelector();
+      renderSidebar();
+      writeUrlState();
+      renderBattle();
+    });
+  }
 }
 
 function wireBattleFilters() {
@@ -3677,6 +3740,32 @@ function flashNewSignals(list) {
     bar.classList.remove('show');
     setTimeout(() => bar.classList.add('hidden'), 400);
   }, 5000);
+}
+
+/**
+ * Say why a click did not do what the user expected.
+ *
+ * The dashboard used to `return` silently when an action was not applicable, which is
+ * indistinguishable from being broken: the click lands, nothing moves, and there is no
+ * way to tell whether the app failed or the company was special. Reuses the same banner
+ * as the new-signal flash so there is one notification surface, not two.
+ */
+function flashHint(message) {
+  const bar = document.getElementById('flash-banner');
+  if (!bar) return;
+  bar.textContent = message;
+  bar.classList.remove('hidden');
+  bar.classList.add('show');
+  clearTimeout(flashHint._timer);
+  flashHint._timer = setTimeout(() => {
+    bar.classList.remove('show');
+    setTimeout(() => bar.classList.add('hidden'), 400);
+  }, 3200);
+}
+
+/** Display name for a company id, falling back to the id so this never renders blank. */
+function nameOf(id) {
+  return state.companies.find((c) => c.id === id)?.name || id;
 }
 
 // ────────────────────────────── utilities ───────────────────────────────────
