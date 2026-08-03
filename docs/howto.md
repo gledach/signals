@@ -321,13 +321,22 @@ First run saves a baseline silently. On subsequent runs, any new subdomain becom
 - `staging` / `dev` / `test` / `preview` subdomains skipped
 - `*.pages.dev`, `*.vercel.app` PaaS artifacts skipped
 
-**Automatic keyword scoring** boosts signals matching strategic patterns:
-- Verticals: `healthcare`, `finance`, `insurance`, `retail`, `telecom`, `bpo`
+**Automatic keyword scoring** boosts signals matching strategic patterns. The
+patterns live in `config/subdomain-signals.default.mjs` — override them with
+`config/subdomain-signals.local.mjs` if you track a different market:
+- Delivery: `selfhost`, `onprem`, `vpc`, `airgap`, `enterprise`, `cloud`
+- Surface: `vscode`, `jetbrains`, `neovim`, `ci`, `actions`, `github`, `cli`
+- Product: `agent`, `model`, `review`, `ai`
 - Geography: `eu`, `apac`, `japan`, `latam`, `india`
-- Product direction: `api-v2`, `partners`, `enterprise`, `voice`, `agent`
+- Deal stage: `msa`, `pilot`, `poc`, `rfp`, `proposal` — these match anywhere in
+  the label, so a subdomain named after a prospect still scores
 - Wildcard certs get a lower base score (defensive rather than launch-intent)
 
-Signal impact scores range 35 (wildcard/no-keyword) to 95 (vertical + geo match).
+Signal impact scores range 35 (wildcard/no-keyword) to 95 (several matches).
+
+The same file supplies the sitemap hot-path patterns used by `sitemap-watch` and
+the dashboard's snapshot panel, so the watcher and the view that displays its
+output can never disagree about what counts as interesting.
 
 Run **every 6 hours** — new subdomains rarely appear more often than that, and crt.sh appreciates the politeness.
 
@@ -412,12 +421,12 @@ Phase-1 rules (edit `correlation-rules.mjs` to tune or add):
 
 | Rule | Kind | Window | Fires when |
 |---|---|---|---|
-| `enterprise-push` | theme | 45d | enterprise / SOC / governance / SSO / compliance mentions from 2+ source kinds |
-| `healthcare-vertical` | theme | 30d | healthcare / HIPAA / clinical mentions from 2+ sources |
-| `real-estate-vertical` | theme | 30d | real estate / realtor / mortgage mentions from 2+ sources |
-| `pricing-shift` | theme | 30d | pricing / billing / tier mentions from 2+ sources |
-| `launch-imminent` | theme | 14d | launch / beta / "is live" mentions from 2+ sources |
-| `apac-expansion` | theme | 60d | Japan / Tokyo / SoftBank / APAC mentions from 2+ sources |
+| `enterprise-push` | theme | 45d | enterprise / SOC 2 / governance / SSO / audit mentions from 2+ source kinds |
+| `open-source-wave` | theme | 45d | open-source / self-host / on-prem / local-model mentions from 2+ source kinds |
+| `ide-surface` | theme | 30d | VS Code / JetBrains / editor-extension / language-server mentions from 2+ source kinds |
+| `pricing-shift` | theme | 30d | price change / new tier / billing change mentions from 2+ source kinds |
+| `launch-imminent` | theme | 14d | "announcing" / "is live" / "now available" / public beta from 2+ source kinds |
+| `agent-autonomy` | theme | 45d | full-repo / terminal / unattended / background-agent mentions from 2+ source kinds |
 | `customer-win-momentum` | count | 60d | 3+ `customer_win` signals |
 | `product-velocity` | count | 45d | 3+ `product_launch` signals |
 | `churn-intent-cluster` | count | 30d | 2+ `trend_alternative_spike` or `review_complaint` signals |

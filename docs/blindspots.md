@@ -73,7 +73,7 @@ Ranked by expected impact for a AI coding founder-seller:
 |---|---|---|---|
 | SEC Form D (private placements) | Funding events 15 days before press | Medium | [Plan 05](./plans/05-investor-network.md) scoped |
 | SEC EDGAR (10-Q, 10-K, 8-K) | Material events reported by public companies | Medium | [Plan 03 T3](./plans/03-thinkable-bets.md) scoped |
-| UK Companies House | UK corporate filings — Capita mentions Claude Code | Medium | Not scoped; free API |
+| UK Companies House | UK corporate filings — subsidiary and director changes for UK-registered vendors | Medium | Not scoped; free API |
 | Crunchbase API | Structured funding history | Medium | Not built; $49/mo |
 | PitchBook | Deep investor data | Low | Enterprise pricing |
 | Board changes | 8-K material event | Low | Covered by EDGAR if built |

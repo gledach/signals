@@ -18,7 +18,7 @@ Without this, 200 signals/week = noise. With convergence detection, ~3 "act toda
 
 Example convergences worth detecting:
 - CEO flies to Tokyo + SoftBank mention in press + new Japan job posting → **APAC launch imminent** (4-6 weeks out)
-- New cert for `realtor.lovable.ai` + blog-draft title hint + "Real Estate Lead" job → **vertical move**
+- New cert for `selfhost.lovable.dev` + blog-draft title hint + "Infrastructure Lead" job → **self-host tier**
 - Pricing-page diff (tier removed) + Reddit complaint cluster + Glassdoor "layoffs" mention → **margin pressure, maybe acquisition bait**
 - New customer-logo on wall + 10-K mention by their customer + exec LinkedIn change → **confirmed win, sizeable**
 
@@ -69,16 +69,16 @@ Overlay the existing macro stack (GSCPI, FX YoY, oil, COT, sanctions) onto compe
 
 Examples:
 - "Lovable raised $20M — but Accel partners are pulling back from AI coding space per our VC funding tracker. Expect conservative follow-on."
-- "Your BPO customer base (Capita, TaskUs, Concentrix) faces supply-chain pressure per GSCPI — reposition our pitch from 'growth' to 'cost containment'"
+- "Enterprise engineering budgets are tightening per PMI — reposition the pitch from 'ship faster' to 'cost per merged PR'"
 - "EUR weakened 6% vs USD YoY — Lovable's EU pricing effectively 6% cheaper in USD. Don't compete on price; lean on compliance and local support"
-- "Oil at $95 = higher inflation = BPO customers tightening — automation-ROI pitch lands harder THIS quarter"
+- "Rates up = later-stage startups extending runway — seat-count-based rivals get squeezed; usage-based pricing lands harder THIS quarter"
 
 ### Build steps
 1. Create `competitive/macro-overlay.mjs` — pull relevant macro signals from existing stack (`/api/economic/gscpi`, `/api/fx/yoy`, `/api/commodities/oil`)
-2. For each competitor, map their customer industries (Lovable = SMB home services + BPO; Claude Code = enterprise CX in regulated industries)
+2. For each competitor, map their buyer segment (Lovable = solo builders and small product teams; Claude Code = platform teams in larger engineering orgs)
 3. Define macro-to-competitor rules:
    ```typescript
-   { competitor: 'claudecode', customerIndustries: ['healthcare', 'telecom', 'retail'], watch: ['gscpi', 'currency_vs_USD', 'oil'] }
+   { competitor: 'claudecode', buyerSegments: ['platform-team', 'regulated-enterprise'], watch: ['tech_hiring', 'currency_vs_USD', 'rates'] }
    ```
 4. Weekly synthesis prompt: "Given current macro state X, Y, Z — how does it affect each competitor's customer base?"
 5. Inject into battlecard AUTO section as "Macro context for selling against <competitor>"
@@ -107,7 +107,7 @@ For each competitor's named customers (that are public companies), pull SEC fili
 - Margin pressure (would they switch to cheaper alternative = us?)
 
 ### Why
-**Early warning on competitor churn.** If Claude Code's customer Capita (LSE:CPI) mentions "reviewing vendor contracts for cost reduction" in their 10-Q, Claude Code might lose them — which means we should be pitching that exact account NOW.
+**Early warning on competitor churn.** If a public company that a competitor names on its customer-logo wall writes "reviewing developer-tooling contracts for cost reduction" in its 10-Q, that account is in play — which means we should be pitching it NOW.
 
 ### Build steps
 1. Seed list of public competitors' customers (from their case studies, customer-logo walls)

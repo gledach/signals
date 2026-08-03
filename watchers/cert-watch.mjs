@@ -160,10 +160,11 @@ function filterSubdomains(all) {
 
 // ─── scoring ───────────────────────────────────────────────────────────────
 function scoreSubdomain(host) {
-  // Patterns match against the leftmost label (e.g., "healthcare" in
-  // "healthcare.lovable.ai", or "aetna-msa-proposal" in
-  // "aetna-msa-proposal.retellai.com"). Whole-label patterns can match
-  // any position within that first label; first-anchored patterns are ^-anchored.
+  // Patterns match against the leftmost label — "selfhost" in
+  // "selfhost.example.com", or "<prospect>-msa-proposal" in
+  // "<prospect>-msa-proposal.example.com". Whole-label patterns can match any
+  // position within that first label; first-anchored patterns are ^-anchored,
+  // which is what keeps a deal-stage marker findable inside a customer name.
   const normalized = host.replace(/^\*\./, '');
   const firstLabel = normalized.split('.')[0] || '';
   const matches = [];

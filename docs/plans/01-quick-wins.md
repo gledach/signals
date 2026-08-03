@@ -42,7 +42,7 @@ Any change → ingest as a signal with `signalType=website_change`.
 
 ### Summary
 Every TLS cert a competitor issues shows up in **crt.sh** within hours.
-New subdomain `realtor.lovable.ai` = they're building a real estate vertical, weeks before announcement.
+New subdomain `selfhost.lovable.dev` = they're building a self-hosted tier, weeks before announcement.
 
 ### Why
 Public intel most SaaS doesn't monitor. **Leading indicator for product launches and vertical moves.**
@@ -51,7 +51,7 @@ Public intel most SaaS doesn't monitor. **Leading indicator for product launches
 1. Add `competitive/ct-watch.mjs` — query `https://crt.sh/?q=%25.<domain>&output=json` for each competitor domain
 2. Dedupe against `competitive/data/known-subdomains.json`
 3. For new ones: HEAD-request the subdomain, check if it resolves + responds; ignore wildcard/internal patterns
-4. Emit signal with `signalType=new_subdomain`, `impactScore=70` default (higher if it contains product-shaped words: `enterprise`, `api`, `app`, `healthcare`, `eu`, `realtor`, etc.)
+4. Emit signal with `signalType=new_subdomain`, `impactScore=70` default (higher if it contains product-shaped words: `enterprise`, `api`, `selfhost`, `vscode`, `eu`, `actions`, etc. — the live list is `config/subdomain-signals.default.mjs`)
 5. Run every 6h
 
 ### Success criteria

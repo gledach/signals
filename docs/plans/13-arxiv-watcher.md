@@ -56,7 +56,7 @@ Both feed into convergence rules in the usual way.
 
 **Two query modes per run:**
 
-- **Author mode** — `au:"Bret Taylor"` for each named researcher (precise, low recall).
+- **Author mode** — `au:"A. Rivera"` for each named researcher (precise, low recall).
 - **Affiliation mode** — `abs:"Claude Code" OR abs:"claudecode.com"` (broader, catches first-time publishers from the company).
 
 Run mode A frequently (daily, cheap), mode B weekly.
@@ -68,8 +68,8 @@ Run mode A frequently (daily, cheap), mode B weekly.
 ```json
 {
   "claudecode": [
-    { "name": "Bret Taylor", "knownAffiliations": ["Claude Code", "Salesforce"] },
-    { "name": "Clay Bavor", "knownAffiliations": ["Claude Code", "Google"] }
+    { "name": "A. Rivera", "knownAffiliations": ["Claude Code", "Salesforce"] },
+    { "name": "J. Okonkwo", "knownAffiliations": ["Claude Code", "Google"] }
   ],
   "ollama": [
     { "name": "Scott Stephenson", "knownAffiliations": ["Ollama"] }

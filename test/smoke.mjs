@@ -760,6 +760,46 @@ section('14. Viewer vocabulary tracks the roster');
     ok(`${HOT_KEYWORDS.length} subdomain patterns + ${SITEMAP_HOT_PATHS.length} sitemap paths, single source in ${SUBDOMAIN_SIGNALS_FILE}`);
   }
 
+  // Docs must name correlation rules that exist. §12 checks documented npm
+  // scripts and §11 documented company names; rule ids fell between them, and
+  // the how-to had drifted to describing three rules that were deleted in the
+  // retarget while omitting three that replaced them. A reader following that
+  // table would tune a rule id the engine has never heard of.
+  const { THEME_RULES, COUNT_RULES } = await import('../config/correlation-rules.mjs');
+  const realRules = new Set([...THEME_RULES, ...COUNT_RULES].map((r) => r.id));
+  const howto = fs.readFileSync(path.join(ROOT, 'docs/howto.md'), 'utf8');
+  // Only the rules table — a backticked id in the leading column of a table row.
+  const documented = [...howto.matchAll(/^\| `([a-z][a-z-]+)` \| (?:theme|count) \|/gm)].map((m) => m[1]);
+  const ghosts = documented.filter((id) => !realRules.has(id));
+  const undocumented = [...realRules].filter((id) => !documented.includes(id));
+  if (ghosts.length) bad(`docs/howto.md documents correlation rules that do not exist: ${ghosts.join(', ')}`);
+  else if (undocumented.length) bad(`correlation rules missing from docs/howto.md: ${undocumented.join(', ')}`);
+  else ok(`${documented.length} correlation rules documented, all real, none missing`);
+
+  // Same drift, one layer down: the battlecard skill documents the feature
+  // taxonomy an LLM is told to fill in. It still listed the previous market's
+  // categories, so a generation run guided by it would emit feature ids the
+  // comparison matrix cannot render.
+  const { FEATURES } = await import('../core/features.mjs');
+  const realFeatures = new Set(FEATURES.map((f) => f.id));
+  const realCats = new Set(FEATURES.map((f) => f.category));
+  let skillChecked = 0;
+  const skillProblems = [];
+  for (const base of ['.claude/skills', '.agents/skills']) {
+    const file = path.join(ROOT, base, 'signal-battlecard', 'SKILL.md');
+    if (!fs.existsSync(file)) continue;
+    skillChecked++;
+    const md = fs.readFileSync(file, 'utf8');
+    for (const m of md.matchAll(/^- \*\*([a-z0-9-]+)\*\*: (.+)$/gm)) {
+      if (!realCats.has(m[1])) { skillProblems.push(`${base}: category "${m[1]}"`); continue; }
+      for (const id of m[2].split(',').map((s) => s.trim())) {
+        if (!realFeatures.has(id)) skillProblems.push(`${base}: feature "${id}"`);
+      }
+    }
+  }
+  if (skillProblems.length) bad(`battlecard skill documents features core/features.mjs does not define: ${skillProblems.join(', ')}`);
+  else ok(`${skillChecked} battlecard skill copies match the ${FEATURES.length}-feature registry`);
+
   // A sidebar click means something different in each mode, and only the modes
   // that scope their view to a company may show one selected. Assert the hint
   // table covers every mode so a new mode cannot ship with a silent teleport.

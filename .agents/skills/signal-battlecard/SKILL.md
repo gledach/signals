@@ -109,10 +109,10 @@ The battlecard generator expects JSON from the LLM:
 Features compared in battlecards come from `features.mjs`. Categories:
 
 - **compliance**: soc2, hipaa, gdpr, eu-ai-act, data-residency-eu, pii-redaction
-- **voice**: multilingual, voice-cloning, low-latency, interruption-handling, context-graphs
-- **integrations**: salesforce, hubspot, zendesk, webhook-api, bpo-partner
-- **deployment**: inbound, outbound, chat-channel, no-code-builder
-- **enterprise**: sso-saml, rbac, sla-uptime, audit-logs, human-escalation
+- **capability**: prompt-to-app, full-repo-edit, terminal-exec, multi-file-edit, model-choice, git-native
+- **surface**: surface-browser, surface-ide, surface-cli
+- **ownership**: deploy-hosting, code-export, self-host, free-tier
+- **enterprise**: sso-saml, rbac, sla-uptime, audit-logs, team-collab, webhook-api
 
 Status values: `yes` | `partial` | `no` | `unknown`
 

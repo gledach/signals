@@ -90,7 +90,7 @@ Sales reps quoting battlecards in live calls need to trust the claims. Today: *"
 Three tables with full provenance (added as new `sql/NNN-*.sql` migrations):
 
 - **`entities`** — typed: `person`, `company`, `product`, `integration`, `quote`, `event`, `customer_relationship`. Each with aliases, attributes, confidence, verified flag.
-- **`relationships`** — RDF-style triples: subject → predicate → object. e.g., `Bret Taylor → is_role_of → Claude Code` with `{role: "CEO", since: "2023"}`.
+- **`relationships`** — RDF-style triples: subject → predicate → object. e.g., `A. Rivera → is_role_of → Claude Code` with `{role: "CEO", since: "2023"}`.
 - **`facts`** — natural-language claims: *"Claude Code ARR = $100M as of 2026-Q1"* with source snippets, contested flag, verified flag.
 
 Every row in every table tracks **sources[]** — references into signal hashIds or transcript file+offset. Click any entity/fact → see the verbatim evidence it came from.
@@ -105,13 +105,13 @@ Fifth tab next to Feed / Battle / Market / Report. Queue-based triage UI:
 [Review queue (12)] [Verified (47)] [Contested (3)] [Rejected (9)]
 
 People
-  ✓ Bret Taylor · CEO · 14 sources · verified 2026-04-15
-  ✓ Clay Bavor · Co-founder · 7 sources · verified 2026-04-15
-  ? Duncan Smuthers · role unknown · 1 source   [✓ verify] [✗ reject] [✎ edit]
+  ✓ A. Rivera · CEO · 14 sources · verified 2026-04-15
+  ✓ J. Okonkwo · Co-founder · 7 sources · verified 2026-04-15
+  ? M. Lindqvist · role unknown · 1 source      [✓ verify] [✗ reject] [✎ edit]
 
 Customers (verified: 11 / rumored: 3)
-  ✓ Sutter Health · healthcare · from FWhOcGMuWUQ at 4:12
-  ? Wayfair · logistics · low confidence           [✓ verify] [✗ reject] [✎ edit]
+  ✓ Northwind Platform Eng · org-wide · from FWhOcGMuWUQ at 4:12
+  ? Contoso Dev Tools · team · low confidence   [✓ verify] [✗ reject] [✎ edit]
 
 Facts
   ✓ "100M ARR in 21 months"  3 sources, verified
