@@ -40,6 +40,10 @@ const SEED_FIELDS = [
   'hashId', 'companyId', 'sourceKind', 'sourceUrl', 'title', 'link', 'pubDate',
   'signalType', 'confidence', 'companyRelevance', 'classifyMethod',
   'impactScore', 'impactBand', 'firstSeen', 'rationale',
+  // Convergences carry a structured citation graph. Exporting one WITHOUT it ships a
+  // pattern claim with no supporting evidence — which is the exact failure the
+  // convergence rebuild exists to prevent, reintroduced through the demo.
+  'evidence',
 ];
 
 // Belt and braces: fill anything required that is somehow absent, so an older or
@@ -55,6 +59,9 @@ const REQUIRED_DEFAULTS = {
 };
 const MAX_ROWS = 400;
 const SUMMARY_MAX = 240;
+// A convergence's summary IS its content — the evidence listing. Truncating it at the
+// same length as a news blurb cuts mid-citation and reads as a rendering bug.
+const SUMMARY_MAX_CONVERGENCE = 900;
 
 function readSeed() {
   if (!fs.existsSync(SEED_FILE)) return [];
@@ -90,7 +97,10 @@ async function doExport() {
   const out = picked.slice(0, MAX_ROWS).map((s) => {
     const row = {};
     for (const f of SEED_FIELDS) if (s[f] !== undefined && s[f] !== null) row[f] = s[f];
-    if (s.summary) row.summary = String(s.summary).slice(0, SUMMARY_MAX);
+    if (s.summary) {
+      const cap = s.signalType === 'convergence' ? SUMMARY_MAX_CONVERGENCE : SUMMARY_MAX;
+      row.summary = String(s.summary).slice(0, cap);
+    }
     return row;
   });
 

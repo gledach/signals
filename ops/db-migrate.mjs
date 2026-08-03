@@ -117,8 +117,11 @@ async function maybeSeedDemo(client) {
   const count = await client.execute('SELECT COUNT(*) AS c FROM signals');
   if (Number(count.rows[0]?.c || 0) > 0) return;
 
-  const { CONFIG_ORIGIN, CONFIG_FILE } = await import('../config/companies.mjs');
-  if (CONFIG_ORIGIN !== 'default') {
+  const { CONFIG_FILE } = await import('../config/companies.mjs');
+  // Compare the RESOLVED file, not how it was resolved. Pointing SIGNALS_COMPANIES at
+  // the shipped default is still the shipped default, and keying off the origin label
+  // would skip seeding for a roster identical to the one the demo data belongs to.
+  if (CONFIG_FILE !== 'config/companies.default.mjs') {
     console.log(`[db:migrate] skipping demo data — you have your own roster (${CONFIG_FILE}).`);
     console.log('[db:migrate] run `npm run fetch` to start collecting signals for it.');
     return;

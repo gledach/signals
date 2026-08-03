@@ -139,17 +139,24 @@ Two fixes, in order:
    concern: Reddit restricts commercial use of unauthenticated access, and a four-rung
    fallback ladder is, honestly, four ways of routing around a block.
 
-### 2. Refresh the demo seed before promoting the repo
+### 2. ~~Refresh the demo seed~~ — DONE 2026-08-03
 
-`npm run demo:export`. **Deliberately deferred — operator said "maybe in the next weeks".**
+The seed now holds **351 signals across all 14 company ids, including 56 convergences
+with their evidence intact**, up from 159 signals and no convergences.
 
-More urgent now than when this was written: the shipped seed holds 159 signals while the
-live database holds 1,139 with 57 convergences. The demo currently under-sells the tool
-by roughly 7x.
+Two things were fixed in the process, both worth knowing:
 
-The current seed predates the answer-engine work entirely, so it under-sells what the tool
-now does, and a dated snapshot reads as abandoned after a few weeks. Do this immediately
-before pointing anyone at the repository, not earlier.
+`evidence` was never in the export field list, so the seed would have shipped
+convergences as bare pattern claims with no citations — the exact failure the convergence
+rebuild exists to prevent, reintroduced through the demo. Convergence summaries also get
+a longer cap than news blurbs, because for them the summary IS the content.
+
+The auto-seed guard compared how the roster was RESOLVED rather than which file it
+resolved to, so pointing `SIGNALS_COMPANIES` at the shipped default was treated as a
+custom roster and skipped seeding. It now compares the file.
+
+Re-run `npm run demo:export` again before publishing if more collection happens — the
+snapshot is dated.
 
 ### 3. Sanity-check the 57 convergences against the rebuilt scoring
 
