@@ -308,6 +308,10 @@ matter:
 | `CI_VIEWER_URL` | optional | Dashboard URL clicked toasts open. Default `http://localhost:5180` |
 | `CI_TAVILY_MONTHLY_BUDGET` | optional | Tavily credit cap. Default 800 |
 | `CI_TAVILY_MIN_HOURS_BETWEEN_RUNS` | optional | Tavily cooldown. Default 12 |
+| `SIGNALS_COMPANIES` | optional | Path to a roster module, overriding `config/companies.local.mjs` / `.default.mjs` |
+| `SIGNALS_FEEDS` | optional | Path to a feeds module. Feeds derive from the roster, so most deployments never set this |
+| `SIGNALS_DEAL_CONTEXT` | optional | Path to a deal-context module — the Battle filter axes. See `config/deal-context.default.mjs` |
+| `SIGNALS_SUBDOMAIN_SIGNALS` | optional | Path to a subdomain/sitemap scoring module. See `config/subdomain-signals.default.mjs` |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | ⚠ | Set to `0` ONLY for corporate-proxy unblock; prefer `NODE_EXTRA_CA_CERTS` |
 | `NODE_EXTRA_CA_CERTS` | optional | Path to corporate root CA PEM — proper TLS fix |
 

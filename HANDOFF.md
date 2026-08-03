@@ -18,7 +18,7 @@ and run with no account and no API key.
 | | |
 |---|---|
 | Repo | `github.com/apsolut/apsolut-signal`, branch `main`, 12 commits |
-| Tests | `npm test` — 251 assertions, 13 gate checks + 5 fixture suites, **all green** |
+| Tests | `npm test` — 260 assertions, 14 gate checks + 5 fixture suites, **all green** |
 | Security | `npm audit` — **0 vulnerabilities** |
 | Data | **1,139 signals** across 14 company ids, 57 convergences. By source: news 572, reviews 175, category 168, tavily 79, releases 40, reddit 33, hn 12, aeo 3 |
 | Anchor | `config/companies.local.mjs` sets `isMain: claudecode` — gitignored, extends the shipped default rather than replacing it |
@@ -92,6 +92,28 @@ These are load-bearing. Each one exists because breaking it already caused a rea
 maps, HN queries, classifier collision warnings. Enforced by the gate. This rule exists
 because brand literals scattered through the code made a previous retarget a 34-file
 change, and left the ingest layer silently fetching a market nobody tracked any more.
+
+**No MARKET vocabulary outside `config/` either.** The brand rule is only half of it, and
+the weaker half. The gate can only recognise brands that are ON the roster — a vendor the
+roster was never told about is invisible to it. That is how the previous market's segment
+names, and the names of its actual vendors and customers, survived every brand scrub:
+sidebar category labels, deal-context filter axes, and three separate copies of the
+subdomain/sitemap scoring tables. Segment vocabulary now lives beside the roster:
+
+| File | Drives |
+|---|---|
+| `config/deal-context.*.mjs` | Battle's relevance-ranking axes, its filter chips, and the talk-track form |
+| `config/subdomain-signals.*.mjs` | What a new subdomain or sitemap path is worth — read by `cert-watch`, `sitemap-watch` AND `serve.mjs` |
+
+Both follow the roster's override contract (`$SIGNALS_*` → `.local.mjs` → `.default.mjs`)
+and validate on load, so a malformed axis throws at startup instead of rendering a chip
+that silently counts zero forever.
+
+**One scoring table, imported — never copied.** `serve.mjs` once carried a hand-maintained
+duplicate of `cert-watch`'s keyword list under a comment claiming they were kept in sync.
+They were not, and a third copy existed in `sitemap-watch` that nobody had noticed. A
+duplicated scoring table fails quietly: every copy keeps scoring, just differently, so the
+dashboard disagrees with the watcher that produced the data it is displaying.
 
 **`core/store.mjs` is the only database path.** Importing the driver anywhere else is a
 bug, not a shortcut.

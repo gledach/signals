@@ -856,6 +856,10 @@ Signal ships a custom loader in `env.mjs` that uses **first-non-empty-wins**. It
 | `CI_TOAST_THRESHOLD` | ❌ | `80` | Min impact score to fire a toast (0–100, 101 disables) |
 | `CI_TOAST_MAX_PER_RUN` | ❌ | `5` | Max toasts per process run |
 | `CI_VIEWER_URL` | ❌ | `http://localhost:5180` | Base URL clicked toasts open |
+| `SIGNALS_COMPANIES` | ❌ | `config/companies.local.mjs` → `.default.mjs` | Roster module path |
+| `SIGNALS_FEEDS` | ❌ | `config/feeds.local.mjs` → `.default.mjs` | Feed module path (feeds derive from the roster) |
+| `SIGNALS_DEAL_CONTEXT` | ❌ | `config/deal-context.local.mjs` → `.default.mjs` | Battle filter axes |
+| `SIGNALS_SUBDOMAIN_SIGNALS` | ❌ | `config/subdomain-signals.local.mjs` → `.default.mjs` | Subdomain + sitemap scoring patterns |
 | `CI_WHISPER_ENABLED` | ❌ | `false` | Enable local Whisper fallback when captions missing |
 | `CI_WHISPER_MODEL` | ❌ | `base.en` | Whisper model name |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | ⚠ | — | Set `"0"` ONLY for corporate-proxy unblock; prefer `NODE_EXTRA_CA_CERTS` |

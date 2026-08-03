@@ -54,6 +54,16 @@ for (const [i, d] of cfg.dimensions.entries()) {
 const dupes = cfg.dimensions.map((d) => d.id).filter((id, i, a) => a.indexOf(id) !== i);
 if (dupes.length) throw new Error(`${where}: duplicate dimension ids: ${dupes.join(', ')}`);
 
+// Each dimension id becomes a query param in the dashboard's URL state, so it
+// cannot collide with the params the viewer already owns — a dimension named
+// "mode" or "vs" would overwrite the current view or the compared competitor
+// on the next filter click, and the damage would only show on reload.
+const RESERVED_URL_PARAMS = new Set(['mode', 'vs', 'company', 'signal']);
+const reserved = cfg.dimensions.map((d) => d.id).filter((id) => RESERVED_URL_PARAMS.has(id));
+if (reserved.length) {
+  throw new Error(`${where}: dimension ids collide with reserved URL params: ${reserved.join(', ')}`);
+}
+
 export const DEAL_CONTEXT_DIMENSIONS = cfg.dimensions;
 export const DEAL_CONTEXT_FILE = where;
 
