@@ -498,7 +498,7 @@ function renderSidebarCompanyRow(c) {
 
   // Explain what a click will DO, per mode, rather than just naming the company.
   const hint = state.mode === 'battle'
-    ? (c.id === anchorId ? 'Anchor — click another company to compare it' : `Compare against ${nameOf(anchorId)}`)
+    ? (c.id === anchorId ? 'Subject of every comparison — change it in the Compare dropdown' : `Compare ${nameOf(anchorId)} against this`)
     : state.mode === 'feed'
       ? 'Show signals for this company'
       : `Open Battle: ${nameOf(anchorId)} vs ${c.name}`;
@@ -529,24 +529,18 @@ function selectCompanyFromSidebar(id) {
     writeUrlState();
     document.getElementById('battlecard-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } else if (state.mode === 'battle') {
-    // Clicking the anchor used to return silently — the click landed, nothing moved, and
-    // there was no way to tell whether the app was broken or the company was special.
-    // A company cannot be compared against itself, so make the click mean the only other
-    // sensible thing: SWAP the two sides.
+    // The sidebar picks WHO THE SUBJECT IS COMPARED AGAINST. It never moves the subject.
+    //
+    // An earlier version swapped the two sides when you clicked the anchor, on the
+    // reasoning that a silent no-op reads as broken. That was the wrong fix: it made the
+    // subject jump from company to company as you clicked around, which is the same
+    // unpredictability in a new costume. The subject is a setting; settings change in
+    // one deliberate place, not as a side effect of browsing.
     if (id === battleAnchorId()) {
-      const other = state.battleCompetitor;
-      if (other && other !== id) {
-        state.battleAnchor = other;
-        state.battleCompetitor = id;
-        try { localStorage.setItem('signal.battleAnchor', state.battleAnchor); } catch {}
-        flashHint(`Swapped — comparing ${nameOf(other)} against ${nameOf(id)}`);
-      } else {
-        flashHint(`${nameOf(id)} is the anchor. Pick another company to compare it against.`);
-        return;
-      }
-    } else {
-      state.battleCompetitor = id;
+      flashHint(`${nameOf(id)} is the subject of every comparison. Use the "Compare" dropdown to change it.`);
+      return;
     }
+    state.battleCompetitor = id;
     populateBattleSelector();
     renderBattle();
     renderSidebar();
@@ -2324,6 +2318,20 @@ function wireBattleSelector() {
     });
   }
 
+  const resetBtn = document.getElementById('battle-anchor-reset');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      state.battleAnchor = null;
+      try { localStorage.removeItem('signal.battleAnchor'); } catch {}
+      if (state.battleCompetitor === state.mainId) state.battleCompetitor = null;
+      populateBattleSelector();
+      renderSidebar();
+      writeUrlState();
+      renderBattle();
+      flashHint(`Subject reset to ${nameOf(battleAnchorId())}`);
+    });
+  }
+
   const themSel = document.getElementById('battle-them-select');
   if (themSel) {
     themSel.addEventListener('change', (e) => {
@@ -2545,11 +2553,20 @@ function populateBattleSelector() {
   }
   if (note) {
     note.textContent = anchorIsImplicit()
-      ? 'no anchor configured — set isMain in config/companies.local.mjs to pin one'
+      ? 'no subject configured — set isMain in config/companies.local.mjs to pin one'
       : '';
     note.title = anchorIsImplicit()
-      ? 'Battle needs a side to compare from. With none configured it uses the first tracked company.'
+      ? 'Battle needs a subject to compare from. With none configured it uses the first tracked company.'
       : '';
+  }
+
+  // Offer a way back to the configured subject once the session has overridden it.
+  // Without this an override is sticky across reloads with no visible way to undo it.
+  const reset = document.getElementById('battle-anchor-reset');
+  if (reset) {
+    const overridden = !!state.battleAnchor && state.battleAnchor !== state.mainId;
+    reset.classList.toggle('hidden', !overridden);
+    if (overridden && state.mainId) reset.textContent = `reset to ${nameOf(state.mainId)}`;
   }
 }
 

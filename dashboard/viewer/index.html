@@ -128,11 +128,16 @@
         <!-- The comparison anchor, shown rather than implied. Without this the view
              silently anchored on whichever company happened to be first in the roster,
              and reordering config changed the comparison with nothing saying so. -->
+        <!-- The subject of every comparison, and who it is measured against. The subject
+             is a SETTING: it changes only here, never as a side effect of clicking around
+             the sidebar. -->
         <div class="battle-anchor" id="battle-anchor-row">
-          <label for="battle-anchor-select">Comparing</label>
-          <select id="battle-anchor-select" aria-label="Anchor company"></select>
-          <span class="battle-anchor-vs">vs</span>
-          <select id="battle-them-select" aria-label="Compared against"></select>
+          <label class="battle-anchor-label" for="battle-anchor-select">Compare</label>
+          <select id="battle-anchor-select" class="battle-subject" aria-label="Subject of the comparison"></select>
+          <span class="battle-anchor-vs">against</span>
+          <select id="battle-them-select" aria-label="Company to compare against"></select>
+          <button type="button" id="battle-anchor-reset" class="battle-anchor-reset hidden"
+                  title="Restore the subject configured in config/companies.local.mjs">reset</button>
           <span class="battle-anchor-note" id="battle-anchor-note"></span>
         </div>
         <div class="page-actions">
