@@ -893,6 +893,20 @@ header #refresh-meta { margin-left: auto; }
   font-weight: 600;
   border-color: var(--accent);
 }
+/* Locked to the configured subject. A disabled <select> defaults to looking
+   greyed-out and broken; this reads as a stated fact instead — same emphasis as
+   the live control, minus the affordance. No dropdown arrow, no hover, and a
+   normal cursor so it never invites a click that cannot do anything. */
+.battle-anchor select.battle-subject.locked {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border-color: transparent;
+  color: var(--text);
+  opacity: 1;
+  padding-left: 0;
+  cursor: default;
+}
 .battle-anchor-reset {
   font: inherit; font-size: 0.9em;
   background: none; border: none; padding: 0 2px;

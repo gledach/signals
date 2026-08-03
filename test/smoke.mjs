@@ -800,6 +800,58 @@ section('14. Viewer vocabulary tracks the roster');
   if (skillProblems.length) bad(`battlecard skill documents features core/features.mjs does not define: ${skillProblems.join(', ')}`);
   else ok(`${skillChecked} battlecard skill copies match the ${FEATURES.length}-feature registry`);
 
+  // Who Battle compares FROM. Config must beat a stored override, always.
+  //
+  // Extracted from the viewer source and executed against a stub `state` — the
+  // viewer is a plain browser script with no module boundary, so this is the
+  // only way to test its behaviour rather than its shape. Worth the awkwardness:
+  // the subject picker has now been wrong twice (rendered but unwired, then
+  // swapping the subject as you browsed), and the override it used to write is
+  // persisted in localStorage, so a regression silently changes what every
+  // battlecard, kill shot and PDF means on every future visit.
+  {
+    const src = ['configuredAnchorId', 'anchorIsImplicit', 'battleAnchorId']
+      .map((fn) => viewer.match(new RegExp(`function ${fn}\\(\\) \\{[\\s\\S]*?\\n\\}`))?.[0])
+      .filter(Boolean);
+    if (src.length !== 3) {
+      bad(`could not extract the anchor resolvers from viewer.js (found ${src.length}/3)`);
+    } else {
+      const make = new Function('state', `${src.join('\n')} return { battleAnchorId, anchorIsImplicit };`);
+      const roster = [{ id: 'acme' }, { id: 'globex' }, { id: 'initech' }];
+      const cases = [
+        ['config wins over stored override',
+          { mainId: 'globex', battleAnchor: 'acme', companies: roster }, 'globex', false],
+        ['isUs wins over stored override',
+          { mainId: null, battleAnchor: 'acme', companies: [{ id: 'acme' }, { id: 'globex', isUs: true }, { id: 'initech' }] }, 'globex', false],
+        ['market-watch honours the session pick',
+          { mainId: null, battleAnchor: 'initech', companies: roster }, 'initech', true],
+        ['market-watch with no pick falls back to first',
+          { mainId: null, battleAnchor: null, companies: roster }, 'acme', true],
+        ['a stored override naming an unknown company is ignored',
+          { mainId: null, battleAnchor: 'deleted-co', companies: roster }, 'acme', true],
+      ];
+      let anchorFail = false;
+      for (const [label, stub, wantAnchor, wantImplicit] of cases) {
+        const api = make(stub);
+        const gotAnchor = api.battleAnchorId();
+        const gotImplicit = api.anchorIsImplicit();
+        if (gotAnchor === wantAnchor && gotImplicit === wantImplicit) continue;
+        bad(`anchor: ${label} → got ${gotAnchor}/implicit=${gotImplicit}, want ${wantAnchor}/implicit=${wantImplicit}`);
+        anchorFail = true;
+      }
+      if (!anchorFail) ok(`${cases.length} anchor-resolution cases — config always beats a stored override`);
+    }
+
+    // The picker must be locked exactly when config decides the subject, and the
+    // handler must refuse input in that state even if the markup says otherwise.
+    const locksSelect = /anchorSel\.disabled = locked/.test(viewer)
+      && /const locked = !anchorIsImplicit\(\)/.test(viewer);
+    const guardsHandler = /addEventListener\('change'[\s\S]{0,120}if \(!anchorIsImplicit\(\)\) return;/.test(viewer);
+    if (!locksSelect) bad('battle anchor select is not disabled when a subject is configured');
+    else if (!guardsHandler) bad('battle anchor change handler does not refuse input when a subject is configured');
+    else ok('anchor picker locked by config, handler guarded independently of the markup');
+  }
+
   // A sidebar click means something different in each mode, and only the modes
   // that scope their view to a company may show one selected. Assert the hint
   // table covers every mode so a new mode cannot ship with a silent teleport.

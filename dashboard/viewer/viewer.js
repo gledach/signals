@@ -576,9 +576,11 @@ function selectCompanyFromSidebar(id) {
     // reasoning that a silent no-op reads as broken. That was the wrong fix: it made the
     // subject jump from company to company as you clicked around, which is the same
     // unpredictability in a new costume. The subject is a setting; settings change in
-    // one deliberate place, not as a side effect of browsing.
+    // one deliberate place — now config, not a dropdown.
     if (id === battleAnchorId()) {
-      flashHint(`${nameOf(id)} is the subject of every comparison. Use the "Compare" dropdown to change it.`);
+      flashHint(anchorIsImplicit()
+        ? `${nameOf(id)} is the subject of every comparison. Use the "Compare" dropdown to change it.`
+        : `${nameOf(id)} is the subject of every comparison — set by isMain in config/companies.local.mjs.`);
       return;
     }
     state.battleCompetitor = id;
@@ -593,7 +595,9 @@ function selectCompanyFromSidebar(id) {
     // sidebar caption announces this ("click opens Battle") so leaving the
     // mode is an advertised shortcut rather than the view vanishing.
     if (id === battleAnchorId()) {
-      flashHint(`${nameOf(id)} is the comparison anchor — open Battle to change it.`);
+      flashHint(anchorIsImplicit()
+        ? `${nameOf(id)} is the comparison anchor — open Battle to change it.`
+        : `${nameOf(id)} is the comparison anchor — set by isMain in config/companies.local.mjs.`);
       return;
     }
     state.battleCompetitor = id;
@@ -2348,32 +2352,22 @@ function wireBattleSelector() {
   // The visible anchor row. These were rendered but never wired, so they showed the
   // right values and did nothing — the worst kind of control, because it looks broken
   // rather than absent.
+  // The subject picker only accepts input in market-watch mode. With a subject
+  // in config the control is disabled, so this listener never fires — the guard
+  // below is belt-and-braces against a future render path that forgets to lock it.
   const anchorSel = document.getElementById('battle-anchor-select');
   if (anchorSel) {
     anchorSel.addEventListener('change', (e) => {
+      if (!anchorIsImplicit()) return;
       state.battleAnchor = e.target.value;
-      // The opponent cannot be the anchor. Clear it and let the next render pick a
-      // different one rather than showing a company compared against itself.
+      // The opponent cannot be the subject. Clear it and let the next render pick
+      // a different one rather than showing a company compared against itself.
       if (state.battleCompetitor === state.battleAnchor) state.battleCompetitor = null;
       try { localStorage.setItem('signal.battleAnchor', state.battleAnchor); } catch {}
       populateBattleSelector();
       renderSidebar();
       writeUrlState();
       renderBattle();
-    });
-  }
-
-  const resetBtn = document.getElementById('battle-anchor-reset');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-      state.battleAnchor = null;
-      try { localStorage.removeItem('signal.battleAnchor'); } catch {}
-      if (state.battleCompetitor === state.mainId) state.battleCompetitor = null;
-      populateBattleSelector();
-      renderSidebar();
-      writeUrlState();
-      renderBattle();
-      flashHint(`Subject reset to ${nameOf(battleAnchorId())}`);
     });
   }
 
@@ -2605,21 +2599,39 @@ function wireObjectionSearch() {
  * INVISIBLE — the view silently compared against whatever came first in the roster
  * object, so reordering config changed the comparison with nothing indicating it.
  */
-function battleAnchorId() {
-  if (state.battleAnchor && state.companies.some((c) => c.id === state.battleAnchor)) {
-    return state.battleAnchor;
-  }
+/** The subject the CONFIG names — `isUs`, or `isMain`. Null in market-watch mode. */
+function configuredAnchorId() {
   return state.mainId
     || state.companies.find((c) => c.isUs)?.id
     || state.companies.find((c) => c.isMain)?.id
-    || state.companies[0]?.id
     || null;
 }
 
-/** True when the anchor is a fallback rather than something the operator configured. */
+// Who every Battle comparison is made FROM.
+//
+// When the config names a subject it WINS, unconditionally — the dropdown that
+// used to override it is disabled, and any override left in localStorage by an
+// earlier build is ignored rather than honoured. Which company you compare from
+// is a deployment decision that belongs in config/companies.local.mjs, not a
+// control you can nudge while browsing: an override was persisted, so a stray
+// click changed what every battlecard, kill shot and PDF meant on every future
+// visit, with nothing on screen saying it had happened.
+//
+// With NO configured subject there is nothing to defer to, so the picker stays
+// live — it is the only way to give Battle a subject at all, and disabling it
+// there would pin the view to whichever company happens to sort first.
+function battleAnchorId() {
+  const configured = configuredAnchorId();
+  if (configured) return configured;
+  if (state.battleAnchor && state.companies.some((c) => c.id === state.battleAnchor)) {
+    return state.battleAnchor;
+  }
+  return state.companies[0]?.id || null;
+}
+
+/** True when no config names a subject, so Battle is working off a fallback. */
 function anchorIsImplicit() {
-  return !state.battleAnchor && !state.mainId
-    && !state.companies.some((c) => c.isUs || c.isMain);
+  return !configuredAnchorId();
 }
 
 function populateBattleSelector() {
@@ -2642,9 +2654,18 @@ function populateBattleSelector() {
   const note = document.getElementById('battle-anchor-note');
 
   if (anchorSel) {
-    anchorSel.innerHTML = state.companies
+    // Locked to the configured subject. Rendered as a select rather than plain
+    // text so the row keeps its shape and still says WHAT the subject is — the
+    // point is that it cannot be changed here, not that it is hidden.
+    const locked = !anchorIsImplicit();
+    anchorSel.innerHTML = (locked ? state.companies.filter((c) => c.id === anchorId) : state.companies)
       .map((c) => `<option value="${esc(c.id)}" ${c.id === anchorId ? 'selected' : ''}>${esc(c.name)}</option>`)
       .join('');
+    anchorSel.disabled = locked;
+    anchorSel.classList.toggle('locked', locked);
+    anchorSel.title = locked
+      ? `Every comparison is made from ${nameOf(anchorId)}. Change it in config/companies.local.mjs (isMain), not here.`
+      : 'No subject is configured — pick which company to compare from.';
   }
   if (themSel) {
     themSel.innerHTML = others
@@ -2660,14 +2681,12 @@ function populateBattleSelector() {
       : '';
   }
 
-  // Offer a way back to the configured subject once the session has overridden it.
-  // Without this an override is sticky across reloads with no visible way to undo it.
-  const reset = document.getElementById('battle-anchor-reset');
-  if (reset) {
-    const overridden = !!state.battleAnchor && state.battleAnchor !== state.mainId;
-    reset.classList.toggle('hidden', !overridden);
-    if (overridden && state.mainId) reset.textContent = `reset to ${nameOf(state.mainId)}`;
-  }
+  // The reset button existed to undo an override of the CONFIGURED subject.
+  // Config is now authoritative, so that override cannot happen and there is
+  // nothing to reset to — in market-watch mode there is no configured subject
+  // to restore. Kept hidden rather than deleted from the markup so an older
+  // bookmarked page does not hit a missing element.
+  document.getElementById('battle-anchor-reset')?.classList.add('hidden');
 }
 
 async function renderBattle() {
