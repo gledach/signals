@@ -71,3 +71,4 @@ briefs/*.md
 # public repo. It was stripped from history on 2026-08-02; this keeps the
 # working copy usable without re-committing it.
 .apsolut-agents/
+.gstack/

@@ -39,6 +39,9 @@
 //               closed-source products rather than guessing.
 //   subreddits  Higher signal-to-noise than site-wide search, but Reddit rate-limits
 //               unauthenticated access hard; treat these as best-effort.
+//   sidebarNote OPTIONAL short badge shown beside the company in the dashboard sidebar
+//               ("employer", "incumbent", "partner"). Keep it to one word — it renders
+//               as a pill. Omit unless it genuinely helps you read the list.
 //   changelog   Informational for now. Several vendors render changelogs as client-side
 //               HTML with no RSS, which needs an HTML-diff watcher, not a feed.
 

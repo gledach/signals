@@ -115,6 +115,7 @@ const server = http.createServer(async (req, res) => {
         name: c.name,
         isUs: !!c.isUs,
         isMain: c.id === MAIN_COMPANY_ID,
+        sidebarNote: c.sidebarNote ?? null,   // optional per-company badge, from config
         domain: c.domain,
         category: c.category,           // needed by Market table grouping
         market: c.market,                // 'pro-dev' | 'vibe-coding' — drives grid scoping

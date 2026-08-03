@@ -264,12 +264,18 @@ body.sidebar-collapsed .app-shell { grid-template-columns: 60px minmax(0, 1fr); 
 .sb-icon svg { display: block; width: 16px; height: 16px; }
 .sb-label {
   flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  overflow: hidden;
+}
+/* The company name is the part that truncates; badges keep their full width. */
+.sb-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 .sb-count {
   background: var(--panel-hover);
@@ -289,6 +295,11 @@ body.sidebar-collapsed .app-shell { grid-template-columns: 60px minmax(0, 1fr); 
 }
 .sb-pill {
   display: inline-block;
+  /* Never let a badge be ellipsised. The label row truncates on overflow, which
+     turned "anchor" into "ANCHO…" — a badge that is cut off communicates nothing,
+     so the company NAME gives way first. */
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;

@@ -336,9 +336,13 @@ const SIDEBAR_GROUP_ORDER = ['AI coding-agents', 'conversational-ai-enterprise',
 // Companies with a one-word context pill — surfaces ambient self-awareness.
 // "employer" on OpenAI Codex keeps the "operator lens" thinking-discipline step live
 // every time the sidebar is visible.
-const SIDEBAR_CONTEXT_PILLS = {
-  codex: 'employer',
-};
+// Per-company sidebar badge, read from the roster (`sidebarNote` on a company).
+// This used to be a hardcoded map in this file, which survived every brand scrub
+// because it keys by company ID and the gate checks display names. Its single entry
+// was a stale annotation describing a previous deployment's relationship to a vendor.
+function sidebarNoteFor(company) {
+  return company?.sidebarNote || '';
+}
 
 function wireSidebar() {
   // Collapse toggle — persists across reloads via localStorage. Matches Linear's
@@ -482,7 +486,7 @@ function renderSidebarCompanyRow(c) {
     ? `<img src="${esc(fav)}" alt="" loading="lazy" onerror="this.style.display='none';this.parentNode.textContent='●';" />`
     : '●';
 
-  const pillText = SIDEBAR_CONTEXT_PILLS[c.id];
+  const pillText = sidebarNoteFor(c);
   const pill = pillText ? `<span class="sb-pill" title="${esc(pillText)}">${esc(pillText)}</span>` : '';
   const usPill = c.isUs ? `<span class="sb-pill sb-pill-us">us</span>` : '';
 
@@ -501,7 +505,7 @@ function renderSidebarCompanyRow(c) {
 
   return `<button class="sb-company ${isActive ? 'active' : ''} ${isAnchor ? 'is-anchor' : ''}" data-sb-company="${esc(c.id)}" title="${esc(c.name)} — ${esc(hint)}">
     <span class="sb-fav">${favHtml}</span>
-    <span class="sb-label">${esc(c.name)}${usPill}${anchorPill}${pill}</span>
+    <span class="sb-label"><span class="sb-name">${esc(c.name)}</span>${usPill}${anchorPill}${pill}</span>
     ${fresh24 ? `<span class="sb-count" title="${fresh24} signal${fresh24 === 1 ? '' : 's'} in last 24h">${fresh24}</span>` : ''}
   </button>`;
 }
@@ -574,7 +578,7 @@ function renderCompetitorNav() {
   ];
   for (const c of list) {
     const btn = document.createElement('button');
-    btn.textContent = c.name + (c.isUs ? ' (us)' : '');
+    btn.textContent = c.name + (c.isUs ? ' (us)' : '');   // legacy hidden nav
     btn.dataset.id = c.id;
     if (c.id === state.currentCompany) btn.classList.add('active');
     btn.addEventListener('click', () => {
@@ -2610,7 +2614,7 @@ async function renderBattle() {
       <thead>
         <tr>
           <th></th>
-          <th><span class="team us">${esc(us.name)} <small>(us)</small></span><span class="team-domain">${esc(us.domain)}</span></th>
+          <th><span class="team us">${esc(us.name)} <small>${us.isUs ? '(us)' : '(anchor)'}</small></span><span class="team-domain">${esc(us.domain)}</span></th>
           <th><span class="team them">${esc(them.name)}</span><span class="team-domain">${esc(them.domain)}</span></th>
         </tr>
       </thead>
@@ -2751,7 +2755,7 @@ function renderFeatureMatrixPanel(ourMd, theirMd, us, them) {
   <div class="feat-matrix">
     <div class="feat-matrix-head">
       <div class="feat-col-label">Feature</div>
-      <div class="feat-col-us">${esc(us.name)} <small>(us)</small></div>
+      <div class="feat-col-us">${esc(us.name)} <small>${us.isUs ? '(us)' : '(anchor)'}</small></div>
       <div class="feat-col-them">${esc(them.name)}</div>
     </div>`;
 
