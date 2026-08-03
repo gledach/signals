@@ -664,6 +664,54 @@ section('13. Anchor modes');
     else bad(`${label} → our=${reg.OUR_COMPANY_ID} main=${reg.MAIN_COMPANY_ID}, framing incomplete`);
   }
 
+  // Generation VOICE must be complete in every mode, and partisan in exactly one.
+  //
+  // The battlecard prompt interpolates these into the JSON field descriptions the
+  // model fills in. A mode missing one would splice `undefined` into the prompt;
+  // a mode whose descriptions still say "a rep would say" produces first-person
+  // sales copy for a deployment that sells nothing. That already shipped: cards
+  // read "We offer audit logs, RBAC and governance integrations" underneath a
+  // correctly neutral "Where <anchor> Wins" heading, because framing reached the
+  // headings and one audience line while a dozen field descriptions stayed
+  // rep-voiced.
+  const VOICE_KEYS = ['voiceRule', 'killShotGoal', 'objectionGoal', 'objectionSource', 'winThemeGoal'];
+  for (const [label, companies] of modes) {
+    const f = framing(companies);
+    const missing = VOICE_KEYS.filter((k) => typeof f[k] !== 'string' || !f[k].trim());
+    if (missing.length) { bad(`${label} framing is missing voice: ${missing.join(', ')}`); continue; }
+
+    // Test the FIELD GOALS for voice, not voiceRule: voiceRule necessarily
+    // quotes the pronouns it is banning, so a bare pronoun search there matches
+    // the prohibition itself. The goals are what the model fills in, so they are
+    // where seller voice actually leaks into output.
+    const goals = ['killShotGoal', 'objectionGoal', 'objectionSource', 'winThemeGoal'].map((k) => f[k]).join(' ');
+    const goalsAreRepVoiced = /\brep\b|\bprospect\b|on a call/i.test(goals);
+
+    if (f.hasHome) {
+      if (!/first person/i.test(f.voiceRule)) bad(`${label} has a home brand but its voice rule never licenses speaking for it`);
+      else ok(`${label} voice is partisan — correct, a home brand exists`);
+    } else if (!/THIRD PERSON/.test(f.voiceRule)) {
+      bad(`${label} has no home brand but its voice rule does not demand third person — this is how "We offer…" shipped`);
+    } else if (goalsAreRepVoiced) {
+      bad(`${label} has no home brand but its field goals still address a sales rep: ${goals.slice(0, 90)}…`);
+    } else ok(`${label} voice is third-person and its field goals address no seller`);
+  }
+
+  // The prompt must take its voice FROM framing, not restate it. A literal
+  // rep-voiced description in the prompt would override whatever framing says.
+  // Scoped to the PROMPT TEMPLATE, not the whole file: the comment above it
+  // quotes the old rep-voiced strings to explain what went wrong, and a
+  // whole-file search would flag the explanation as the defect.
+  const boot = fs.readFileSync(path.join(ROOT, 'cli/bootstrap-battlecard.mjs'), 'utf8');
+  const promptTemplate = boot.match(/const SYSTEM_PROMPT = `[\s\S]*?`;/)?.[0] || '';
+  if (!promptTemplate) {
+    bad('could not locate SYSTEM_PROMPT in cli/bootstrap-battlecard.mjs');
+  } else if (/a rep would say|how to respond>|what the prospect will say/.test(promptTemplate)) {
+    bad('the battlecard prompt hardcodes rep-voiced field descriptions — they must come from framing()');
+  } else if (!/\$\{FRAMING\.killShotGoal\}/.test(promptTemplate) || !/\$\{FRAMING\.voiceRule\}/.test(promptTemplate)) {
+    bad('the battlecard prompt does not interpolate the framing voice');
+  } else ok('battlecard prompt derives its voice from framing, not literals');
+
   // `isUs` implies being the subject — you are always your own focus.
   const both = buildRegistry({ companies: { ...base, acme: { ...base.acme, isUs: true, isMain: true } } });
   if (both.MAIN_COMPANY_ID === 'acme') ok('isUs implies isMain');

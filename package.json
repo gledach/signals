@@ -10,6 +10,7 @@
   },
   "scripts": {
     "help": "node cli/help.mjs",
+    "doctor": "node --env-file-if-exists=.env cli/doctor.mjs",
     "check:models": "node --env-file-if-exists=.env cli/check-models.mjs",
     "fetch": "node --env-file-if-exists=.env watchers/fetch-signals.mjs",
     "fetch:nollm": "node --env-file-if-exists=.env watchers/fetch-signals.mjs --no-llm",

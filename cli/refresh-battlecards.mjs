@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { COMPANIES, COMPETITOR_IDS, OUR_COMPANY_ID } from '../config/companies.mjs';
 import { hasApiKey } from '../pipeline/openrouter.mjs';
 import { loadIndex } from '../core/store.mjs';
-import { BATTLECARDS_DIR, fromRoot } from '../runtime/paths.mjs';
+import { BATTLECARDS_DIR, fromRoot, ROOT } from '../runtime/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BOOT = fromRoot('cli', 'bootstrap-battlecard.mjs');
@@ -35,9 +35,17 @@ if (!DRY_RUN && !hasApiKey()) {
 function runScript(script, args = []) {
   return new Promise((resolve) => {
     const t0 = Date.now();
+    // cwd is ROOT, not this file's directory. `--env-file-if-exists=.env`
+    // resolves against the child's cwd, so running from cli/ looked for
+    // cli/.env, printed ".env not found" on every single card, and worked
+    // anyway only because the parent had already loaded the real .env into an
+    // inherited environment. That is the same wrong-directory bug that once had
+    // the MCP server on an empty database — harmless here purely by accident,
+    // and it would stop being harmless the moment a child needed a key the
+    // parent did not happen to hold.
     const proc = spawn(process.execPath, ['--env-file-if-exists=.env', script, ...args], {
       stdio: 'inherit',
-      cwd: __dirname,
+      cwd: ROOT,
     });
     proc.on('exit', (code) => resolve({ code, ms: Date.now() - t0 }));
   });

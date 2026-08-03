@@ -199,6 +199,12 @@ const SECTIONS = [
         cmd: 'npm run help',
         desc: 'Print this cheat-sheet.',
       },
+      {
+        cmd: 'npm run doctor',
+        desc: 'Check what works and what each missing piece blocks — roster, database, keys, and what an MCP agent actually sees.',
+        when: 'After setup, after changing .env, or when something returns less than you expected.',
+        cost: '$0',
+      },
     ],
   },
 ];

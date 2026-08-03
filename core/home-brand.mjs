@@ -51,6 +51,20 @@ export function framing(COMPANIES, { marketLabel = 'this market' } = {}) {
       winThemesHeading: `Where ${main.name} Wins`,
       selfCardHeading: `${main.name} — reference profile`,
       sheetTitle: (them) => `${main.name} vs ${them}`,
+      // Generation voice. A single "stay even-handed" instruction cannot hold a
+      // prompt whose every field description says "a rep would say", "how to
+      // respond", "what the prospect will say" — the model follows the field
+      // descriptions, because those are what it is filling in. Cards generated
+      // under this mode came out saying "We offer audit logs" under a correctly
+      // neutral "Where <main> Wins" heading: framing had reached the headings
+      // and nothing else.
+      voiceRule:
+        'Write in the THIRD PERSON throughout. You do not work for any vendor here. '
+        + `Never write "we", "our" or "us" about ${main.name} or anyone else — name the company instead.`,
+      killShotGoal: `1-2 sentences — where ${main.name} is materially stronger than this vendor, stated as a factual contrast a buyer could verify`,
+      objectionGoal: `≤2 sentences — the even-handed counterpoint, including where the claim is fair`,
+      objectionSource: `the strongest argument a buyer would make FOR this vendor over ${main.name}`,
+      winThemeGoal: `3-5 concrete segments or use-cases where a buyer would pick ${main.name} over this vendor, grounded in this vendor's weaknesses`,
     };
   }
 
@@ -69,6 +83,12 @@ export function framing(COMPANIES, { marketLabel = 'this market' } = {}) {
       winThemesHeading: `Win Themes for ${us.name}`,
       selfCardHeading: `Our own self-card (${us.name})`,
       sheetTitle: (them) => `Battle Sheet — ${us.name} vs ${them}`,
+      // Partisan on purpose: there IS a home vendor and the reader sells for it.
+      voiceRule: `Write for a seller at ${us.name}. First person ("we", "our") refers to ${us.name} and is correct here.`,
+      killShotGoal: '1-2 sentences — a punchy counter a rep would say on a call',
+      objectionGoal: '≤2 sentences — how the rep should respond',
+      objectionSource: 'what the prospect will say in favour of the competitor',
+      winThemeGoal: `3-5 concrete segments or use-cases where a buyer would choose ${us.name}, grounded in this competitor's weaknesses`,
     };
   }
   return {
@@ -89,6 +109,15 @@ export function framing(COMPANIES, { marketLabel = 'this market' } = {}) {
     winThemesHeading: 'Where They Win',
     selfCardHeading: 'Market context',
     sheetTitle: (them) => `Vendor Brief — ${them}`,
+    // Pure market-watch: no vendor to speak for, and no anchor to compare
+    // against either, so there is nobody a "kill shot" could belong to.
+    voiceRule:
+      'Write in the THIRD PERSON throughout. You do not work for any vendor here, and there '
+      + 'is no home vendor to compare against. Never write "we", "our" or "us" about any company.',
+    killShotGoal: "1-2 sentences — a material limitation of this vendor that a buyer should test, stated as verifiable fact",
+    objectionGoal: '≤2 sentences — the even-handed counterpoint, including where the claim is fair',
+    objectionSource: 'the strongest argument a buyer would make in this vendor\'s favour',
+    winThemeGoal: "3-5 concrete segments or use-cases where this vendor is genuinely the right choice",
   };
 }
 

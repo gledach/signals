@@ -18,7 +18,7 @@ and run with no account and no API key.
 | | |
 |---|---|
 | Repo | `github.com/apsolut/apsolut-signal`, branch `main`, 12 commits |
-| Tests | `npm test` — 302 assertions, 15 gate checks + 5 fixture suites, **all green** |
+| Tests | `npm test` — 306 assertions, 15 gate checks + 5 fixture suites, **all green** |
 | Security | `npm audit` — **0 vulnerabilities** |
 | Data | **1,139 signals** across 14 company ids, 57 convergences. By source: news 572, reviews 175, category 168, tavily 79, releases 40, reddit 33, hn 12, aeo 3 |
 | Anchor | `config/companies.local.mjs` sets `isMain: claudecode` — gitignored, extends the shipped default rather than replacing it |
@@ -27,6 +27,7 @@ and run with no account and no API key.
 
 ```bash
 npm test                 # the gate. If this is green, the structure is sound
+npm run doctor           # the other half: is THIS deployment wired up and fed?
 npm run companies        # what this deployment tracks (13 brands, 2 markets)
 npm run help             # every command, grouped by job
 npm run view             # dashboard at 127.0.0.1:5180
@@ -108,6 +109,22 @@ subdomain/sitemap scoring tables. Segment vocabulary now lives beside the roster
 Both follow the roster's override contract (`$SIGNALS_*` → `.local.mjs` → `.default.mjs`)
 and validate on load, so a malformed axis throws at startup instead of rendering a chip
 that silently counts zero forever.
+
+**Generation voice comes from `core/home-brand.mjs`, never from prompt literals.**
+The battlecard prompt used to switch one sentence on `hasHome` and leave every JSON
+field description written for a seller — "a punchy counter a rep would say", "how to
+respond", "what the prospect will say". The model fills in field descriptions, so that
+is what it followed: cards read "We offer audit logs, RBAC and governance integrations"
+underneath a correctly neutral "Where <anchor> Wins" heading, for a deployment that sells
+nothing. One even-handedness sentence cannot outvote a dozen rep-voiced field
+descriptions. Every voice-bearing phrase is now a framing field, gated in section 13.
+
+**The comparison reference is `MAIN_COMPANY_ID`, not `OUR_COMPANY_ID`.** The latter is
+null in anchored mode, so the reference path resolved to `null.md`, no reference loaded,
+and the prompt still asked which of two vendors was stronger. The model filled the gap
+with a third vendor entirely. A card ABOUT the anchor uses the market-watch framing —
+a profile, not a comparison — because the anchor is in `COMPETITOR_IDS` and would
+otherwise be compared against itself.
 
 **One scoring table, imported — never copied.** `serve.mjs` once carried a hand-maintained
 duplicate of `cert-watch`'s keyword list under a comment claiming they were kept in sync.

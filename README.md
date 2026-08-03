@@ -12,6 +12,7 @@ It ships tracking thirteen AI coding agents and prompt-to-app builders across tw
 git clone https://github.com/apsolut/apsolut-signal.git && cd apsolut-signal
 npm install
 npm run db:migrate     # local database + demo data. No account. No API key.
+npm run doctor         # confirm it worked, and see what each missing key unlocks
 npm run view           # a populated dashboard at 127.0.0.1:5180
 ```
 
