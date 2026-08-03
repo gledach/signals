@@ -19,7 +19,10 @@ const state = {
   lastSignalIds: new Set(),
   currentCompany: null,
   battleCompetitor: null,        // selected opponent in Battle mode
-  battleFilters: { vertical: '', size: '' },
+  // dimensionId → selected value. Keys come from /api/config (deal-context
+  // config), not from this file — see renderBattleFilters.
+  battleFilters: {},
+  dealContext: [],
   battlecards: {},               // cached MD by companyId
   filters: { minImpact: 0, type: '', showNoise: false },
   highlightSignal: null,         // hashId to scroll-to + flash on next Feed render
@@ -84,6 +87,9 @@ async function init() {
   try { state.battleAnchor = localStorage.getItem('signal.battleAnchor') || null; } catch { state.battleAnchor = null; }
   state.markets = cfgRes.markets || [];
   state.signalTypes = (cfgRes.signalTypes || []).map((t) => t.id);
+  state.dealContext = cfgRes.dealContext || [];
+  renderBattleFilters();
+  applyDealContextFraming();
 
   // Header subtitle describes the live roster rather than naming a hardcoded brand.
   const scopeEl = document.getElementById('brand-scope');
@@ -2383,33 +2389,97 @@ function wireBattleSelector() {
   }
 }
 
-function wireBattleFilters() {
-  document.querySelectorAll('.filter-chip').forEach((chip) => {
+// The chip rows are built from config, not written into index.html. They used to
+// be hardcoded markup, which is how they came to describe a market this repo no
+// longer tracks long after the roster had moved on.
+function renderBattleFilters() {
+  const host = document.getElementById('filter-dimensions');
+  if (!host) return;
+  host.innerHTML = state.dealContext.map((dim) => `
+    <div class="filter-group">
+      <span class="filter-label">${esc(dim.label)}</span>
+      <button class="filter-chip ${!state.battleFilters[dim.id] ? 'active' : ''}" data-filter="${esc(dim.id)}" data-value="">any</button>
+      ${dim.options.map((o) => `
+        <button class="filter-chip ${state.battleFilters[dim.id] === o.value ? 'active' : ''}"
+                data-filter="${esc(dim.id)}" data-value="${esc(o.value)}">${esc(o.label)}</button>
+      `).join('')}
+    </div>
+  `).join('');
+  wireBattleFilterChips();
+}
+
+function wireBattleFilterChips() {
+  for (const chip of document.querySelectorAll('.filter-chip')) {
     chip.addEventListener('click', () => {
       const key = chip.dataset.filter;
-      const val = chip.dataset.value;
-      state.battleFilters[key] = val;
+      state.battleFilters[key] = chip.dataset.value;
       document.querySelectorAll(`.filter-chip[data-filter="${key}"]`).forEach((c) => c.classList.toggle('active', c === chip));
       writeUrlState();
       renderBattle();
     });
-  });
-  document.getElementById('filter-clear')?.addEventListener('click', () => {
-    state.battleFilters = { vertical: '', size: '' };
-    const searchInput = document.getElementById('objection-search');
-    if (searchInput) searchInput.value = '';
-    document.querySelectorAll('.filter-chip').forEach((c) => {
-      const key = c.dataset.filter;
-      c.classList.toggle('active', c.dataset.value === '' && state.battleFilters[key] === '');
-    });
-    writeUrlState();
-    renderBattle();
-  });
+  }
 }
 
-// Count how many bullets across all three panels (kill shots + objections + win themes)
-// would match a given {filter: value} if clicked. Used to show counts on chips.
-function countMatchesForFilter(theirMd, filter, value) {
+function clearBattleFilters() {
+  state.battleFilters = {};
+  const searchInput = document.getElementById('objection-search');
+  if (searchInput) searchInput.value = '';
+  for (const c of document.querySelectorAll('.filter-chip')) {
+    c.classList.toggle('active', c.dataset.value === '');
+  }
+  writeUrlState();
+  renderBattle();
+}
+
+function wireBattleFilters() {
+  document.getElementById('filter-clear')?.addEventListener('click', clearBattleFilters);
+}
+
+// The filter panel is worded for a seller: "Deal context", "Prospect said",
+// "Prepping deal". That is right when a home brand is set — you are working a
+// deal against a competitor. It is wrong in the other two anchor modes, where
+// the anchor is a company you are watching, not one you sell for, and there is
+// no prospect to quote.
+//
+// The panel is REWORDED rather than hidden. What it does — float the relevant
+// bullets to the top and highlight them — is just as useful when researching a
+// market as when prepping a call; only the vocabulary was ever seller-specific.
+function dealFraming() {
+  return state.ourId
+    ? { title: 'Deal context', searchLabel: 'Prospect said',
+        searchPlaceholder: 'paste what the prospect just said — matching responses float to top',
+        statusVerb: 'Prepping deal' }
+    : { title: 'Focus', searchLabel: 'Find',
+        searchPlaceholder: 'paste a claim or question — matching points float to top',
+        statusVerb: 'Focused on' };
+}
+
+function applyDealContextFraming() {
+  const f = dealFraming();
+  const title = document.querySelector('.filter-header-title');
+  if (title) {
+    title.innerHTML = `${esc(f.title)} <span class="filter-header-sub">filters rank relevance · nothing is hidden</span>`;
+  }
+  const searchLabel = document.querySelector('.filter-group.search .filter-label');
+  if (searchLabel) searchLabel.textContent = f.searchLabel;
+  const searchInput = document.getElementById('objection-search');
+  if (searchInput) searchInput.placeholder = f.searchPlaceholder;
+}
+
+/** The dimension values currently selected, dropping the "any" chips. */
+function activeDims() {
+  const out = {};
+  for (const [k, v] of Object.entries(state.battleFilters)) if (v) out[k] = v;
+  return out;
+}
+
+function dimOption(dimId, value) {
+  return state.dealContext.find((d) => d.id === dimId)?.options.find((o) => o.value === value) || null;
+}
+
+// Count how many bullets across all three panels (kill shots + objections + win
+// themes) would match a given dimension value if clicked — shown on the chip.
+function countMatchesForFilter(theirMd, dimId, value) {
   const sections = [
     firstMatchingSection(theirMd, ['Kill Shots']),
     firstMatchingSection(theirMd, ['Objections to Expect']),
@@ -2418,7 +2488,7 @@ function countMatchesForFilter(theirMd, filter, value) {
   let total = 0;
   for (const sec of sections) {
     for (const b of parseBullets(sec)) {
-      const sc = scoreBullet(b, { [filter]: value });
+      const sc = scoreBullet(b, { dims: { [dimId]: value } });
       if (typeof sc === 'object' && sc.score > 0) total++;
     }
   }
@@ -2426,34 +2496,25 @@ function countMatchesForFilter(theirMd, filter, value) {
 }
 
 function updateChipCounts(theirMd) {
-  document.querySelectorAll('.filter-chip[data-filter="vertical"]').forEach((chip) => {
+  for (const chip of document.querySelectorAll('.filter-chip')) {
     const val = chip.dataset.value;
     chip.querySelector('.chip-count')?.remove();
-    if (!val) return;
-    const n = countMatchesForFilter(theirMd, 'vertical', val);
+    if (!val) continue;
+    const n = countMatchesForFilter(theirMd, chip.dataset.filter, val);
     const span = document.createElement('span');
     span.className = 'chip-count' + (n === 0 ? ' zero' : '');
     span.textContent = ` ${n}`;
     chip.appendChild(span);
-  });
-  document.querySelectorAll('.filter-chip[data-filter="size"]').forEach((chip) => {
-    const val = chip.dataset.value;
-    chip.querySelector('.chip-count')?.remove();
-    if (!val) return;
-    const n = countMatchesForFilter(theirMd, 'size', val);
-    const span = document.createElement('span');
-    span.className = 'chip-count' + (n === 0 ? ' zero' : '');
-    span.textContent = ` ${n}`;
-    chip.appendChild(span);
-  });
+  }
 }
 
 function updateFilterStatus(theirMd) {
-  const { vertical, size } = state.battleFilters;
+  const dims = activeDims();
   const search = (document.getElementById('objection-search')?.value || '').trim();
-  const active = [];
-  if (vertical) active.push({ kind: 'vertical', label: vertical });
-  if (size) active.push({ kind: 'size', label: size });
+  const active = Object.entries(dims).map(([dimId, value]) => ({
+    kind: dimId,
+    label: dimOption(dimId, value)?.label || value,
+  }));
   if (search) active.push({ kind: 'search', label: search });
   const clearBtn = document.getElementById('filter-clear');
   const status = document.getElementById('filter-status');
@@ -2466,7 +2527,7 @@ function updateFilterStatus(theirMd) {
   if (!status) return;
 
   // Count matches per panel using the in-memory battlecard MD.
-  const filterContext = { vertical, size, search: search.toLowerCase() };
+  const filterContext = { dims, search: search.toLowerCase() };
   const countIn = (sectionMd) => {
     if (!sectionMd) return { count: 0, topBullet: null };
     const bullets = parseBullets(sectionMd);
@@ -2503,7 +2564,7 @@ function updateFilterStatus(theirMd) {
   status.classList.remove('hidden');
   status.innerHTML = `
     <div class="filter-status-head">
-      <strong>Prepping deal: ${tagHtml}</strong>
+      <strong>${esc(dealFraming().statusVerb)}: ${tagHtml}</strong>
       <span class="filter-total">${total} matches</span>
     </div>
     <div class="filter-previews">
@@ -2682,9 +2743,7 @@ async function renderBattle() {
   // non-matching bullets stay visible but dimmed. This avoids empty states
   // when an LLM-generated kill shot doesn't happen to contain the keyword.
   const dealQuery = (document.getElementById('objection-search')?.value || '').trim().toLowerCase();
-  const vertical = state.battleFilters.vertical;
-  const size = state.battleFilters.size;
-  const filterContext = { vertical, size, search: dealQuery };
+  const filterContext = { dims: activeDims(), search: dealQuery };
 
   const killshots = firstMatchingSection(theirMd, ['Kill Shots']);
   killshotsEl.innerHTML = killshots
@@ -2985,7 +3044,12 @@ async function renderSavedPreps(companyId) {
     el.innerHTML = `<h3>${icon('bookmark')} Saved call preps <span class="bullet-count">${items.length}</span></h3>
       <ul class="saved-preps-list">${items.map((it) => {
         const when = it.savedAt ? new Date(it.savedAt).toISOString().slice(0, 16).replace('T', ' ') : '';
-        const ctx = [it.context?.vertical, it.context?.size].filter(Boolean).join(' · ');
+        // Preps saved before deal context became configurable stored a fixed
+        // vertical/size pair; newer ones store {dimensionLabel: optionLabel}.
+        const ctx = [
+          ...Object.values(it.context?.dims || {}),
+          it.context?.vertical, it.context?.size,
+        ].filter(Boolean).join(' · ');
         return `<li data-prep-id="${esc(it.id)}" data-prep-co="${esc(it.competitorId)}">
           <div class="saved-body">
             <div class="saved-label">${esc(it.dealLabel || '(untitled deal)')}</div>
@@ -3063,38 +3127,28 @@ function parseBullets(md) {
   return bullets;
 }
 
-const VERTICAL_KEYWORDS = {
-  healthcare: ['health', 'hipaa', 'medical', 'patient', 'clinical', 'hospital', 'veterinary', 'clinic', 'sutter', 'pharma'],
-  realestate: ['real estate', 'realtor', 'mortgage', 'property', 'real-estate', 'broker'],
-  finance: ['finance', 'banking', 'fintech', 'lending', 'wealth', 'financial', 'bank', 'investment'],
-  insurance: ['insurance', 'insurer', 'underwrit', 'claim'],
-  retail: ['retail', 'ecommerce', 'e-commerce', 'shopify', 'merchant', 'commerce'],
-  telecom: ['telecom', 'telco', 'carrier', 'vodafone', 'movistar', 'deutsche telekom', 'singtel', 'operator', 'mvno'],
-  bpo: ['bpo', 'outsourcing', 'teleperformance', 'capita', 'concentrix', 'taskus', 'sitel', 'engineering org', 'engineering org'],
-};
-const SIZE_KEYWORDS = {
-  smb: ['smb', 'small business', 'small biz', 'self-serve', 'home services', 'plumber', 'contractor', 'local business', 'agency', 'white-label'],
-  mid: ['mid-market', 'mid market', 'mid-size', '50+ seat', '100+ seat', '200+', 'mid-market', 'scaleup', 'growth stage'],
-  enterprise: ['enterprise', 'large org', 'fortune', '500+ seat', '1000+', '10000+', 'global', 'regulated', 'regulated industry', 'fortune 500', 'fortune 1000'],
-};
-
 // Score a bullet against active filters. Returns:
-//   0 if filter is inactive (no dimming / no reorder)
-//   > 0 if bullet matches AT LEAST ONE filter — matches listed
-//   negative = -1 if filter is active AND bullet doesn't match any — dim it
-function scoreBullet(bullet, { vertical, size, search }) {
-  if (!vertical && !size && !search) return 0;
+//   0 if no filter is active (no dimming / no reorder)
+//   > 0 if the bullet matches AT LEAST ONE filter — matches listed
+//   negative = -1 if a filter is active and the bullet matches none — dim it
+//
+// The keyword lists come from config/deal-context.*.mjs. They were two literal
+// maps here, and by the time this repo had been retargeted they still carried
+// the previous market's segment vocabulary — including the names of real
+// companies in it, which the brand-literal gate could not catch because those
+// companies were never on the roster it checks against.
+function scoreBullet(bullet, { dims = {}, search } = {}) {
+  const dimEntries = Object.entries(dims).filter(([, v]) => v);
+  if (!dimEntries.length && !search) return 0;
   const lc = bullet.toLowerCase();
   const matchedReasons = [];
-  if (vertical) {
-    const vKeys = VERTICAL_KEYWORDS[vertical] || [vertical];
-    const hit = vKeys.find((k) => lc.includes(k));
-    if (hit) matchedReasons.push({ kind: 'vertical', label: vertical, keyword: hit });
-  }
-  if (size) {
-    const sKeys = SIZE_KEYWORDS[size] || [size];
-    const hit = sKeys.find((k) => lc.includes(k));
-    if (hit) matchedReasons.push({ kind: 'size', label: size, keyword: hit });
+  for (const [dimId, value] of dimEntries) {
+    const opt = dimOption(dimId, value);
+    // Unknown value (e.g. a stale URL from before a config change): fall back to
+    // matching the raw value so the chip still does something honest.
+    const keys = opt?.keywords?.length ? opt.keywords : [value];
+    const hit = keys.find((k) => lc.includes(k.toLowerCase()));
+    if (hit) matchedReasons.push({ kind: dimId, label: opt?.label || value, keyword: hit });
   }
   if (search) {
     const searchLC = search.toLowerCase();
@@ -3109,7 +3163,14 @@ function mdBlockToCopyable(md, { competitorId, kind, filterContext } = {}) {
   if (!bullets.length) return mdBlockToHtml(md);
 
   // Score each bullet; sort matches to the top, keep all visible.
-  const filterActive = !!(filterContext && (filterContext.vertical || filterContext.size || filterContext.search));
+  const activeLabels = filterContext
+    ? [
+        ...Object.entries(filterContext.dims || {}).filter(([, v]) => v)
+          .map(([dimId, v]) => dimOption(dimId, v)?.label || v),
+        filterContext.search,
+      ].filter(Boolean)
+    : [];
+  const filterActive = activeLabels.length > 0;
   const scored = bullets.map((b) => {
     const sc = filterActive ? scoreBullet(b, filterContext) : 0;
     return {
@@ -3124,7 +3185,7 @@ function mdBlockToCopyable(md, { competitorId, kind, filterContext } = {}) {
   const matchCount = scored.filter((x) => x.score > 0).length;
   const dimCount = scored.filter((x) => x.score < 0).length;
   const hint = filterActive
-    ? `<div class="bullet-filter-hint">${matchCount} of ${bullets.length} match ${esc([filterContext.vertical, filterContext.size, filterContext.search].filter(Boolean).join(' · '))}${dimCount ? ` · ${dimCount} dimmed` : ''}</div>`
+    ? `<div class="bullet-filter-hint">${matchCount} of ${bullets.length} match ${esc(activeLabels.join(' · '))}${dimCount ? ` · ${dimCount} dimmed` : ''}</div>`
     : '';
 
   return `${hint}<ul class="copyable-list">${scored.map(({ bullet, score, reasons }) => {
@@ -3357,28 +3418,32 @@ function openTalkTrackModal({ preload } = {}) {
   modal.classList.remove('hidden');
   const body = document.getElementById('talktrack-body');
   const ctx = preload?.context || {};
-  const preloadVertical = ctx.vertical ?? state.battleFilters.vertical ?? '';
-  const preloadSize = ctx.size ?? (
-    state.battleFilters.size === 'smb' ? 'SMB' : state.battleFilters.size === 'mid' ? 'Mid-market' : state.battleFilters.size === 'enterprise' ? 'Enterprise' : ''
-  );
   const preloadNotes = ctx.notes ?? '';
+
+  // One select per configured dimension, preloaded from the saved prep if we are
+  // reopening one, otherwise from whatever chips are currently active in Battle —
+  // so the filters you used to prep the deal carry into the generated call sheet.
+  const preloadDims = ctx.dims || {};
+  const dimFields = state.dealContext.map((dim) => {
+    const chosenLabel = preloadDims[dim.label]
+      ?? dimOption(dim.id, state.battleFilters[dim.id])?.label
+      ?? '';
+    return `<label>${esc(dim.label)}
+        <select id="tt-dim-${esc(dim.id)}" data-dim-label="${esc(dim.label)}">
+          <option value="">any</option>
+          ${dim.options.map((o) => `<option value="${esc(o.label)}" ${chosenLabel === o.label ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+        </select>
+      </label>`;
+  }).join('\n      ');
   const preloadDeal = preload?.dealLabel ?? '';
   body.innerHTML = `<h3>${preload ? `Saved prep vs ${esc(them.name)}` : `Generate call-prep vs ${esc(them.name)}`}</h3>
     <div class="tt-form">
       <label>Deal label / prospect (used to name the saved prep)
-        <input type="text" id="tt-deal" value="${esc(preloadDeal)}" placeholder="e.g. Acme Healthcare, 500-seat eval" />
+        <input type="text" id="tt-deal" value="${esc(preloadDeal)}" placeholder="e.g. 200-seat platform team eval" />
       </label>
-      <label>Vertical <input type="text" id="tt-vertical" value="${esc(preloadVertical)}" placeholder="healthcare / fintech / ..." /></label>
-      <label>Buyer segment
-        <select id="tt-size">
-          <option value="">any</option>
-          <option value="SMB" ${preloadSize === 'SMB' ? 'selected' : ''}>SMB</option>
-          <option value="Mid-market" ${preloadSize === 'Mid-market' ? 'selected' : ''}>Mid-market</option>
-          <option value="Enterprise" ${preloadSize === 'Enterprise' ? 'selected' : ''}>Enterprise</option>
-        </select>
-      </label>
+      ${dimFields}
       <label>Deal notes (optional)
-        <textarea id="tt-notes" rows="3" placeholder="e.g. 500-seat engineering org, price-sensitive, loves Claude Code's Sutter Health case study">${esc(preloadNotes)}</textarea>
+        <textarea id="tt-notes" rows="3" placeholder="e.g. 200-seat platform team, price-sensitive, already standardised on one IDE">${esc(preloadNotes)}</textarea>
       </label>
       <div class="capture-actions">
         ${preload ? '' : '<button class="btn-primary" id="tt-generate">✨ Generate</button>'}
@@ -3411,12 +3476,20 @@ function openTalkTrackModal({ preload } = {}) {
 }
 function closeTalkTrackModal() { document.getElementById('talktrack-modal')?.classList.add('hidden'); }
 
+/** Read the talk-track dimension selects as {dimensionLabel: optionLabel}. */
+function readTalkTrackDims() {
+  const dims = {};
+  for (const sel of document.querySelectorAll('[id^="tt-dim-"]')) {
+    if (sel.value) dims[sel.dataset.dimLabel] = sel.value;
+  }
+  return dims;
+}
+
 async function submitTalkTrack() {
   const them = state.companies.find((c) => c.id === state.battleCompetitor);
   const payload = {
     competitorId: them.id,
-    vertical: document.getElementById('tt-vertical').value.trim(),
-    size: document.getElementById('tt-size').value,
+    dims: readTalkTrackDims(),
     notes: document.getElementById('tt-notes').value.trim(),
   };
   const status = document.getElementById('tt-status');
@@ -3468,8 +3541,7 @@ async function submitSaveTalkTrack() {
       body: JSON.stringify({
         competitorId: current.competitorId,
         dealLabel,
-        vertical: document.getElementById('tt-vertical').value.trim() || current.vertical,
-        size: document.getElementById('tt-size').value || current.size,
+        dims: readTalkTrackDims(),
         notes: document.getElementById('tt-notes').value.trim() || current.notes,
         talkTrack: current.talkTrack,
       }),
@@ -3538,10 +3610,14 @@ function readUrlState() {
   }
   const vs = params.get('vs');
   if (vs) state.battleCompetitor = vs;
-  const vertical = params.get('vertical');
-  if (vertical !== null) state.battleFilters.vertical = vertical;
-  const size = params.get('size');
-  if (size !== null) state.battleFilters.size = size;
+  // Deal-context dimensions carry their own id as the query param, so a config
+  // that adds a dimension gets shareable URLs for free. An unknown param is
+  // ignored rather than stored — a link shared from a deployment with a
+  // different deal-context config must not inject a filter this one can't clear.
+  for (const dim of state.dealContext) {
+    const v = params.get(dim.id);
+    if (v !== null) state.battleFilters[dim.id] = v;
+  }
   // Reflect on chips
   for (const chip of document.querySelectorAll('.filter-chip')) {
     const key = chip.dataset.filter;
@@ -3573,8 +3649,7 @@ function writeUrlState() {
   }
   if (state.mode === 'battle' && state.battleCompetitor) {
     params.set('vs', state.battleCompetitor);
-    if (state.battleFilters.vertical) params.set('vertical', state.battleFilters.vertical);
-    if (state.battleFilters.size) params.set('size', state.battleFilters.size);
+    for (const [dimId, value] of Object.entries(activeDims())) params.set(dimId, value);
   }
   if (state.mode === 'feed' && state.highlightSignal) {
     params.set('signal', state.highlightSignal);

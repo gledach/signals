@@ -13,6 +13,7 @@ import { SIGNAL_TYPES as SIGNAL_TYPE_DEFS } from '../core/signal-taxonomy.mjs';
 import { renderWeeklyReport as renderWeeklyReportMd } from '../cli/weekly-report-render.mjs';
 import { chatJson, synthesisModel, hasApiKey } from '../pipeline/openrouter.mjs';
 import { FEATURES, FEATURE_CATEGORIES, FEATURE_STATUS_VALUES } from '../core/features.mjs';
+import { DEAL_CONTEXT_DIMENSIONS } from '../config/deal-context.mjs';
 
 // Paths come from the shared resolver, never from this file's own location — that is
 // what let moving serve.mjs silently break static serving while /api kept returning 200.
@@ -125,7 +126,13 @@ const server = http.createServer(async (req, res) => {
       // `markets` lets the header describe the live roster instead of naming a
       // hardcoded home brand — market-watch deployments have no "us" at all.
       const markets = [...new Set(companies.map((c) => c.market).filter(Boolean))];
-      return sendJson(res, { companies, ourId: OUR_COMPANY_ID, mainId: MAIN_COMPANY_ID, signalTypes, markets });
+      // Battle's relevance-ranking axes. Served rather than hardcoded in the
+      // viewer so retargeting the roster and retargeting the deal vocabulary
+      // are the same kind of edit — see config/deal-context.default.mjs.
+      return sendJson(res, {
+        companies, ourId: OUR_COMPANY_ID, mainId: MAIN_COMPANY_ID, signalTypes, markets,
+        dealContext: DEAL_CONTEXT_DIMENSIONS,
+      });
     }
 
     // ── Canonical feature registry (drives the Features Comparison matrix).
@@ -755,13 +762,27 @@ Return STRICT JSON, no preamble:
 }
 
 Rules:
-- If the deal context mentions a vertical (e.g., healthcare, real estate), tailor every section to that vertical.
-- If size is specified (SMB / mid-market / enterprise), match the language and priorities to that buyer.
+- Tailor every section to whatever deal context is supplied. The context axes are
+  configured per deployment, so read the labels given rather than expecting any
+  particular dimension.
 - Ground kill shots and objection responses in the competitor battlecard content provided.
 - Be specific — "our integration depth" is weak; "our native Salesforce bi-directional sync" is strong.
 - Avoid generic advice. Each bullet should be usable verbatim on the call.`;
 
-async function generateTalkTrack({ competitorId, vertical = '', size = '', notes = '' } = {}) {
+// Deal context is a bag of {dimensionLabel: optionLabel} pairs coming from
+// config/deal-context.*.mjs, not a fixed pair of fields. `vertical`/`size` are
+// still accepted so talk-tracks saved under the previous shape keep rendering.
+function contextPairs({ dims, vertical, size }) {
+  const pairs = [];
+  for (const [label, value] of Object.entries(dims || {})) if (value) pairs.push(`${label}: ${value}`);
+  if (!pairs.length) {
+    if (vertical) pairs.push(`vertical: ${vertical}`);
+    if (size) pairs.push(`buyer segment: ${size}`);
+  }
+  return pairs;
+}
+
+async function generateTalkTrack({ competitorId, dims = {}, vertical = '', size = '', notes = '' } = {}) {
   if (!hasApiKey()) return { error: 'OPENROUTER_API_KEY not set' };
   if (!competitorId || !COMPANIES[competitorId]) return { error: 'competitorId required' };
   if (COMPANIES[competitorId].isUs) return { error: 'pick a competitor, not us' };
@@ -774,9 +795,7 @@ async function generateTalkTrack({ competitorId, vertical = '', size = '', notes
     ? fs.readFileSync(path.join(BATTLECARDS_DIR, `${MAIN_COMPANY_ID}.md`), 'utf8')
     : '(no self-card)';
 
-  const contextBits = [];
-  if (vertical) contextBits.push(`vertical: ${vertical}`);
-  if (size) contextBits.push(`buyer segment: ${size}`);
+  const contextBits = contextPairs({ dims, vertical, size });
   if (notes) contextBits.push(`rep notes: ${notes}`);
   const contextLine = contextBits.length ? contextBits.join(' · ') : '(no deal-specific context given)';
 
@@ -941,7 +960,7 @@ function sanitizeSlug(s) {
 
 const talkTrackKey = (companyId, slug) => `${sanitizeSlug(companyId)}/${sanitizeSlug(slug)}`;
 
-async function saveTalkTrack({ competitorId, dealLabel, vertical, size, notes, talkTrack } = {}) {
+async function saveTalkTrack({ competitorId, dealLabel, dims, vertical, size, notes, talkTrack } = {}) {
   if (!competitorId || !COMPANIES[competitorId]) return { error: 'competitorId required' };
   if (!talkTrack || typeof talkTrack !== 'object') return { error: 'talkTrack payload required' };
   const now = new Date();
@@ -953,7 +972,15 @@ async function saveTalkTrack({ competitorId, dealLabel, vertical, size, notes, t
     competitorId,
     competitorName: COMPANIES[competitorId].name,
     dealLabel: dealLabel || '',
-    context: { vertical: vertical || '', size: size || '', notes: notes || '' },
+    // `dims` is {dimensionLabel: optionLabel} — labels, not ids, so a saved prep
+    // stays readable after the deal-context config is edited or replaced.
+    // vertical/size are carried through only when a legacy caller supplies them.
+    context: {
+      dims: dims && Object.keys(dims).length ? dims : undefined,
+      vertical: vertical || undefined,
+      size: size || undefined,
+      notes: notes || '',
+    },
     savedAt: now.toISOString(),
     talkTrack,
     outcome: null,

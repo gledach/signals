@@ -717,6 +717,29 @@ section('14. Viewer vocabulary tracks the roster');
   if (unlabelled.length) bad(`roster categories with no sidebar label (render as raw slugs): ${unlabelled.join(', ')}`);
   else ok('every roster category has a sidebar label');
 
+  // Deal-context axes must come from config, never from viewer markup or code.
+  // They were two literal maps in viewer.js plus matching chips in index.html,
+  // and they outlived the market they described — still naming that market's
+  // segments AND, in the keyword lists, real companies operating in it. §5 could
+  // not catch those: it only knows brands ON the roster, so a vendor the roster
+  // never mentioned was invisible to it.
+  const html = fs.readFileSync(path.join(ROOT, 'dashboard/viewer/index.html'), 'utf8');
+  const strayChips = [...html.matchAll(/data-filter="(\w+)"\s+data-value="([^"]*)"/g)]
+    .filter((m) => m[2] !== '');
+  if (strayChips.length) {
+    bad(`deal-context chips hardcoded in index.html (belongs in config/): ${strayChips.map((m) => `${m[1]}=${m[2]}`).join(', ')}`);
+  } else {
+    ok('deal-context chips render from config, not markup');
+  }
+
+  const { DEAL_CONTEXT_DIMENSIONS, DEAL_CONTEXT_FILE } = await import('../config/deal-context.mjs');
+  const strayKeywordMap = /const [A-Z_]*KEYWORDS\s*=\s*\{/.test(viewer);
+  if (strayKeywordMap) bad('a *_KEYWORDS map is back in viewer.js — deal-context keywords belong in config/');
+  else ok(`deal-context keywords live in ${DEAL_CONTEXT_FILE}`);
+
+  const optionCount = DEAL_CONTEXT_DIMENSIONS.reduce((n, d) => n + d.options.length, 0);
+  ok(`${DEAL_CONTEXT_DIMENSIONS.length} deal-context dimensions, ${optionCount} options, all validated on load`);
+
   // A sidebar click means something different in each mode, and only the modes
   // that scope their view to a company may show one selected. Assert the hint
   // table covers every mode so a new mode cannot ship with a silent teleport.

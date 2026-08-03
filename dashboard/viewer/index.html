@@ -158,24 +158,10 @@
           <span class="filter-header-title">Deal context <span class="filter-header-sub">filters rank relevance · nothing is hidden</span></span>
           <button class="filter-clear hidden" id="filter-clear">✕ Clear all</button>
         </div>
-        <div class="filter-group">
-          <span class="filter-label">Vertical</span>
-          <button class="filter-chip active" data-filter="vertical" data-value="">any</button>
-          <button class="filter-chip" data-filter="vertical" data-value="healthcare">healthcare</button>
-          <button class="filter-chip" data-filter="vertical" data-value="finance">finance</button>
-          <button class="filter-chip" data-filter="vertical" data-value="insurance">insurance</button>
-          <button class="filter-chip" data-filter="vertical" data-value="telecom">telecom</button>
-          <button class="filter-chip" data-filter="vertical" data-value="bpo">BPO / outsourcing</button>
-          <button class="filter-chip" data-filter="vertical" data-value="realestate">real estate</button>
-          <button class="filter-chip" data-filter="vertical" data-value="retail">retail</button>
-        </div>
-        <div class="filter-group">
-          <span class="filter-label">ICP size</span>
-          <button class="filter-chip active" data-filter="size" data-value="">any</button>
-          <button class="filter-chip" data-filter="size" data-value="smb">SMB</button>
-          <button class="filter-chip" data-filter="size" data-value="mid">Mid-market</button>
-          <button class="filter-chip" data-filter="size" data-value="enterprise">Enterprise</button>
-        </div>
+        <!-- Chip rows are rendered by renderBattleFilters() from the deal-context
+             config served at /api/config. They were hardcoded here, which is how
+             they came to describe a market this repo no longer tracks. -->
+        <div id="filter-dimensions"></div>
         <div class="filter-group search">
           <span class="filter-label">Prospect said</span>
           <input type="search" id="objection-search" placeholder="paste what the prospect just said — matching responses float to top" />
