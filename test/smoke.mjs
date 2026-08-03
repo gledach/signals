@@ -1002,6 +1002,45 @@ section('15. Agent surface reports its own blind spots');
     bad('cli/analyst.mjs no longer prints the `(id=…)` marker that run_analyst parses to identify the brief it caused');
   } else ok('analyst brief-id marker intact — run_analyst can identify its own output');
 
+  // ── Resource surface ──────────────────────────────────────────────────────
+  //
+  // Resource ids are pasted into a lookup that resolves a document, so the uri
+  // parser is the boundary. The parser must decode percent-encoding BEFORE
+  // checking the segment shape, or `..%2F..%2F.env` walks straight past a check
+  // that only ever saw one segment.
+  const decodesBeforeShapeCheck = (() => {
+    const decode = mcp.indexOf('decodeURIComponent(rest.slice');
+    const shape = mcp.indexOf("id.includes('/')");
+    return decode > 0 && shape > decode;
+  })();
+  if (!decodesBeforeShapeCheck) {
+    bad('resource uri parser checks segment shape before decoding — an encoded separator would slip through');
+  } else ok('resource uri decoded before the single-segment check');
+
+  // A guard on a plain object must not admit inherited keys: COMPANIES.constructor
+  // is truthy, so `COMPANIES[id]` waves through 'constructor', 'toString' and
+  // '__proto__'. This value is used to build a path.
+  if (!/Object\.hasOwn\(COMPANIES, id\)/.test(mcp)) {
+    bad('company id guard does not use Object.hasOwn — inherited keys like "constructor" would pass');
+  } else ok('company id guard rejects inherited keys');
+
+  // Capabilities must describe what is implemented. Claiming `subscribe` or
+  // `listChanged` without sending notifications leaves a client waiting forever.
+  const caps = mcp.match(/capabilities: \{([^}]*\{\}[^}]*)\}/)?.[0] || '';
+  if (/subscribe|listChanged/.test(caps)) {
+    bad('server advertises resource subscription/listChanged but sends no notifications');
+  } else if (!/resources: \{\}/.test(caps)) {
+    bad('resources are implemented but not advertised in initialize capabilities');
+  } else ok('capabilities advertise exactly what is implemented');
+
+  // Generated documents must be read through the artifact chokepoint, which is
+  // database-first with a disk fallback. A raw readFileSync works only while the
+  // documents happen to be on disk, and reports "not found" on a deployment
+  // whose canonical copy is in the hosted database.
+  if (/fs\.readFileSync\(\s*(file|path\.join\(BATTLECARDS_DIR)/.test(mcp)) {
+    bad('mcp-server.mjs reads a battlecard from disk directly — must go through core/artifacts.mjs readArtifact()');
+  } else ok('battlecards read through the artifact chokepoint, not the filesystem');
+
   // Health must NOT be read off the cron log. Only ops/cron-entry.mjs writes
   // there, so a deployment driven by `npm run fetch` has an empty cron table and
   // a full store — this deployment is exactly that. Reading health from cron

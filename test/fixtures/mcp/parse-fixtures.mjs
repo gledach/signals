@@ -51,6 +51,16 @@ const replies = await rpc([
   { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'get_battlecard', arguments: { companyId: 'definitely-not-real' } } },
   { jsonrpc: '2.0', id: 6, method: 'ping' },
   { jsonrpc: '2.0', id: 7, method: 'totally/unknown' },
+  { jsonrpc: '2.0', id: 8, method: 'resources/list' },
+  { jsonrpc: '2.0', id: 9, method: 'resources/templates/list' },
+  // Traversal, raw and percent-encoded. The encoded form is the one that slips
+  // past a parser that checks segment shape before decoding.
+  { jsonrpc: '2.0', id: 10, method: 'resources/read', params: { uri: 'signal://battlecard/../../.env' } },
+  { jsonrpc: '2.0', id: 11, method: 'resources/read', params: { uri: 'signal://battlecard/..%2F..%2F.env' } },
+  // Inherited property name — truthy under a naive `COMPANIES[id]` guard.
+  { jsonrpc: '2.0', id: 12, method: 'resources/read', params: { uri: 'signal://battlecard/constructor' } },
+  { jsonrpc: '2.0', id: 13, method: 'resources/read', params: { uri: 'http://example.com/x' } },
+  { jsonrpc: '2.0', id: 14, method: 'resources/read', params: { uri: 'signal://nonsense/x' } },
 ]);
 
 console.log('\nhandshake');
@@ -59,6 +69,11 @@ console.log('\nhandshake');
   ok(!!r?.result, 'initialize returns a result');
   ok(r?.result?.serverInfo?.name === 'signal', 'server identifies itself');
   ok(!!r?.result?.capabilities?.tools, 'declares tools capability');
+  ok(!!r?.result?.capabilities?.resources, 'declares resources capability');
+  // Advertising a capability that is not implemented leaves a client waiting
+  // forever for notifications this server never sends.
+  ok(!r?.result?.capabilities?.resources?.subscribe, 'does not claim resource subscription');
+  ok(!r?.result?.capabilities?.resources?.listChanged, 'does not claim listChanged notifications');
   ok(r?.result?.protocolVersion === '2025-06-18', 'echoes the client protocol version');
   // A notification carries no id and MUST NOT be answered.
   ok(!replies.has(undefined) && !replies.has(null), 'notifications/initialized got no reply');
@@ -119,6 +134,45 @@ console.log('\nerror handling');
   ok(/Unknown company/.test(r5?.result?.content?.[0]?.text || ''), 'error text is actionable');
   ok(!!replies.get(6)?.result, 'ping answered');
   ok(replies.get(7)?.error?.code === -32601, 'unknown method → method not found');
+}
+
+console.log('\nresources');
+{
+  const list = replies.get(8)?.result?.resources;
+  ok(Array.isArray(list), 'resources/list returns an array');
+  ok(list.every((r) => r.uri && r.name && r.mimeType), 'every resource has uri, name, mimeType');
+  ok(list.every((r) => r.uri.startsWith('signal://')), 'every uri uses the signal:// scheme');
+  // A list entry is a promise that the uri resolves. Bodies must NOT be inlined:
+  // a list call is how a client orients itself, not how it reads.
+  ok(list.every((r) => !('text' in r) && !('contents' in r)), 'list carries metadata only, no bodies');
+
+  const templates = replies.get(9)?.result?.resourceTemplates || [];
+  ok(templates.length >= 2, `declares ${templates.length} uri templates`);
+  ok(templates.every((t) => t.uriTemplate && t.description), 'every template documents itself');
+
+  // The security boundary.
+  //
+  // Asserting only "returns no content" is VACUOUS here, and was: with both the
+  // segment check and the roster check deleted, every one of these still failed
+  // — because readArtifact appends `.md` and then finds no such file. The test
+  // passed for a reason unrelated to the guard it claimed to cover.
+  //
+  // So assert WHERE the rejection happened. A hostile uri must be refused at the
+  // parser or by the roster, with an error that says so — not fall through to
+  // the filesystem and get lucky. The `reason` pattern is what discriminates.
+  const attacks = [
+    [10, 'raw traversal', /single segment/i],
+    [11, 'percent-encoded traversal', /single segment/i],
+    [12, 'inherited property name', /Unknown company/i],
+    [13, 'foreign scheme', /Unsupported uri/i],
+    [14, 'unknown resource kind', /Unknown resource kind/i],
+  ];
+  for (const [id, label, reason] of attacks) {
+    const r = replies.get(id);
+    ok(!r?.result?.contents, `${label} returns no content`);
+    ok(r?.error?.code === -32002, `${label} → resource-not-found, not a server error`);
+    ok(reason.test(r?.error?.message || ''), `${label} rejected at the boundary, not by a missing file`);
+  }
 }
 
 console.log(fails ? `\nRED  ${fails} assertion(s) failed\n` : '\nGREEN  mcp fixtures\n');

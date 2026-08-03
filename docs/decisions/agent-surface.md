@@ -164,3 +164,54 @@ Cost is reported as *approximate* on purpose. `openrouter.mjs` mirrors each call
 database fire-and-forget so telemetry never slows the pipeline it measures, which means a
 child's last rows can land just after it exits. The ceiling is eventually accurate rather
 than instantaneously exact, and the next check sees the full amount.
+
+## Tools answer questions; resources are documents
+
+A signal search is a query — its answer depends on arguments and changes with every fetch,
+so it stays a tool. A battlecard and an analyst brief are documents with stable identity
+and a URI worth keeping, so they are also MCP *resources*:
+
+```
+signal://battlecard/{companyId}
+signal://brief/{briefId}
+```
+
+An agent can `resources/list` to see what exists and `resources/read` to fetch one, without
+first learning this server's tool vocabulary. This ADDS a surface rather than replacing
+one: `get_battlecard` and `get_brief` stay for clients that only speak tools, and both
+routes call the same loaders, so there is no second read path to drift — the same rule that
+keeps one scoring table and one analyst.
+
+`resources/list` returns metadata only. Thirteen battlecards plus fifty briefs is megabytes
+of markdown, and a list call is how a client orients itself, not how it reads. Only cards
+that actually exist are listed: a list entry is a promise that the URI resolves, and
+advertising every roster company would hand an agent twelve dead links to find one.
+
+Capabilities declare `resources: {}` and deliberately not `subscribe` or `listChanged`.
+This server sends no notifications, and a client that believed otherwise would wait forever.
+
+### Reading through the chokepoint
+
+`get_battlecard` used to call `fs.readFileSync` directly. That works only while battlecards
+happen to live on disk — on a deployment whose canonical copy is in the hosted database it
+would report `exists: false` for a card that exists. Both the tool and the resource now read
+through `core/artifacts.mjs`, which is documented as the one safe way to read a generated
+document and goes database-first with a disk fallback.
+
+### The security assertions were vacuous, and now are not
+
+Resource ids arrive from the client, so the URI parser is a boundary. The guards: decode
+percent-encoding *before* the single-segment check (or `..%2F..%2F.env` walks past a check
+that only ever saw one segment), and validate company ids with `Object.hasOwn` rather than
+`COMPANIES[id]`, since plain-object lookup walks the prototype chain and would admit
+`constructor`, `toString` and `__proto__`.
+
+The first version of the fixtures asserted that hostile URIs "return no content" and a
+`-32002` code. Deleting **both guards** did not fail a single assertion — `readArtifact`
+appends `.md` and then finds no such file, so every attack was refused for a reason
+unrelated to the guard being tested. Traversal was never exploitable here, but the tests
+were proving nothing.
+
+They now assert *where* the rejection happened, matching on the error text: at the parser
+(`single segment`) or the roster (`Unknown company`), never by falling through to the
+filesystem and getting lucky. Re-running the same mutation now fails three assertions.

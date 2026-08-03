@@ -46,11 +46,40 @@ import { BATTLECARDS_DIR, ROOT, fromRoot } from './runtime/paths.mjs';
 import { COMPANIES, MARKETS, OUR_COMPANY_ID, CONFIG_FILE } from './config/companies.mjs';
 import { loadAllSignals, listBriefs, loadBrief, coverageStats, getLastCronRun } from './core/store.mjs';
 import { buildCoverage } from './core/coverage.mjs';
+import { readArtifact } from './core/artifacts.mjs';
 import { POLICY, AGENT_POLICY_FILE, actionAllowed } from './config/agent-policy.mjs';
 import { checkBudget, spentSince, windowStart } from './core/agent-budget.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
 const SERVER = { name: 'signal', version: '0.1.0' };
+
+/**
+ * Is this a company the roster actually declares?
+ *
+ * `Object.hasOwn`, not `COMPANIES[id]`. Plain-object lookup walks the prototype
+ * chain, so `constructor`, `toString` and `__proto__` are all truthy and would
+ * pass a naive guard. Nothing reachable here turns that into a file read that
+ * escapes the battlecards directory — but this value IS used to build a path,
+ * and a guard that admits inherited keys is the wrong shape for that job
+ * regardless of whether today's call sites happen to be safe.
+ */
+const knownCompany = (id) => typeof id === 'string' && Object.hasOwn(COMPANIES, id);
+
+/**
+ * Read a battlecard through the artifact chokepoint.
+ *
+ * core/artifacts.mjs is documented as "the ONE safe way to read and write a
+ * generated document" and reads database-first with a disk fallback. This tool
+ * used to call fs.readFileSync directly, which works only while battlecards
+ * happen to live on disk: on a deployment whose cards are in the hosted
+ * database — the canonical store — it would report `exists: false` for a card
+ * that exists. The resource surface below reads through the same helper, so a
+ * tool call and a resource read can never disagree about what a card says.
+ */
+async function readBattlecard(companyId) {
+  const { body, source } = await readArtifact('battlecard', companyId);
+  return body ? { body, source } : null;
+}
 
 /**
  * Attach collection coverage to any response that reports on collected signals.
@@ -211,12 +240,10 @@ const TOOLS = [
       additionalProperties: false,
     },
     handler: async ({ companyId }) => {
-      if (!COMPANIES[companyId]) throw new Error(`Unknown company '${companyId}'. Call list_companies first.`);
-      const file = path.join(BATTLECARDS_DIR, `${companyId}.md`);
-      if (!fs.existsSync(file)) {
-        return { companyId, exists: false, hint: `Generate one with: npm run bootstrap -- --company=${companyId}` };
-      }
-      return { companyId, exists: true, markdown: fs.readFileSync(file, 'utf8') };
+      if (!knownCompany(companyId)) throw new Error(`Unknown company '${companyId}'. Call list_companies first.`);
+      const card = await readBattlecard(companyId);
+      if (!card) return { companyId, exists: false, hint: `Generate one with: npm run bootstrap -- --company=${companyId}` };
+      return { companyId, exists: true, source: card.source, markdown: card.body };
     },
   },
 
@@ -387,6 +414,119 @@ const TOOLS = [
   },
 ];
 
+// ── resources ───────────────────────────────────────────────────────────────
+//
+// TOOLS ANSWER QUESTIONS. RESOURCES ARE DOCUMENTS.
+//
+// A signal search is a query — the answer depends on arguments and changes with
+// every fetch, so it stays a tool. A battlecard and an analyst brief are
+// documents with stable identity and a URI worth holding on to: an agent can
+// list what exists, read one, and cite it later by uri. Exposing them natively
+// means a client can browse them without first learning this server's tool
+// vocabulary.
+//
+// This ADDS a surface, it does not replace one. get_battlecard / get_brief stay
+// for clients that only speak tools, and both routes call the same loaders — so
+// there is no second read path to drift, which is the same rule that keeps one
+// scoring table and one analyst.
+//
+// Bodies are NOT inlined into resources/list. Thirteen battlecards plus fifty
+// briefs is megabytes of markdown, and a list call is how a client orients
+// itself, not how it reads.
+
+const RESOURCE_SCHEME = 'signal://';
+
+const RESOURCE_TEMPLATES = [
+  {
+    uriTemplate: 'signal://battlecard/{companyId}',
+    name: 'Battlecard',
+    description:
+      'Competitive battlecard for one tracked company. Mixes a HUMAN-authored section with '
+      + 'an LLM-generated AUTO section — the AUTO half is model output and must be verified '
+      + 'before external use. companyId comes from list_companies.',
+    mimeType: 'text/markdown',
+  },
+  {
+    uriTemplate: 'signal://brief/{briefId}',
+    name: 'Analyst brief',
+    description:
+      'One analyst brief (scan / deep / gap / outside / weekly). Model output written to a '
+      + 'persona contract; a briefId prefixed "draft-" failed its own validator and should '
+      + 'be read with extra scepticism.',
+    mimeType: 'text/markdown',
+  },
+];
+
+/** Everything currently readable as a resource. Metadata only — no bodies. */
+async function listResources() {
+  const out = [];
+
+  for (const c of Object.values(COMPANIES)) {
+    // Only list cards that actually exist. A resource list is a promise that
+    // reading the uri will return something; advertising every roster company
+    // would hand an agent twelve dead links to discover one at a time.
+    if (!(await readBattlecard(c.id))) continue;
+    out.push({
+      uri: `${RESOURCE_SCHEME}battlecard/${c.id}`,
+      name: `Battlecard — ${c.name}`,
+      description: `Competitive battlecard for ${c.name}. Contains model-generated analysis; verify before external use.`,
+      mimeType: 'text/markdown',
+    });
+  }
+
+  try {
+    // Bounded. Briefs accumulate daily and an unbounded list would grow without
+    // limit; the newest are the ones an agent wants.
+    const briefs = await listBriefs({ sinceDays: 90, limit: 50 });
+    for (const b of briefs) {
+      out.push({
+        uri: `${RESOURCE_SCHEME}brief/${b.briefId}`,
+        name: `Brief — ${b.mode}${b.scope ? ` (${b.scope})` : ''} — ${String(b.createdAt).slice(0, 10)}`,
+        description: `Analyst /${b.mode} brief${b.isDraft ? ', FAILED ITS OWN VALIDATOR (draft)' : ''}. Model output, not verified fact.`,
+        mimeType: 'text/markdown',
+      });
+    }
+  } catch { /* a store that cannot list briefs still lists battlecards */ }
+
+  return out;
+}
+
+/**
+ * Resolve one resource uri to its text.
+ *
+ * Ids are validated against the roster / the brief store rather than being
+ * pasted into a path. `decodeURIComponent` first, so an encoded separator
+ * cannot smuggle a second path segment past the shape check.
+ */
+async function readResource(uri) {
+  if (typeof uri !== 'string' || !uri.startsWith(RESOURCE_SCHEME)) {
+    throw new Error(`Unsupported uri '${uri}'. Expected ${RESOURCE_SCHEME}battlecard/<companyId> or ${RESOURCE_SCHEME}brief/<briefId>.`);
+  }
+  const rest = uri.slice(RESOURCE_SCHEME.length);
+  const slash = rest.indexOf('/');
+  if (slash < 0) throw new Error(`Malformed uri '${uri}' — expected <kind>/<id>.`);
+
+  const kind = rest.slice(0, slash);
+  let id;
+  try { id = decodeURIComponent(rest.slice(slash + 1)); } catch { throw new Error(`Malformed uri '${uri}' — id is not valid percent-encoding.`); }
+  if (!id || id.includes('/')) throw new Error(`Malformed uri '${uri}' — id must be a single segment.`);
+
+  if (kind === 'battlecard') {
+    if (!knownCompany(id)) throw new Error(`Unknown company '${id}'. Call list_companies for valid ids.`);
+    const card = await readBattlecard(id);
+    if (!card) throw new Error(`No battlecard for '${id}' yet. Generate one with: npm run bootstrap -- --company=${id}`);
+    return { uri, mimeType: 'text/markdown', text: card.body };
+  }
+
+  if (kind === 'brief') {
+    const brief = await loadBrief(id);
+    if (!brief) throw new Error(`No brief with id '${id}'. Call list_briefs or resources/list for valid ids.`);
+    return { uri, mimeType: 'text/markdown', text: brief.body };
+  }
+
+  throw new Error(`Unknown resource kind '${kind}'. Known kinds: battlecard, brief.`);
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 /**
@@ -476,7 +616,11 @@ async function handle(msg) {
       return reply(id, {
         // Echo the client's protocol version when we can speak it; otherwise state ours.
         protocolVersion: params?.protocolVersion || PROTOCOL_VERSION,
-        capabilities: { tools: {} },
+        // Declare only what is actually implemented. `resources: {}` claims
+        // list and read; it deliberately does NOT claim `subscribe` or
+        // `listChanged`, because this server sends no notifications and a
+        // client that believed otherwise would wait forever for an update.
+        capabilities: { tools: {}, resources: {} },
         serverInfo: SERVER,
       });
 
@@ -507,6 +651,24 @@ async function handle(msg) {
           content: [{ type: 'text', text: `Error: ${err?.message || String(err)}` }],
           isError: true,
         });
+      }
+    }
+
+    case 'resources/list':
+      return reply(id, { resources: await listResources() });
+
+    case 'resources/templates/list':
+      return reply(id, { resourceTemplates: RESOURCE_TEMPLATES });
+
+    case 'resources/read': {
+      // Unlike a tool failure, a bad resource read IS a protocol-level error:
+      // the client asked for a specific uri and either it resolves or it does
+      // not. -32002 is MCP's "resource not found"; an unreadable uri is not the
+      // server breaking, so it must not read as -32603.
+      try {
+        return reply(id, { contents: [await readResource(params?.uri)] });
+      } catch (err) {
+        return replyError(id, -32002, err?.message || String(err));
       }
     }
 
