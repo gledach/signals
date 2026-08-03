@@ -75,9 +75,28 @@ console.log('\ntools/list');
   for (const required of ['list_companies', 'search_signals', 'get_convergences', 'market_summary']) {
     ok(names.includes(required), `exposes ${required}`);
   }
-  // Read-only by contract: nothing that writes, deletes or spends.
-  const dangerous = names.filter((n) => /^(create|delete|write|update|fetch|run|refresh|bootstrap|seed)/.test(n));
-  ok(dangerous.length === 0, `no write/spend tools exposed${dangerous.length ? ` (found ${dangerous})` : ''}`);
+  // The contract is READ-ONLY BY DEFAULT, not read-only absolutely.
+  //
+  // Nothing that writes or destroys is exposed at all, ever — those stay behind
+  // the CLI where a human runs them. `run_analyst` spends money and is the sole
+  // exception; it is inert unless the operator opts in via
+  // config/agent-policy.local.mjs, which smoke section 15 verifies the shipped
+  // default does not do.
+  const PERMITTED_ACTIONS = new Set(['run_analyst']);
+  const destructive = names.filter((n) => /^(create|delete|write|update|remove|clear|import|seed)/.test(n));
+  ok(destructive.length === 0, `no write/delete tools exposed${destructive.length ? ` (found ${destructive})` : ''}`);
+
+  const actions = names.filter((n) => /^(run|fetch|refresh|bootstrap)/.test(n));
+  const unexpected = actions.filter((n) => !PERMITTED_ACTIONS.has(n));
+  ok(unexpected.length === 0, `only declared paid actions exposed${unexpected.length ? ` (unexpected: ${unexpected})` : ''}`);
+
+  // A tool that can spend money must say so in its own description. An agent
+  // decides whether to call it from the description alone.
+  for (const action of actions) {
+    const d = tools.find((t) => t.name === action).description;
+    ok(/spends money|SPENDS MONEY/.test(d), `${action} declares that it spends money`);
+    ok(/disabled|DISABLED/i.test(d), `${action} declares that it is disabled by default`);
+  }
 }
 
 console.log('\ntools/call');

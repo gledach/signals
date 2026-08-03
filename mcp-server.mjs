@@ -8,10 +8,17 @@
 // can hold in your head. Adding an SDK to speak a protocol this small would cost more
 // than it saves. If the protocol grows past what is here, revisit — but not before.
 //
-// EVERYTHING IS READ-ONLY. An agent can query signals, convergences, the roster and
-// battlecards. It cannot write, delete, spend money on an LLM call, or trigger a fetch.
-// That is deliberate: the destructive and paid paths stay behind the CLI where a human
-// runs them. See docs/plans/14-agent-native-refactor.md.
+// READ-ONLY BY DEFAULT, AND BY DEFAULT MEANS BY DEFAULT. Out of the box an agent can
+// query signals, convergences, the roster, battlecards and briefs, and nothing else: it
+// cannot write, delete, spend money, or trigger a fetch. Destructive paths stay behind
+// the CLI where a human runs them, permanently.
+//
+// The single exception is `run_analyst`, which spends money and is DISABLED unless the
+// operator lists it in config/agent-policy.local.mjs. It exists because the analyst modes
+// are the actual product — a surface that can only describe what already happened is a
+// log viewer. Every run is bounded by a rolling 24h spend ceiling read from the shared
+// `llm_cost` ledger, so agents, cron and the CLI draw down one number rather than three.
+// See core/agent-budget.mjs for why the counter cannot live in this process.
 //
 // EVERY SIGNAL-REPORTING TOOL MUST RETURN COVERAGE. Wrap the payload in
 // withCoverage(). An agent reading `matched: 0` will report "nothing happened"
@@ -19,9 +26,11 @@
 // with more confidence than a human would, because it never saw the empty
 // dashboard that would have made a person suspicious. The gate enforces this.
 
+
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+import { spawn } from 'node:child_process';
 
 // Load configuration BEFORE anything imports the store.
 //
@@ -33,10 +42,12 @@ import readline from 'node:readline';
 import { loadEnv } from './runtime/env.mjs';
 loadEnv();
 
-import { BATTLECARDS_DIR } from './runtime/paths.mjs';
+import { BATTLECARDS_DIR, ROOT, fromRoot } from './runtime/paths.mjs';
 import { COMPANIES, MARKETS, OUR_COMPANY_ID, CONFIG_FILE } from './config/companies.mjs';
 import { loadAllSignals, listBriefs, loadBrief, coverageStats, getLastCronRun } from './core/store.mjs';
 import { buildCoverage } from './core/coverage.mjs';
+import { POLICY, AGENT_POLICY_FILE, actionAllowed } from './config/agent-policy.mjs';
+import { checkBudget, spentSince, windowStart } from './core/agent-budget.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
 const SERVER = { name: 'signal', version: '0.1.0' };
@@ -245,6 +256,103 @@ const TOOLS = [
   },
 
   {
+    name: 'run_analyst',
+    description:
+      'Run one analyst mode and return the brief it produces. THIS SPENDS MONEY on an '
+      + 'LLM call and is DISABLED unless the operator has opted in via '
+      + 'config/agent-policy.local.mjs — call it once and read the refusal, which names '
+      + 'exactly what is missing. Subject to a rolling 24h spend ceiling shared with the '
+      + 'scheduled pipeline and the CLI, so a refusal may be temporary. Modes: scan '
+      + '(cross-market sweep), brief (daily digest), gap (red-teams THIS pipeline, not '
+      + 'the market), outside (needs topic), deep (one competitor, needs companyId, '
+      + 'costs ~4x the others). Returns a briefId you can then fetch with get_brief.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: { type: 'string', description: 'scan | brief | gap | outside | deep' },
+        companyId: { type: 'string', description: 'Required for mode=deep.' },
+        topic: { type: 'string', description: 'Required for mode=outside.' },
+      },
+      required: ['mode'],
+      additionalProperties: false,
+    },
+    handler: async (args = {}) => {
+      const mode = String(args.mode || '').trim();
+
+      // Refusals name the file to edit. An agent cannot ask a follow-up
+      // question, so "denied" without a remedy just buys a retry loop.
+      if (!actionAllowed('run_analyst')) {
+        throw new Error(
+          `run_analyst is disabled. This deployment's agent policy (${AGENT_POLICY_FILE}) allows: `
+          + `${POLICY.allowActions.length ? POLICY.allowActions.join(', ') : '(nothing — read-only)'}. `
+          + `To enable, add 'run_analyst' to allowActions in config/agent-policy.local.mjs. `
+          + `This is deliberately off by default because running it spends the operator's money.`,
+        );
+      }
+      if (!POLICY.analyst.modes.includes(mode)) {
+        throw new Error(`Mode '${mode}' is not permitted. Allowed: ${POLICY.analyst.modes.join(', ')}.`);
+      }
+      if (mode === 'deep' && !args.companyId) throw new Error("mode=deep needs a companyId. Call list_companies for valid ids.");
+      if (mode === 'outside' && !args.topic) throw new Error("mode=outside needs a topic.");
+      if (args.companyId && !COMPANIES[args.companyId]) {
+        throw new Error(`Unknown companyId '${args.companyId}'. Call list_companies for valid ids.`);
+      }
+
+      const estimate = POLICY.analyst.estimateUsd?.[mode] ?? POLICY.analyst.estimateUsd?.default ?? 0;
+      const verdict = await checkBudget({ policy: POLICY, estimateUsd: estimate });
+      if (!verdict.ok) throw new Error(verdict.reason);
+
+      // "Newest brief" is NOT "the brief I just caused" — cron or an operator
+      // can land one in the same window, and --force upserts one row per day
+      // per mode so a same-day re-run may add no row at all. Snapshot first and
+      // diff, as a backstop to the id the analyst prints.
+      const before = new Set((await listBriefs({ mode, sinceDays: 2, limit: 200 })).map((b) => b.briefId));
+      const startedAt = windowStart();
+      const spentBefore = verdict.spent;
+
+      const argsv = ['--mode=' + mode, '--force'];
+      if (args.companyId) argsv.push('--company=' + args.companyId);
+      if (args.topic) argsv.push('--topic=' + args.topic);
+
+      const run = await spawnAnalyst(argsv, POLICY.analyst.timeoutSecs);
+      if (run.timedOut) throw new Error(`Analyst run exceeded ${POLICY.analyst.timeoutSecs}s and was killed. Nothing was returned; any spend before the kill is still counted against the budget.`);
+      if (run.code !== 0) throw new Error(`Analyst exited ${run.code}. Last output: ${run.tail.slice(-500)}`);
+
+      // Primary: the explicit marker the analyst prints (see the CONTRACT note
+      // in cli/analyst.mjs). Backstop: whatever brief id is new since the snapshot.
+      let briefId = run.stdout.match(/persisted brief to Turso \(id=([^)]+)\)/)?.[1] || null;
+      if (!briefId) {
+        const after = await listBriefs({ mode, sinceDays: 2, limit: 200 });
+        briefId = after.map((b) => b.briefId).find((id) => !before.has(id)) || null;
+      }
+
+      // Actual spend, read back from the shared ledger rather than estimated.
+      // openrouter mirrors each call to the DB fire-and-forget, so a row can
+      // land just after the child exits — hence "approx", and hence the
+      // budget's own accounting being eventually rather than instantly exact.
+      let approxCostUsd = null;
+      let remaining = null;
+      try {
+        const spentAfter = await spentSince(startedAt);
+        approxCostUsd = Number(Math.max(0, spentAfter - spentBefore).toFixed(4));
+        remaining = Number(Math.max(0, POLICY.budget.dailyUsd - spentAfter).toFixed(4));
+      } catch { /* reporting only — the run already succeeded */ }
+
+      return {
+        ok: true,
+        mode,
+        briefId,
+        hint: briefId
+          ? `Fetch the full text with get_brief({ briefId: '${briefId}' }).`
+          : 'The run succeeded but no new brief id was identified — it may have upserted an existing same-day brief. Use list_briefs to locate it.',
+        approxCostUsd,
+        budget: { dailyUsd: POLICY.budget.dailyUsd, remainingUsd: remaining },
+        note: 'Cost is read from the shared llm_cost ledger and may under-report this run by a few hundred milliseconds of lag; the next budget check sees the full amount.',
+      };
+    },
+  },
+
+  {
     name: 'market_summary',
     description:
       'Aggregate counts by company and signal type over a window — the cheapest way to '
@@ -280,6 +388,49 @@ const TOOLS = [
 ];
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Run cli/analyst.mjs as a child process.
+ *
+ * SPAWNED, NOT IMPORTED, on purpose. analyst.mjs parses process.argv at module
+ * scope and runs on import — making it callable would mean refactoring a
+ * working paid path that carries a persona contract and banned-words
+ * enforcement. Spawning it and then reading the brief back through the existing
+ * listBriefs/loadBrief path adds no second synthesis route, which is the same
+ * reasoning that kept a generic `ask` tool out of this server: one analyst, not
+ * two that drift.
+ *
+ * Resolved from ROOT rather than cwd because an MCP client spawns this server
+ * from its own directory — the same trap that once had the server reading an
+ * empty database.
+ */
+function spawnAnalyst(argv, timeoutSecs) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [fromRoot('cli', 'analyst.mjs'), ...argv], {
+      cwd: ROOT,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    // Cap retained output. A runaway child must not grow this process's memory
+    // without bound; the tail is all an error message needs.
+    const cap = (s, add) => (s + add).slice(-20000);
+    child.stdout.on('data', (d) => { stdout = cap(stdout, d.toString()); });
+    child.stderr.on('data', (d) => { stderr = cap(stderr, d.toString()); });
+
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutSecs * 1000);
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ code: -1, timedOut, stdout, stderr, tail: String(err.message) });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, timedOut, stdout, stderr, tail: (stderr || stdout).trim() });
+    });
+  });
+}
 
 function clamp(n, lo, hi) {
   const v = Number(n);

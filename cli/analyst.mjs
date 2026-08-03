@@ -365,6 +365,12 @@ async function runOnce({ persona }) {
       body: content,
       createdAt: new Date().toISOString(),
     });
+    // CONTRACT: the `(id=…)` marker on this line is parsed by the MCP
+    // `run_analyst` tool to report which brief a run produced. The filename
+    // rules that produce briefId (draft- prefix, time-suffixing) live in this
+    // module, so an external caller cannot reliably derive it — and "the newest
+    // brief" is not "the brief I just caused" when cron or an operator is also
+    // writing. Keep the marker shape if you edit this line; smoke §15 asserts it.
     console.log(`[analyst] persisted brief to Turso (id=${briefId})`);
   } catch (err) {
     console.warn(`[analyst] ⚠ Turso persist failed: ${err?.message || err}`);

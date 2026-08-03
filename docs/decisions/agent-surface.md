@@ -94,3 +94,73 @@ invoked; the cron log is reported as corroboration only when it exists.
 Gate section 15 enforces that every signal-reporting tool wraps its payload, and exercises
 the coverage states directly — including that a company in scope which has never been
 collected makes an empty result untrustworthy even when the store as a whole is current.
+
+## One paid action, off by default, on a shared ceiling
+
+A surface that can only describe what already happened is a log viewer. The analyst modes
+are the product — `scan`, `brief`, `gap`, `outside`, `deep` — and an agent that cannot
+trigger them can only read what a human already asked for.
+
+So `run_analyst` exists. Three things make it safe to ship in a public repo:
+
+**Disabled by default.** `config/agent-policy.default.mjs` ships `allowActions: []`.
+Someone who clones this and wires the MCP server into their agent has not agreed to let it
+bill their OpenRouter account, and an agent meeting a new tool calls everything once to see
+what it does. Enabling it is a sentence the operator writes on purpose, in a gitignored
+local file. Gate section 15 imports the *default* explicitly — not the loader — because a
+check that read local overrides would pass on the author's machine and ship a repo that
+bills strangers.
+
+**The spend counter is the `llm_cost` table, not process memory.** An MCP server is spawned
+per client from an arbitrary directory, with no session and nobody to prompt; two agents can
+run two servers against one store simultaneously. A per-process counter would bound nothing
+— each would believe it had the full allowance. Reading the shared ledger means agents,
+cron and the CLI draw down one number, so an agent cannot quietly consume the budget the
+scheduled pipeline still needs.
+
+The guarantee, stated plainly: check-before and check-after, no reservation table. Two
+agents starting in the same instant can both see budget and both proceed, so spend can
+exceed the ceiling by at most one run — bounded by `perCallUsd`. A reservation table would
+close that window and is deliberately not built until an overshoot is observed to matter.
+Budget failures fail CLOSED: if the ledger cannot be read, the run is refused, because an
+unenforceable ceiling on a paid path is worse than a refusal.
+
+**Defaults grounded in observed spend.** `$2.00/day` and `$0.30/call` are not guesses. This
+deployment's ledger shows the most expensive single call on record at `$0.032` and a full
+day of scheduled collection at roughly `$0.30`; the analyst's own code estimates `~$0.20`
+for one `deep` run. The ceiling therefore leaves the pipeline untouched while admitting
+roughly eight deep runs.
+
+### Spawned, not imported
+
+`cli/analyst.mjs` parses `process.argv` at module scope and runs on import. Making it
+callable would mean refactoring a working paid path that carries a persona contract and
+banned-words enforcement. Spawning it and reading the brief back through the existing
+`listBriefs`/`loadBrief` path adds no second synthesis route — the same reasoning that kept
+a generic `ask` tool out of this server. One analyst, not two that drift.
+
+### Identifying the brief a run caused
+
+"Newest brief" is not "the brief I just caused". Cron or an operator can land one in the
+same window, and `--force` upserts one row per day per mode, so a same-day re-run may add
+no row at all. The `briefId` is also not externally derivable: the filename rules that
+produce it (a `draft-` prefix when validation warns, time-suffixing without `--force`) live
+inside the analyst. A live run confirmed this — it returned `draft-2026-08-03-scan`, which
+recency-guessing would have got wrong.
+
+So the analyst prints an explicit `(id=…)` marker, `run_analyst` parses it, and a
+before/after id diff backs it up. The marker is a contract, noted at the call site and
+asserted by the gate.
+
+### Verified against real spend
+
+A live `scan` through the MCP transport returned `briefId: draft-2026-08-03-scan`,
+`approxCostUsd: 0.0465` against a `$0.05` estimate, and `remainingUsd: 0.6433` — matching
+an independent read of the ledger to the cent. The returned id then fetched a 14 KB brief
+through `get_brief`, which is the composability claim actually working: an agent triggers
+analysis with one tool and reads it with another.
+
+Cost is reported as *approximate* on purpose. `openrouter.mjs` mirrors each call to the
+database fire-and-forget so telemetry never slows the pipeline it measures, which means a
+child's last rows can land just after it exits. The ceiling is eventually accurate rather
+than instantaneously exact, and the next check sees the full amount.

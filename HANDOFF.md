@@ -18,7 +18,7 @@ and run with no account and no API key.
 | | |
 |---|---|
 | Repo | `github.com/apsolut/apsolut-signal`, branch `main`, 12 commits |
-| Tests | `npm test` — 260 assertions, 14 gate checks + 5 fixture suites, **all green** |
+| Tests | `npm test` — 274 assertions, 15 gate checks + 5 fixture suites, **all green** |
 | Security | `npm audit` — **0 vulnerabilities** |
 | Data | **1,139 signals** across 14 company ids, 57 convergences. By source: news 572, reviews 175, category 168, tavily 79, releases 40, reddit 33, hn 12, aeo 3 |
 | Anchor | `config/companies.local.mjs` sets `isMain: claudecode` — gitignored, extends the shipped default rather than replacing it |

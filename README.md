@@ -35,7 +35,7 @@ where that is going.
 ```bash
 cp config/companies.default.mjs config/companies.local.mjs   # edit this, nothing else
 npm run companies                                            # confirm what is live
-npm run smoke                                                # gate: 12 offline checks
+npm run smoke                                                # gate: 15 offline checks
 ```
 
 `companies.local.mjs` is gitignored and overrides the shipped roster, so you can pull
@@ -312,6 +312,7 @@ matter:
 | `SIGNALS_FEEDS` | optional | Path to a feeds module. Feeds derive from the roster, so most deployments never set this |
 | `SIGNALS_DEAL_CONTEXT` | optional | Path to a deal-context module — the Battle filter axes. See `config/deal-context.default.mjs` |
 | `SIGNALS_SUBDOMAIN_SIGNALS` | optional | Path to a subdomain/sitemap scoring module. See `config/subdomain-signals.default.mjs` |
+| `SIGNALS_AGENT_POLICY` | optional | Path to an agent-policy module — what an MCP agent may trigger and its spend ceiling. Ships read-only |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | ⚠ | Set to `0` ONLY for corporate-proxy unblock; prefer `NODE_EXTRA_CA_CERTS` |
 | `NODE_EXTRA_CA_CERTS` | optional | Path to corporate root CA PEM — proper TLS fix |
 

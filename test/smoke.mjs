@@ -924,6 +924,84 @@ section('15. Agent surface reports its own blind spots');
   }
   if (!covFail) ok(`${cases.length} coverage states — an empty result is only trusted when collection is provably current`);
 
+  // ── The paid action, and the ceiling on it ────────────────────────────────
+  //
+  // THE MOST IMPORTANT CHECK HERE: what ships must not be able to spend money.
+  // This repo is meant to be public. Someone who clones it and wires the MCP
+  // server into their agent has not agreed to let that agent bill their
+  // OpenRouter account, and an agent meeting a new tool calls everything once
+  // to see what it does. Enabling a paid action must be a sentence the operator
+  // writes on purpose, in a gitignored local file.
+  //
+  // Imports the DEFAULT explicitly, not the loader: this machine has local
+  // overrides, and a check that reads them would pass here and ship a repo that
+  // bills strangers.
+  const shipped = (await import('../config/agent-policy.default.mjs')).default?.policy;
+  if (!shipped) {
+    bad('config/agent-policy.default.mjs does not export { policy }');
+  } else if (shipped.allowActions.length) {
+    bad(`SHIPPED DEFAULT ENABLES PAID ACTIONS: ${shipped.allowActions.join(', ')} — a fresh clone would let an agent spend the operator's money unasked`);
+  } else {
+    ok('shipped agent policy enables no paid actions — a fresh clone is read-only');
+  }
+
+  // Every action a tool can gate on must exist in the policy vocabulary, or the
+  // gate silently never matches and the action is unreachable (or worse, the
+  // check is inverted and it is always reachable).
+  const gatedActions = [...mcp.matchAll(/actionAllowed\('(\w+)'\)/g)].map((m) => m[1]);
+  if (!gatedActions.length) bad('no MCP tool gates on actionAllowed() — paid actions would be ungated');
+  else ok(`${gatedActions.length} paid action(s) gated: ${gatedActions.join(', ')}`);
+
+  // A paid tool must check the budget BEFORE doing the paid thing. Ordering is
+  // the whole point: a check after the spend is a receipt, not a ceiling.
+  const runAnalystStart = mcp.indexOf("name: 'run_analyst'");
+  if (runAnalystStart === -1) {
+    bad("mcp-server.mjs no longer declares run_analyst — update this check");
+  } else {
+    const body = mcp.slice(runAnalystStart, mcp.indexOf("name: 'market_summary'", runAnalystStart));
+    const iGate = body.indexOf('actionAllowed(');
+    const iBudget = body.indexOf('checkBudget(');
+    const iSpawn = body.indexOf('spawnAnalyst(');
+    if (iGate < 0 || iBudget < 0 || iSpawn < 0) bad('run_analyst is missing its permission gate, budget check, or spawn');
+    else if (!(iGate < iBudget && iBudget < iSpawn)) {
+      bad(`run_analyst checks in the wrong order (permission ${iGate}, budget ${iBudget}, spawn ${iSpawn}) — the budget must be checked before spending, not after`);
+    } else ok('run_analyst checks permission, then budget, then spends — in that order');
+  }
+
+  // The budget must fail CLOSED. An unenforceable ceiling on a paid path is
+  // worse than a refusal, because it reads as "protected" while protecting
+  // nothing.
+  const { checkBudget } = await import('../core/agent-budget.mjs');
+  const pol = { budget: { dailyUsd: 2, perCallUsd: 0.3 } };
+  const overPerCall = await checkBudget({ policy: pol, estimateUsd: 0.5 });
+  if (overPerCall.ok) bad('budget allows a run above perCallUsd');
+  else ok('budget refuses a run above the per-call ceiling');
+
+  // Misconfiguration must throw at load, not silently disable the ceiling.
+  // `undefined > n` is false, so a missing budget would wave everything through.
+  let threwOnBadBudget = false;
+  try {
+    const probe = path.join(CONFIG_DIR, '_probe-agent-policy.mjs');
+    fs.writeFileSync(probe, 'export const policy = { allowActions: [], budget: { dailyUsd: 1 } };\nexport default { policy };\n');
+    process.env.SIGNALS_AGENT_POLICY = 'config/_probe-agent-policy.mjs';
+    try {
+      await import(`../config/agent-policy.mjs?probe=${Date.now()}`);
+    } catch { threwOnBadBudget = true; }
+    delete process.env.SIGNALS_AGENT_POLICY;
+    fs.unlinkSync(probe);
+  } catch { /* probe cleanup is best-effort */ }
+  if (threwOnBadBudget) ok('a policy missing perCallUsd throws at load instead of disabling the ceiling');
+  else bad('a policy with an incomplete budget loads silently — the ceiling would not be enforced');
+
+  // run_analyst identifies its brief from a marker the analyst prints. "Newest
+  // brief" is not "the brief I just caused": cron or an operator can land one
+  // in the same window, and --force upserts one row per day per mode so a
+  // same-day re-run may add no row at all.
+  const analystSrc = fs.readFileSync(path.join(ROOT, 'cli/analyst.mjs'), 'utf8');
+  if (!/persisted brief to Turso \(id=\$\{briefId\}\)/.test(analystSrc)) {
+    bad('cli/analyst.mjs no longer prints the `(id=…)` marker that run_analyst parses to identify the brief it caused');
+  } else ok('analyst brief-id marker intact — run_analyst can identify its own output');
+
   // Health must NOT be read off the cron log. Only ops/cron-entry.mjs writes
   // there, so a deployment driven by `npm run fetch` has an empty cron table and
   // a full store — this deployment is exactly that. Reading health from cron

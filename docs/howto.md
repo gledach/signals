@@ -138,7 +138,7 @@ Then open <http://localhost:5180>. Pin the tab — it auto-refreshes every 30s.
 - Click the 📋 on any kill shot / objection / win theme → copies to clipboard (for pasting into Slack / email)
 - Click the 🟢 on any kill shot or objection → opens "This landed" capture form; saves to the battlecard's HUMAN section
 - Critical-band signals fire Windows toasts automatically
-- URL reflects current state — bookmark `http://localhost:5180/#mode=battle&vs=claudecode&vertical=healthcare` to jump straight to a configured Battle view
+- URL reflects current state — bookmark `http://localhost:5180/#mode=battle&vs=cursor&context=regulated&size=org` to jump straight to a configured Battle view (the filter params are the dimension ids from `config/deal-context.default.mjs`)
 
 ---
 
@@ -146,7 +146,7 @@ Then open <http://localhost:5180>. Pin the tab — it auto-refreshes every 30s.
 
 1. `Cmd+K` → type the competitor name → scan top kill shots → `Enter` copies the one you want (or close and browse)
 2. Click **⚔ Battle** tab → pick the competitor in the dropdown
-3. Set filter chips: vertical (`healthcare` etc.) + buyer segment (`Enterprise` etc.) — the kill shots / objections / win themes narrow to what's relevant to this deal
+3. Set filter chips: codebase (`regulated`, `self-hosted` etc.) + team size (`Org-wide` etc.) — the kill shots / objections / win themes narrow to what's relevant to this deal
 4. If the prospect already told you their concern ("their pricing is lower"), type it in the **Prospect said** search box — matching objection responses surface instantly
 5. Optionally: click **✨ Generate talk-track** → enter deal notes → Claude Sonnet generates a 30-second opener + 5 discovery questions + emphasize points + anticipated objections + close framing, all grounded in the competitor's battlecard
 6. After generation, enter a **deal label** ("Acme Healthcare 500-seat") and click **💾 Save this prep** — persists to `data/talk-tracks/<competitorId>/<slug>.json`
@@ -860,6 +860,7 @@ Signal ships a custom loader in `env.mjs` that uses **first-non-empty-wins**. It
 | `SIGNALS_FEEDS` | ❌ | `config/feeds.local.mjs` → `.default.mjs` | Feed module path (feeds derive from the roster) |
 | `SIGNALS_DEAL_CONTEXT` | ❌ | `config/deal-context.local.mjs` → `.default.mjs` | Battle filter axes |
 | `SIGNALS_SUBDOMAIN_SIGNALS` | ❌ | `config/subdomain-signals.local.mjs` → `.default.mjs` | Subdomain + sitemap scoring patterns |
+| `SIGNALS_AGENT_POLICY` | ❌ | `config/agent-policy.local.mjs` → `.default.mjs` | What an MCP agent may trigger + spend ceiling |
 | `CI_WHISPER_ENABLED` | ❌ | `false` | Enable local Whisper fallback when captions missing |
 | `CI_WHISPER_MODEL` | ❌ | `base.en` | Whisper model name |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | ⚠ | — | Set `"0"` ONLY for corporate-proxy unblock; prefer `NODE_EXTRA_CA_CERTS` |
