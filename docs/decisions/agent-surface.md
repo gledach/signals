@@ -59,3 +59,38 @@ Unknown *methods* still get a proper `-32601`, and notifications are never answe
 stdio rather than importing the handlers, so the transport itself is covered: handshake,
 version echo, notification silence, tool discovery, schema shape, a real call, unknown
 tool, unknown method, bad argument, and the read-only contract.
+
+## Every signal-reporting tool carries its own blind spots
+
+`search_signals` returning `matched: 0` has two possible meanings — nothing happened, or
+we stopped looking — and nothing in the row count distinguishes them. A human seeing an
+empty dashboard gets suspicious. An agent states the conclusion and moves on, and whoever
+reads its summary has no route back to the doubt.
+
+So every tool that reports on collected signals wraps its payload in `withCoverage()`,
+which attaches:
+
+- `status` — `fresh` / `slowing` / `stale` / `never`, from how recently collection produced anything
+- `trustEmptyResult` — an explicit yes/no when the result is empty, so the caller does not have to interpret `status`
+- `warnings` — plain sentences naming the specific doubt, including per-company gaps
+- `companies` — last collection time per company, scoped to what the caller asked about
+
+Two aggregate queries (`coverageStats()`), no LLM call, affordable on every request. If
+the coverage check itself fails it degrades to a warning rather than failing the tool: a
+missing caveat is bad, a caveat that breaks the answer is worse.
+
+Artifact readers (`get_battlecard`, `get_brief`, `list_briefs`) are exempt — they return a
+document that either exists or does not, and already say which.
+
+**Health is derived from signal recency, not the cron log.** Only `ops/cron-entry.mjs`
+writes to `cron_runs`, so a deployment whose watchers are driven by hand — `npm run fetch`,
+`npm run all`, the documented local workflow — has an empty cron table and a full signal
+store. This deployment is exactly that: zero cron rows, 1,139 signals. Reading health off
+the cron log would have declared "collection has never run" over all of them, and a
+warning that cries wolf on the primary workflow trains everyone to skip it.
+`MAX(firstSeen)` answers the question actually being asked, however collection was
+invoked; the cron log is reported as corroboration only when it exists.
+
+Gate section 15 enforces that every signal-reporting tool wraps its payload, and exercises
+the coverage states directly — including that a company in scope which has never been
+collected makes an empty result untrustworthy even when the store as a whole is current.

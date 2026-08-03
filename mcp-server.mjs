@@ -12,6 +12,12 @@
 // battlecards. It cannot write, delete, spend money on an LLM call, or trigger a fetch.
 // That is deliberate: the destructive and paid paths stay behind the CLI where a human
 // runs them. See docs/plans/14-agent-native-refactor.md.
+//
+// EVERY SIGNAL-REPORTING TOOL MUST RETURN COVERAGE. Wrap the payload in
+// withCoverage(). An agent reading `matched: 0` will report "nothing happened"
+// unless the response also tells it collection is healthy — and it will say so
+// with more confidence than a human would, because it never saw the empty
+// dashboard that would have made a person suspicious. The gate enforces this.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,10 +35,39 @@ loadEnv();
 
 import { BATTLECARDS_DIR } from './runtime/paths.mjs';
 import { COMPANIES, MARKETS, OUR_COMPANY_ID, CONFIG_FILE } from './config/companies.mjs';
-import { loadAllSignals, listBriefs, loadBrief } from './core/store.mjs';
+import { loadAllSignals, listBriefs, loadBrief, coverageStats, getLastCronRun } from './core/store.mjs';
+import { buildCoverage } from './core/coverage.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
 const SERVER = { name: 'signal', version: '0.1.0' };
+
+/**
+ * Attach collection coverage to any response that reports on collected signals.
+ *
+ * Every such tool MUST use this. An agent cannot tell "nothing happened" from
+ * "we stopped collecting" by looking at rows, and unlike a human staring at an
+ * empty dashboard it will not get suspicious — it will state the conclusion and
+ * move on, and whoever reads its summary has no route back to the doubt.
+ *
+ * Two aggregate queries, no LLM call, so it is affordable on every request.
+ * Failure here degrades to a note rather than taking the tool down with it: a
+ * missing caveat is bad, but a caveat that breaks the answer is worse.
+ */
+async function withCoverage(payload, { matched, companyIds = [], window = null } = {}) {
+  try {
+    const [stats, lastCronRun] = await Promise.all([coverageStats(), getLastCronRun()]);
+    return {
+      ...payload,
+      coverage: buildCoverage(stats, {
+        matched,
+        lastCronRun,
+        scope: { companyIds: companyIds.filter(Boolean), window },
+      }),
+    };
+  } catch (err) {
+    return { ...payload, coverage: { status: 'unknown', warnings: [`Coverage check failed: ${err.message}. Treat an empty result with suspicion.`] } };
+  }
+}
 
 // ── tool definitions ────────────────────────────────────────────────────────
 // Descriptions are written for a MACHINE reader: what it returns, when to reach for it,
@@ -47,7 +82,10 @@ const TOOLS = [
       + 'Call this FIRST when you need company ids — the roster is per-deployment '
       + 'configuration, not a fixed list, so never assume ids from memory.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    handler: async () => ({
+    // Coverage is scoped to the WHOLE roster here. This is the orientation call,
+    // so it is the right place to learn that three of the thirteen companies have
+    // never produced a signal — before spending queries on them.
+    handler: async () => withCoverage({
       configFile: CONFIG_FILE,
       homeCompanyId: OUR_COMPANY_ID,
       markets: MARKETS,
@@ -55,7 +93,7 @@ const TOOLS = [
         id: c.id, name: c.name, domain: c.domain, market: c.market ?? null,
         category: c.category ?? null, isUs: !!c.isUs,
       })),
-    }),
+    }, { matched: null, companyIds: Object.keys(COMPANIES) }),
   },
 
   {
@@ -95,12 +133,21 @@ const TOOLS = [
         rows = rows.filter((s) => `${s.title || ''} ${s.summary || ''}`.toLowerCase().includes(q));
       }
 
-      return {
+      // Scope the per-company gap check to what was actually asked about, so a
+      // targeted query gets a targeted caveat and a broad one is not buried in
+      // thirteen companies' worth of freshness data.
+      const companyIds = args.companyId
+        ? [args.companyId]
+        : args.market
+          ? Object.values(COMPANIES).filter((c) => c.market === args.market).map((c) => c.id)
+          : [];
+
+      return withCoverage({
         matched: rows.length,
         returned: Math.min(rows.length, limit),
         window: `${sinceDays}d`,
         signals: rows.slice(0, limit).map(publicSignal),
-      };
+      }, { matched: rows.length, companyIds, window: `${sinceDays}d` });
     },
   },
 
@@ -127,12 +174,16 @@ const TOOLS = [
       let rows = (await loadAllSignals({ sinceDays })).filter((s) => s.signalType === 'convergence');
       if (args.companyId) rows = rows.filter((s) => s.companyId === args.companyId);
       if (Number.isFinite(args.minImpact)) rows = rows.filter((s) => (s.impactScore ?? 0) >= args.minImpact);
-      return {
+      return withCoverage({
         count: rows.length,
         window: `${sinceDays}d`,
         caveat: 'Model- and rule-derived. Verify against the cited evidence before acting.',
         convergences: rows.map((s) => ({ ...publicSignal(s), evidence: s.evidence || [] })),
-      };
+      }, {
+        matched: rows.length,
+        companyIds: args.companyId ? [args.companyId] : [],
+        window: `${sinceDays}d`,
+      });
     },
   },
 
@@ -214,16 +265,16 @@ const TOOLS = [
         byType[s.signalType] = (byType[s.signalType] || 0) + 1;
       }
       const silent = Object.keys(COMPANIES).filter((id) => !byCompany[id]);
-      return {
+      // Scope the coverage check to exactly the companies that came back empty.
+      // Those are the ones whose silence needs explaining; the rest answered for
+      // themselves by producing rows.
+      return withCoverage({
         window: `${sinceDays}d`,
         totalSignals: rows.length,
         byCompany,
         byType,
         companiesWithNoSignals: silent,
-        note: silent.length
-          ? 'A company with no signals may be genuinely quiet, or its feeds may be failing. Check before concluding.'
-          : undefined,
-      };
+      }, { matched: rows.length, companyIds: silent, window: `${sinceDays}d` });
     },
   },
 ];

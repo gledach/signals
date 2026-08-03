@@ -864,6 +864,77 @@ section('14. Viewer vocabulary tracks the roster');
   else ok(`${modeIds.length} modes, ${hinted.size} with a specific click hint, rest covered by default`);
 }
 
+section('15. Agent surface reports its own blind spots');
+{
+  // An agent reading `matched: 0` will report "nothing happened". It cannot tell
+  // that from "the feed 404'd two weeks ago", and unlike a human staring at an
+  // empty dashboard it does not get suspicious — it states the conclusion, and
+  // whoever reads the summary has no route back to the doubt.
+  //
+  // So every tool that reports on collected signals has to carry coverage. This
+  // is the check that keeps a new tool from shipping without it.
+  const mcp = fs.readFileSync(path.join(ROOT, 'mcp-server.mjs'), 'utf8');
+
+  // Tools whose answers depend on what has been COLLECTED. Artifact readers
+  // (get_battlecard, get_brief, list_briefs) are exempt: they return a document
+  // that either exists or does not, and say so explicitly.
+  const SIGNAL_TOOLS = ['list_companies', 'search_signals', 'get_convergences', 'market_summary'];
+  const declared = [...mcp.matchAll(/name: '(\w+)',/g)].map((m) => m[1]);
+  const missingTool = SIGNAL_TOOLS.filter((t) => !declared.includes(t));
+  if (missingTool.length) {
+    bad(`mcp-server.mjs no longer declares: ${missingTool.join(', ')} — update SIGNAL_TOOLS in this check`);
+  } else {
+    const noCoverage = SIGNAL_TOOLS.filter((tool) => {
+      const start = mcp.indexOf(`name: '${tool}'`);
+      // Tool bodies run to the next tool declaration, or to the end of TOOLS.
+      const nextStarts = declared
+        .map((d) => mcp.indexOf(`name: '${d}'`))
+        .filter((i) => i > start);
+      const end = nextStarts.length ? Math.min(...nextStarts) : mcp.length;
+      return !/withCoverage\(/.test(mcp.slice(start, end));
+    });
+    if (noCoverage.length) bad(`MCP tools report on signals without coverage: ${noCoverage.join(', ')}`);
+    else ok(`${SIGNAL_TOOLS.length} signal-reporting MCP tools all wrap their payload in withCoverage()`);
+  }
+
+  // The coverage logic itself, exercised across every state it can report.
+  // These are the states that matter: each one changes whether a zero result
+  // means anything.
+  const { buildCoverage, collectionStatus } = await import('../core/coverage.mjs');
+  const now = Date.parse('2026-08-03T21:00:00Z');
+  const ago = (h) => new Date(now - h * 3600_000).toISOString();
+  const store = (newest, byCompany = {}) => ({ total: newest ? 1139 : 0, newestFirstSeen: newest, byCompany });
+
+  const cases = [
+    ['fresh store, empty result → trust it', store(ago(2)), { matched: 0 }, true, 0],
+    ['stale store, empty result → do not', store(ago(100)), { matched: 0 }, false, 1],
+    ['quiet store, empty result → do not', store(ago(40)), { matched: 0 }, false, 1],
+    ['never collected → do not', store(null), { matched: 0 }, false, 1],
+    ['scoped company never collected → do not, even when store is fresh',
+      store(ago(2), { cursor: { total: 5, newestFirstSeen: ago(2) } }),
+      { matched: 0, scope: { companyIds: ['cursor', 'aider'] } }, false, 1],
+    ['non-empty result → no verdict needed', store(ago(2)), { matched: 12 }, null, 0],
+  ];
+  let covFail = false;
+  for (const [label, stats, opts, wantTrust, wantWarnings] of cases) {
+    const c = buildCoverage(stats, { ...opts, now });
+    if (c.trustEmptyResult === wantTrust && c.warnings.length === wantWarnings) continue;
+    bad(`coverage: ${label} → trust=${c.trustEmptyResult} warnings=${c.warnings.length}, want trust=${wantTrust} warnings=${wantWarnings}`);
+    covFail = true;
+  }
+  if (!covFail) ok(`${cases.length} coverage states — an empty result is only trusted when collection is provably current`);
+
+  // Health must NOT be read off the cron log. Only ops/cron-entry.mjs writes
+  // there, so a deployment driven by `npm run fetch` has an empty cron table and
+  // a full store — this deployment is exactly that. Reading health from cron
+  // would declare "collection never ran" over 1,139 collected signals, and a
+  // warning that cries wolf on the primary workflow trains everyone to skip it.
+  if (collectionStatus(ago(2), now) !== 'fresh') bad('collectionStatus ignores a recent signal');
+  else if (buildCoverage(store(ago(2)), { matched: 0, lastCronRun: null, now }).trustEmptyResult !== true) {
+    bad('a hand-driven deployment with fresh signals is reported as untrustworthy');
+  } else ok('collection health derives from signal recency, not the cron log');
+}
+
 // ────────────────────────────────── verdict ─────────────────────────────────
 
 console.log(FAIL ? '\nRED — smoke failed\n' : '\nGREEN — smoke passed\n');

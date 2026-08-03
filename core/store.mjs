@@ -132,6 +132,41 @@ export async function loadIndex() {
   return loadAllSignals({ sinceDays: 365 });
 }
 
+/**
+ * When collection last produced anything, globally and per company.
+ *
+ * Aggregates rather than loading rows: callers want "is this store still being
+ * fed" and must be able to ask cheaply enough to answer it on EVERY request.
+ *
+ * `firstSeen` is when WE ingested a signal, not when the world published it —
+ * which is the right clock here. A quiet week upstream and a broken fetcher
+ * look identical in `pubDate`; they do not in `firstSeen`.
+ */
+export async function coverageStats() {
+  const client = getClient();
+  const [overall, perCompany] = await Promise.all([
+    client.execute(
+      `SELECT COUNT(*) AS total, MAX(firstSeen) AS newest, MIN(firstSeen) AS oldest FROM signals`,
+    ),
+    client.execute(
+      `SELECT companyId, COUNT(*) AS total, MAX(firstSeen) AS newest
+       FROM signals GROUP BY companyId`,
+    ),
+  ]);
+  const row = overall.rows[0] || {};
+  return {
+    total: Number(row.total || 0),
+    newestFirstSeen: row.newest || null,
+    oldestFirstSeen: row.oldest || null,
+    byCompany: Object.fromEntries(
+      perCompany.rows.map((r) => [r.companyId, {
+        total: Number(r.total || 0),
+        newestFirstSeen: r.newest || null,
+      }]),
+    ),
+  };
+}
+
 // Batch import is chunked so even a 5000-row backfill stays under any libSQL
 // statement-count limits. Skips duplicates per hashId; caller sees totals.
 export async function importBatch(signals) {
