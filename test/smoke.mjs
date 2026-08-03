@@ -32,18 +32,29 @@ const SKIP_DIRS = new Set([
   'data', 'screenshots', '.debug', '.logs', 'briefs', 'battlecards',
 ]);
 
-function walk(dir, out = []) {
+// One tree walker for the whole gate. There used to be three near-identical
+// copies, each deciding for itself which directories to enter, and all three
+// carried the same bug: they enumerated dot-directories to skip by NAME. Any
+// tool that dropped a new dot-dir in the repo root (agent workspaces, skill
+// caches) crashed the gate with EPERM until someone added it to SKIP_DIRS.
+//
+// The rule is categorical: no project source or documentation lives in a
+// dot-directory. Sections that DO want one — `.claude/skills`, `.agents/skills`
+// — opt in by walking it explicitly.
+function walkTree(dir, keep, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') && entry.name !== '.') {
-      if (SKIP_DIRS.has(entry.name)) continue;
-    }
     if (SKIP_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) walk(full, out);
-    else if (entry.name.endsWith('.mjs')) out.push(full);
+    if (entry.isDirectory()) {
+      if (!entry.name.startsWith('.')) walkTree(full, keep, out);
+    } else if (keep(entry.name, full)) {
+      out.push(full);
+    }
   }
   return out;
 }
+
+const walk = (dir, out = []) => walkTree(dir, (name) => name.endsWith('.mjs'), out);
 
 const rel = (p) => path.relative(ROOT, p).replace(/\\/g, '/');
 const SOURCES = walk(ROOT);
@@ -542,19 +553,11 @@ section('11. Docs reference only live companies');
       /--mode=deep\s+--company=([\w-]+)/g,
     ];
 
-    const docs = [];
-    (function walkDocs(dir) {
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (SKIP_DIRS.has(e.name)) continue;
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) walkDocs(full);
-        // `test/` is exempt for the same reason it is exempt from the brand check:
-        // fixtures deliberately use invalid ids to exercise error paths.
-        else if (/\.(md|mjs)$/.test(e.name)
-                 && !rel(full).startsWith('config/')
-                 && !rel(full).startsWith('test/')) docs.push(full);
-      }
-    })(ROOT);
+    // `test/` is exempt for the same reason it is exempt from the brand check:
+    // fixtures deliberately use invalid ids to exercise error paths.
+    const docs = walkTree(ROOT, (name, full) => /\.(md|mjs)$/.test(name)
+      && !rel(full).startsWith('config/')
+      && !rel(full).startsWith('test/'));
     // Skill files live under dot-dirs that the source walk deliberately skips.
     for (const base of ['.claude/skills', '.agents/skills']) {
       const dir = path.join(ROOT, base);
@@ -595,17 +598,10 @@ section('12. Docs reference only real npm scripts');
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const scripts = new Set(Object.keys(pkg.scripts || {}));
 
-  const docs = [];
-  (function walkMd(dir) {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (SKIP_DIRS.has(e.name)) continue;
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) walkMd(full);
-      // `docs/plans/` is exempt: a plan legitimately describes commands that do not
-      // exist yet. Everything else is instruction, and instruction must work.
-      else if (e.name.endsWith('.md') && !rel(full).startsWith('docs/plans/')) docs.push(full);
-    }
-  })(ROOT);
+  // `docs/plans/` is exempt: a plan legitimately describes commands that do not
+  // exist yet. Everything else is instruction, and instruction must work.
+  const docs = walkTree(ROOT, (name, full) => name.endsWith('.md')
+    && !rel(full).startsWith('docs/plans/'));
   for (const base of ['.claude/skills', '.agents/skills']) {
     const dir = path.join(ROOT, base);
     if (!fs.existsSync(dir)) continue;
@@ -679,6 +675,58 @@ section('13. Anchor modes');
     const t = framing(companies).sheetTitle('Cursor');
     if (/\bnull\b|undefined/.test(t)) { bad(`sheet title leaks a missing anchor: "${t}"`); break; }
   }
+}
+
+section('14. Viewer vocabulary tracks the roster');
+{
+  // §5 confines BRAND literals to config/. It cannot see the other half of a
+  // retarget: the SEGMENT vocabulary — category labels, deal-context filters —
+  // that describes the market rather than the players in it.
+  //
+  // Both halves had already rotted when this check was written. The sidebar's
+  // category→label map still held four keys from the market this repo was
+  // retargeted away from, so no key ever matched and every group header
+  // rendered its raw slug. One entry was a half-applied find-replace: the key
+  // had been swept to the new vocabulary while the value still named the old
+  // market's product category.
+  const viewer = fs.readFileSync(path.join(ROOT, 'dashboard/viewer/viewer.js'), 'utf8');
+  const { COMPANIES } = await import('../config/companies.mjs');
+  const rosterCats = new Set(Object.values(COMPANIES).map((c) => c.category).filter(Boolean));
+
+  const mapBody = viewer.match(/const SIDEBAR_GROUP_LABELS = \{([\s\S]*?)\n\};/)?.[1] ?? '';
+  const orderBody = viewer.match(/const SIDEBAR_GROUP_ORDER = \[(.*?)\];/)?.[1] ?? '';
+  const declared = [
+    ...[...mapBody.matchAll(/^\s*'([^']+)'\s*:/gm)].map((m) => m[1]),
+    ...[...orderBody.matchAll(/'([^']+)'/g)].map((m) => m[1]),
+  ];
+
+  if (!declared.length) {
+    bad('could not parse SIDEBAR_GROUP_LABELS / SIDEBAR_GROUP_ORDER — check failed open');
+  } else {
+    const orphans = [...new Set(declared)].filter((c) => !rosterCats.has(c));
+    if (orphans.length) {
+      bad(`sidebar group labels name categories no company has: ${orphans.join(', ')}`);
+    } else {
+      ok(`sidebar group vocabulary matches roster (${[...rosterCats].join(', ')})`);
+    }
+  }
+
+  // Every roster category needs a human label, or its header shows a raw slug.
+  const labelled = new Set([...mapBody.matchAll(/^\s*'([^']+)'\s*:/gm)].map((m) => m[1]));
+  const unlabelled = [...rosterCats].filter((c) => !labelled.has(c));
+  if (unlabelled.length) bad(`roster categories with no sidebar label (render as raw slugs): ${unlabelled.join(', ')}`);
+  else ok('every roster category has a sidebar label');
+
+  // A sidebar click means something different in each mode, and only the modes
+  // that scope their view to a company may show one selected. Assert the hint
+  // table covers every mode so a new mode cannot ship with a silent teleport.
+  const modeIds = [...viewer.matchAll(/\{ id: '(\w+)',\s+label: '/g)].map((m) => m[1]);
+  const hintBody = viewer.match(/const COMPANY_CLICK_HINT = \{([\s\S]*?)\n\};/)?.[1] ?? '';
+  const hinted = new Set([...hintBody.matchAll(/^\s*(\w+):/gm)].map((m) => m[1]));
+  const hasDefault = /COMPANY_CLICK_HINT_DEFAULT\s*=\s*'/.test(viewer);
+  if (!modeIds.length) bad('could not parse SIDEBAR_MODES');
+  else if (!hasDefault) bad('COMPANY_CLICK_HINT_DEFAULT missing — unhinted modes would show no caption');
+  else ok(`${modeIds.length} modes, ${hinted.size} with a specific click hint, rest covered by default`);
 }
 
 // ────────────────────────────────── verdict ─────────────────────────────────

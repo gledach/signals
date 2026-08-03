@@ -354,6 +354,29 @@ body.sidebar-collapsed .app-shell { grid-template-columns: 60px minmax(0, 1fr); 
   padding: 4px 12px;
 }
 
+/* Caption over the whole brand list. It carries the one thing the list itself
+   cannot show: what a click does in the current mode. */
+.sb-section-caption {
+  padding: 10px 12px 2px;
+  border-top: 1px solid var(--border-soft);
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sb-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--text);
+}
+.sb-section-hint {
+  font-size: 10px;
+  color: var(--muted);
+  font-style: italic;
+}
+
 .sidebar-footer {
   border-top: 1px solid var(--border-soft);
   padding: 10px 12px;
@@ -370,7 +393,8 @@ body.sidebar-collapsed .sb-label { display: none; }
 body.sidebar-collapsed .sb-count { display: none; }
 body.sidebar-collapsed .sb-pill { display: none; }
 body.sidebar-collapsed .sb-kbd { display: none; }
-body.sidebar-collapsed .sb-group-label { display: none; }
+body.sidebar-collapsed .sb-group-label,
+body.sidebar-collapsed .sb-section-caption { display: none; }
 body.sidebar-collapsed .sb-mode,
 body.sidebar-collapsed .sb-company {
   justify-content: center;

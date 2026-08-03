@@ -319,19 +319,38 @@ const SIDEBAR_MODES = [
   { id: 'inbox',  label: 'Inbox',     icon: ICONS.inbox,  kbd: '7' },
 ];
 
-// Category ids (from companies.mjs) → sidebar group labels. Multiple raw
-// categories can fold into one label — e.g. audio-infra + enterprise-ai-search
-// both render as "Adjacent layers" so the sidebar doesn't fragment into
-// one-row groups. Unknown categories get their id as the label (fallback).
+// Category ids (from the roster) → sidebar group labels. Multiple raw categories
+// can fold into one label, so a deployment tracking several thin adjacent
+// segments doesn't fragment the sidebar into one-row groups. Unknown categories
+// get their id as the label (fallback).
+//
+// Every key here MUST exist as a `category` on some company in the roster.
+// Gate check `sidebar group labels` (test/smoke.mjs) enforces that. It exists
+// because this map previously held four keys from the market this repo was
+// retargeted away from — none matched, so every group silently rendered its raw
+// slug ("CODING-AGENT"), and one entry was a half-finished find-replace whose
+// key had been swept while its value still named the old market's product
+// category. The brand-literal gate never caught it: these are segment names,
+// not brand names.
 const SIDEBAR_GROUP_LABELS = {
-  'AI coding-agents': 'Voice agents',
-  'conversational-ai-enterprise': 'Enterprise conv AI',
-  'audio-infra': 'Adjacent layers',
-  'enterprise-ai-search': 'Adjacent layers',
+  'coding-agent': 'Coding agents',
+  'app-builder': 'App builders',
 };
-// Render order for category groups when both appear. Any category not listed
+// Render order for category groups when several appear. Any category not listed
 // falls to the end in insertion order.
-const SIDEBAR_GROUP_ORDER = ['AI coding-agents', 'conversational-ai-enterprise', 'audio-infra', 'enterprise-ai-search'];
+const SIDEBAR_GROUP_ORDER = ['coding-agent', 'app-builder'];
+
+// What a sidebar company click DOES, per mode. The sidebar is one flat list
+// holding two different kinds of control — a view switcher and a subject
+// picker — and only Feed and Battle consume the subject. In the other five
+// modes a click leaves the mode entirely for Battle. That teleport is a
+// deliberate shortcut, but it was undeclared, which is what made the sidebar
+// read as "sometimes one click, sometimes two". Say it out loud instead.
+const COMPANY_CLICK_HINT = {
+  feed:   'click to filter the feed',
+  battle: 'click to pick the rival',
+};
+const COMPANY_CLICK_HINT_DEFAULT = 'click opens Battle';
 
 // Companies with a one-word context pill — surfaces ambient self-awareness.
 // "employer" on OpenAI Codex keeps the "operator lens" thinking-discipline step live
@@ -454,7 +473,17 @@ function renderSidebarCompanies() {
   if (us.length) groups.push({ label: 'Us', companies: us });
   for (const [label, list] of groupsMerged) groups.push({ label, companies: list });
 
-  el.innerHTML = groups.map((g) => `
+  // One caption for the whole brand list, stating the consequence of a click in
+  // THIS mode. Without it the list looks identically clickable in all seven
+  // modes while meaning four different things.
+  const hint = COMPANY_CLICK_HINT[state.mode] || COMPANY_CLICK_HINT_DEFAULT;
+  const caption = `
+    <div class="sb-section-caption">
+      <span class="sb-section-title">Brands</span>
+      <span class="sb-section-hint">${esc(hint)}</span>
+    </div>`;
+
+  el.innerHTML = caption + groups.map((g) => `
     <div class="sb-group">
       <div class="sb-group-label">${esc(g.label)}</div>
       ${g.companies.map(renderSidebarCompanyRow).join('')}
@@ -467,11 +496,17 @@ function renderSidebarCompanies() {
 }
 
 function renderSidebarCompanyRow(c) {
-  // Active state depends on the current mode: Feed tracks currentCompany,
-  // Battle tracks battleCompetitor. Market/Report don't track a company but
-  // we still highlight what the operator last "selected" for continuity.
-  const activeId = state.mode === 'battle' ? state.battleCompetitor : state.currentCompany;
-  const isActive = activeId === c.id;
+  // Only Feed and Battle actually scope their view to a company, so only they
+  // may show a selected row. The previous version fell back to currentCompany
+  // in every other mode and called it "continuity" — but Market/Intel/Report/
+  // Briefs/Inbox set battleCompetitor, never currentCompany, so the highlight
+  // pointed at whatever was last picked in a different mode during a different
+  // interaction. A selection indicator that marks something the current view is
+  // not scoped to is worse than none.
+  const activeId = state.mode === 'battle' ? state.battleCompetitor
+    : state.mode === 'feed' ? state.currentCompany
+    : null;
+  const isActive = activeId != null && activeId === c.id;
 
   // Count of signals from this competitor in the last 24h — quick "who's hot".
   const dayAgo = Date.now() - 86400_000;
@@ -546,7 +581,11 @@ function selectCompanyFromSidebar(id) {
     renderSidebar();
     writeUrlState();
   } else {
-    // Market / Report: a sidebar click means "compare this one".
+    // Every remaining mode — Market, Intel, Report, Briefs, Inbox — is global:
+    // none of them scope to a company, so there is nothing for a click to
+    // refine in place. It jumps to Battle for that company instead. The
+    // sidebar caption announces this ("click opens Battle") so leaving the
+    // mode is an advertised shortcut rather than the view vanishing.
     if (id === battleAnchorId()) {
       flashHint(`${nameOf(id)} is the comparison anchor — open Battle to change it.`);
       return;
