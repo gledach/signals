@@ -984,6 +984,59 @@ section('14. Viewer vocabulary tracks the roster');
     else ok('anchor picker locked by config, handler guarded independently of the markup');
   }
 
+  // Every Battle comparison row must be fillable by a heading the generator can
+  // actually emit. This drifted badly and silently: `ours` listed self-card
+  // vocabulary that anchored mode never produces, two rows pointed at sections
+  // the generator stopped emitting entirely, and renaming one heading killed a
+  // third. Four of nine rows rendered as a dash — a comparison view that could
+  // not compare, and nothing failed.
+  //
+  // The generator's headings are the source of truth, so derive them from the
+  // renderer rather than from a card on disk: a check that reads a generated
+  // file would pass on a stale card and fail on a fresh clone.
+  const bootSrcForRows = fs.readFileSync(path.join(ROOT, 'cli/bootstrap-battlecard.mjs'), 'utf8');
+  const { framing: framingFn } = await import('../core/home-brand.mjs');
+  const anchorFixtures = [
+    { acme: { id: 'acme', name: 'Acme', isUs: true }, globex: { id: 'globex', name: 'Globex' } },
+    { acme: { id: 'acme', name: 'Acme', isMain: true }, globex: { id: 'globex', name: 'Globex' } },
+    { acme: { id: 'acme', name: 'Acme' }, globex: { id: 'globex', name: 'Globex' } },
+  ];
+  // Per MODE, not pooled. Pooling every mode's headings into one set was the
+  // first version of this check and it passed on the exact regression it was
+  // written for: a row pointing only at the partisan 'Weaknesses (our ammo)'
+  // resolved against the home-brand mode while being dead in the other two —
+  // which is where this deployment lives. A row has to work wherever the card
+  // was generated, so every row must resolve in EVERY mode.
+  const literalHeadings = [...bootSrcForRows.matchAll(/lines\.push\(`### ([^`$]+)`\)/g)].map((m) => m[1].trim());
+  const emittedPerMode = anchorFixtures.map((companies) => {
+    const f = framingFn(companies);
+    return new Set([
+      ...literalHeadings,
+      f.winThemesHeading,
+      `Weaknesses${f.hasHome ? ' (our ammo)' : ''}`,
+    ].filter(Boolean));
+  });
+
+  const battleRows = [...viewer.matchAll(/label: '([^']+)',\s*\n\s*ours: \[([^\]]*)\],\s*\n\s*theirs: \[([^\]]*)\],/g)];
+  if (!battleRows.length) {
+    bad('could not parse BATTLE_SECTIONS — the comparison table may be unchecked');
+  } else {
+    const dead = [];
+    const MODE_NAMES = ['home-brand', 'anchored', 'market-watch'];
+    for (const [, label, oursRaw, theirsRaw] of battleRows) {
+      const names = (raw) => [...raw.matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
+      emittedPerMode.forEach((emitted, i) => {
+        const oursOk = names(oursRaw).some((h) => emitted.has(h));
+        const theirsOk = names(theirsRaw).some((h) => emitted.has(h));
+        if (!oursOk || !theirsOk) {
+          dead.push(`${label} in ${MODE_NAMES[i]}(${[!oursOk && 'anchor', !theirsOk && 'competitor'].filter(Boolean).join('+')})`);
+        }
+      });
+    }
+    if (dead.length) bad(`Battle comparison rows no heading can fill: ${dead.join(', ')}`);
+    else ok(`all ${battleRows.length} Battle comparison rows map to a heading the generator emits`);
+  }
+
   // A sidebar click means something different in each mode, and only the modes
   // that scope their view to a company may show one selected. Assert the hint
   // table covers every mode so a new mode cannot ship with a silent teleport.

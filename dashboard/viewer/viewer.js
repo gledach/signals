@@ -2321,41 +2321,51 @@ function firstMatchingSection(md, candidates) {
 // Pairs of (OUR section headings, THEIR section headings) — first match wins.
 // Section headings in the order they show up in the comparison table.
 // NOTE: pass raw strings (no regex escaping) — matchSection() escapes for us.
+// Rows of the side-by-side comparison. Each lists the headings that can supply
+// it, newest naming first, older names kept so previously-generated cards still
+// resolve.
+//
+// `ours` USED TO BE A DIFFERENT VOCABULARY — 'One-liner', 'Target ICP', 'Core
+// differentiators' — because it was written for a self-card produced by
+// bootstrap-self-card.mjs. In anchored mode there is no self-card: the anchor's
+// own card comes from bootstrap-battlecard like every other, with headings
+// 'Positioning', 'Target Segment', 'Strengths (their story)'. So the anchor
+// column resolved nothing and four of nine rows rendered as a dash against a
+// populated competitor — a comparison view that could not compare. `ours` now
+// falls back to `theirs`, which is what the anchor's card actually contains.
+//
+// Two rows were removed rather than repaired: Integrations and Compliance /
+// security have had no source section since the generator moved that data into
+// the Features Comparison matrix, which renders directly below this table. A row
+// that can never fill is worse than an absent one — it reads as "no data" about
+// the vendor instead of "this view stopped asking".
 const BATTLE_SECTIONS = [
   {
     label: 'Positioning',
-    ours: ['One-liner', 'Public one-liner (as the market sees us)', 'Public one-liner', 'Observed positioning', "Positioning we're testing"],
+    ours: ['Positioning', 'One-liner', 'Public one-liner (as the market sees us)', 'Public one-liner', 'Observed positioning'],
     theirs: ['Positioning', 'Public one-liner (as the market sees us)', 'Public one-liner'],
   },
   {
     label: 'Target segment',
-    ours: ['Target ICP', 'Likely target segment (inferred)', 'Likely target segment'],
+    ours: ['Target Segment', 'Target ICP', 'Likely target segment (inferred)', 'Likely target segment'],
     theirs: ['Target Segment', 'Likely target segment (inferred)', 'Likely target segment'],
   },
   {
     label: 'Pricing model',
-    ours: ['Pricing model', 'Observed pricing signals'],
+    ours: ['Pricing Model', 'Pricing model', 'Observed pricing signals'],
     theirs: ['Pricing Model', 'Observed pricing signals'],
   },
   {
-    label: 'Differentiators',
-    ours: ['Core differentiators', 'Likely differentiators (flagged)', 'Likely differentiators'],
+    label: 'Strengths',
+    ours: ['Strengths (their story)', 'Core differentiators', 'Likely differentiators (flagged)', 'Likely differentiators'],
     theirs: ['Strengths (their story)', 'Likely differentiators (flagged)', 'Likely differentiators'],
   },
   {
-    label: 'Weaknesses (our ammo)',
-    ours: [],
-    theirs: ['Weaknesses (our ammo)'],
-  },
-  {
-    label: 'Integrations',
-    ours: ['Integrations', 'Observed integrations'],
-    theirs: ['Observed integrations'],
-  },
-  {
-    label: 'Compliance / security',
-    ours: ['Compliance / security', 'Observed compliance claims', 'Observed compliance'],
-    theirs: ['Observed compliance claims', 'Observed compliance'],
+    // 'Weaknesses (our ammo)' is the partisan spelling, emitted only when a home
+    // brand exists. Both are listed so a card written under either mode resolves.
+    label: 'Weaknesses',
+    ours: ['Weaknesses', 'Weaknesses (our ammo)'],
+    theirs: ['Weaknesses', 'Weaknesses (our ammo)'],
   },
   {
     label: 'Product direction',
