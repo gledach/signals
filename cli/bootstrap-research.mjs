@@ -45,14 +45,25 @@ if (!hasApiKey()) {
 
 // ─────────────────── prompt ────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a senior competitive intelligence analyst preparing a DEEP research
-brief on one vendor, written for ${FRAMING.hasHome ? `a sales rep at ${FRAMING.usName}` : "an independent evaluator"}.
+// Same lesson as bootstrap-battlecard: voice must come from framing, not from a
+// single conditional clause with a dozen rep-voiced sentences underneath it.
+// This prompt also carried a mangled remnant of a previous deployment's brand
+// name in a field description — invisible to the brand gate, which can only
+// recognise companies the roster names.
+const READER = FRAMING.hasHome ? `a sales rep at ${FRAMING.usName}` : 'an independent evaluator';
+const READER_SHORT = FRAMING.hasHome ? 'the rep' : 'the reader';
 
-Your output replaces the HUMAN-EDITED section of the battlecard. It must be
-trustworthy enough that a rep can glance at it 5 minutes before a call and quote
-from it. This means every claim is either (a) fact-checked against the provided
-signals, (b) derivable from public knowledge of the tracked category, or
-(c) explicitly marked [inferred] / [unverified] so the rep knows what to double-check.
+const SYSTEM_PROMPT = `You are a senior competitive intelligence analyst preparing a DEEP research
+brief on one vendor, written for ${READER}.
+
+VOICE: ${FRAMING.voiceRule}
+
+Your output is filed under the HUMAN-EDITED section of the battlecard, in a block
+marked as AI-generated. It must be trustworthy enough that ${READER_SHORT} can read it
+5 minutes before a meeting and quote from it. This means every claim is either
+(a) fact-checked against the provided signals, (b) derivable from public knowledge of
+the tracked category, or (c) explicitly marked [inferred] / [unverified] so
+${READER_SHORT} knows what to double-check.
 
 FACT-CHECK DISCIPLINE (non-negotiable):
 - Never invent customer names, pricing numbers, certification claims, or founder names.
@@ -73,16 +84,16 @@ Output STRICT JSON (no extra keys, no preamble):
     "founders": [{"name": "<full name>", "background": "<short bio>"}]
   },
   "prospectObjectionsLikely": [
-    {"objection": "<what a prospect might say favoring them>", "sourceHint": "<reddit/g2/general>", "response": "<how an evaluator should respond — seetVocal rep handles it>"}
+    {"objection": "<${FRAMING.objectionSource}>", "sourceHint": "<reddit/g2/general>", "response": "<${FRAMING.objectionGoal}>"}
   ],
   "draftKillShots": [
-    {"angle": "<short label>", "line": "<1-2 sentence talking point>", "evidence": "<what backs this — signal or public fact>"}
+    {"angle": "<short label>", "line": "<${FRAMING.killShotGoal}>", "evidence": "<what backs this — signal or public fact>"}
   ],
   "deepWeaknesses": [
     {"weakness": "<specific weakness>", "evidence": "<how you know — signal, review, hiring gap, etc.>"}
   ],
   "recentMoves": [
-    {"date": "<YYYY-MM-DD>", "event": "<what happened>", "implication": "<why a rep should care>"}
+    {"date": "<YYYY-MM-DD>", "event": "<what happened>", "implication": "<why ${READER_SHORT} should care>"}
   ],
   "rumorWatch": [
     "<rumor or unconfirmed pattern worth tracking, each flagged [rumor]>"
@@ -177,31 +188,43 @@ function renderResearchMarkdown(j, company) {
   }
   if ((v.founders || []).length) {
     L.push('- **Founders**:');
-    for (const f of v.founders) L.push(`  - **${f.name}** — ${f.background}`);
+    for (const f of v.founders) L.push(`  - **${f.name}** — ${f.background || '_background not established_'}`);
   }
   L.push('');
 
   if ((j.deepWeaknesses || []).length) {
-    L.push('#### Deep weaknesses (our ammo)');
+    L.push(`#### Deep weaknesses${FRAMING.hasHome ? ' (our ammo)' : ''}`);
     for (const w of j.deepWeaknesses) {
-      L.push(`- **${w.weakness}** — ${w.evidence}`);
+      // An absent field must not render as the literal string "undefined". It
+      // did, and the result reads as a claim whose evidence is the word
+      // "undefined" — worse than an honest gap, because it looks like content.
+      L.push(w.evidence
+        ? `- **${w.weakness}** — ${w.evidence}`
+        : `- **${w.weakness}** — _no evidence supplied — verify independently_`);
     }
     L.push('');
   }
 
   if ((j.draftKillShots || []).length) {
-    L.push('#### Draft kill shots (promote to the confirmed list after a rep lands them)');
+    L.push(FRAMING.hasHome
+      ? '#### Draft kill shots (promote to the confirmed list after a rep lands them)'
+      : '#### Draft contrasts (verify each before relying on it)');
     for (const k of j.draftKillShots) {
-      L.push(`- **${k.angle}** — ${k.line}`);
+      L.push(`- **${k.angle}** — ${k.line || '_no line supplied_'}`);
       if (k.evidence) L.push(`  - _evidence_: ${k.evidence}`);
     }
     L.push('');
   }
 
   if ((j.prospectObjectionsLikely || []).length) {
-    L.push('#### Prospect objections you should expect');
+    L.push(FRAMING.hasHome
+      ? '#### Prospect objections you should expect'
+      : '#### Counter-arguments to expect');
     for (const o of j.prospectObjectionsLikely) {
-      L.push(`- **"${o.objection}"** _(source: ${o.sourceHint || 'inferred'})_`);
+      // Strip quotes the model already added, so a quoted objection does not
+      // render as ""like this"".
+      const quoted = String(o.objection ?? '').trim().replace(/^["“”']+|["“”']+$/g, '');
+      L.push(`- **"${quoted}"** _(source: ${o.sourceHint || 'inferred'})_`);
       if (o.response) L.push(`  - _response_: ${o.response}`);
     }
     L.push('');
@@ -243,7 +266,7 @@ async function main() {
     console.error('This is our own company. Deep-research runs only on competitors.');
     process.exit(2);
   }
-  console.log(`[research] ${company.name} (${company.id}) — using Opus for fact-checked deep-dive`);
+  console.log(`[research] ${company.name} (${company.id}) — fact-checked deep-dive`);
 
   const { file, existing } = loadBattlecard(company.id);
   if (!existing) {
@@ -285,7 +308,11 @@ ${digest || '(no signals — analysis rests on general category knowledge)'}
 
 Produce the deep-research JSON. Fact-check every claim. Flag every inference.`;
 
-  const model = deepThinkingModel(); // Opus 4.7 unless env overrides
+  // Whatever CI_DEEP_MODEL resolves to. This line used to announce "using Opus"
+  // unconditionally while the resolver returned whatever the operator had
+  // configured — a log that names a model you are not paying for is worse than
+  // no log, because it is the line you check when a result looks thin.
+  const model = deepThinkingModel();
   console.log(`[research] model=${model} · signals=${coSignals.length} · dry-run=${DRY_RUN}`);
 
   if (DRY_RUN) {
@@ -299,7 +326,13 @@ Produce the deep-research JSON. Fact-check every claim. Flag every inference.`;
   const json = await chatJson({
     model,
     temperature: 0.2,    // low — fact-checked output
-    maxTokens: 9000,     // Opus can produce long, detailed JSON
+    // Sized for the DEEPEST model on the BUSIEST company, not the average case.
+    // 9000 was enough for a terser model; on Opus 5 a company with 150+ signals
+    // truncated mid-JSON, and a truncation costs full price for nothing — the
+    // failed cursor run billed $0.39 and produced no card. A ceiling is only
+    // paid for when reached, so sizing it generously is close to free while
+    // sizing it tightly bills you for the failure.
+    maxTokens: 20000,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userMsg },

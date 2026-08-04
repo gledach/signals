@@ -712,6 +712,64 @@ section('13. Anchor modes');
     bad('the battlecard prompt does not interpolate the framing voice');
   } else ok('battlecard prompt derives its voice from framing, not literals');
 
+  // The DEEP-research prompt is the same shape and had the same rot, plus one
+  // thing the brand gate structurally cannot see: a MANGLED brand name. A
+  // find-replace across this repo left a corrupted fragment of a previous
+  // deployment's brand inside a field description — not the brand, not a word,
+  // so §5 had nothing to match. It shipped in a prompt sent to the model on
+  // every run.
+  //
+  // Detect the shape rather than the name: an interior capital inside an
+  // otherwise-lowercase token is how a half-substituted CamelCase brand looks,
+  // and legitimate prose in these prompts has none.
+  const research = fs.readFileSync(path.join(ROOT, 'cli/bootstrap-research.mjs'), 'utf8');
+  const researchPrompt = research.match(/const SYSTEM_PROMPT = `[\s\S]*?`;/)?.[0] || '';
+  if (!researchPrompt) {
+    bad('could not locate SYSTEM_PROMPT in cli/bootstrap-research.mjs');
+  } else {
+    // The prompt's own schema is the allowlist: every camelCase token it declares
+    // as a JSON key is legitimate, including when prose refers to it by a shorter
+    // form ("killShots" for "draftKillShots"). Deriving this beats hardcoding —
+    // a hardcoded list would need editing every time the schema gains a field,
+    // and the check would start crying wolf on ordinary work.
+    const schemaKeys = [...researchPrompt.matchAll(/"(\w+)"\s*:/g)].map((m) => m[1].toLowerCase());
+    const isSchemaWord = (t) => schemaKeys.some((k) => k.includes(t.toLowerCase()));
+    const mangled = [...researchPrompt.matchAll(/\b[a-z]{2,}[A-Z][A-Za-z]*\b/g)]
+      .map((m) => m[0])
+      .filter((t) => !isSchemaWord(t) && !researchPrompt.includes(`FRAMING.${t}`));
+    if (mangled.length) {
+      bad(`possible mangled brand fragment in the research prompt: ${[...new Set(mangled)].join(', ')}`);
+    } else if (/a rep should care|rep knows what|rep can glance/.test(researchPrompt)) {
+      bad('the research prompt hardcodes rep-voiced text — it must come from framing()');
+    } else ok('research prompt is free of mangled tokens and derives its voice from framing');
+  }
+
+  // A missing field must never reach the page as the string "undefined". It did:
+  // a weakness rendered with "— undefined" where its evidence should be, which
+  // reads as content rather than as the gap it is. Template literals interpolate
+  // undefined silently, so this is a whole class, not one typo.
+  const renderers = ['cli/bootstrap-research.mjs', 'cli/bootstrap-battlecard.mjs'];
+  const unguarded = [];
+  for (const rel_ of renderers) {
+    const src = fs.readFileSync(path.join(ROOT, rel_), 'utf8');
+    // Interpolations inside a pushed markdown line that have neither an inline
+    // fallback nor a nearby existence check.
+    for (const m of src.matchAll(/L\.push\(`[^`]*\$\{(\w+)\.(\w+)\}[^`]*`\)/g)) {
+      const line = m[0];
+      if (/\?\?|\|\||\?\./.test(line)) continue;          // inline fallback
+      // Or guarded by an `if (obj.field)` on a nearby preceding line, which is
+      // the other idiomatic way this file avoids the problem. Checking only the
+      // interpolating line itself would report those as defects and train the
+      // reader to ignore this check.
+      const before = src.slice(Math.max(0, m.index - 160), m.index);
+      if (new RegExp(`if\\s*\\(\\s*${m[1]}\\.${m[2]}\\s*\\)`).test(before)) continue;
+      unguarded.push(`${rel_}: ${m[1]}.${m[2]}`);
+    }
+  }
+  if (unguarded.length) {
+    bad(`markdown renderers interpolate fields with no fallback — a missing one prints "undefined": ${[...new Set(unguarded)].join(', ')}`);
+  } else ok('markdown renderers guard every interpolated field');
+
   // `isUs` implies being the subject — you are always your own focus.
   const both = buildRegistry({ companies: { ...base, acme: { ...base.acme, isUs: true, isMain: true } } });
   if (both.MAIN_COMPANY_ID === 'acme') ok('isUs implies isMain');
