@@ -9,17 +9,24 @@
 
 <!-- Edit this section freely. It will NEVER be overwritten by scripts. -->
 
-### What we've actually heard in deals
-- _(add objections, quotes, loss reasons as you collect them)_
+<!-- The headings below are GENERATED from your anchor mode, not fixed. A
+     deployment with `isUs` is asked about deals, reps and named accounts; one
+     with only `isMain`, or none at all, is asked what it verified first-hand and
+     where the generated research is wrong. See core/home-brand.mjs
+     (humanSections). An untouched scaffold is rewritten automatically when the
+     mode changes; one containing real notes is never touched. -->
 
-### Our confirmed kill shots (used and landed)
-- _(promote kill shots from the AUTO section below after a rep lands one in a call)_
+### What I have verified myself
+- _(first-hand checks — a claim you tested beats anything below)_
 
-### Accounts we've won from them
-- _(list customer names or industries)_
+### Corrections to the research
+- _(where the generated sections got it wrong. This is the highest-value thing on the page)_
 
-### Accounts we've lost to them
-- _(list with loss reason)_
+### Open questions
+- _(what you still need to find out about this vendor)_
+
+### Sources worth keeping
+- _(links, threads, docs you keep going back to)_
 
 ---
 

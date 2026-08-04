@@ -232,10 +232,19 @@ Two clearly-marked sections:
 
 <!-- Edit this section freely. It will NEVER be overwritten by scripts. -->
 
-### What we've actually heard in deals
-### Our confirmed kill shots (used and landed)
-### Accounts we've won from them
-### Accounts we've lost to them
+### … four headings, generated from your anchor mode …
+```
+
+The HUMAN headings are **not fixed**. A deployment with `isUs` is asked about
+deals, reps and named accounts. One with only `isMain` — or none at all — has
+none of those, so it is asked what it verified first-hand, where the generated
+research is wrong, what is still open, and which sources to keep. They come from
+`humanSections` in `core/home-brand.mjs`.
+
+An untouched scaffold is rewritten automatically when the mode changes; one that
+contains a single real note is never touched.
+
+```
 
 ---
 

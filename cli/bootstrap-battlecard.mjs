@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCompany, COMPANIES } from '../config/companies.mjs';
-import { framing } from '../core/home-brand.mjs';
+import { framing, renderHumanScaffold, migrateHumanScaffold } from '../core/home-brand.mjs';
 import { loadIndex } from '../core/store.mjs';
 import { chatJson, chat, synthesisModel, hasApiKey } from '../pipeline/openrouter.mjs';
 import { FEATURES, FEATURE_STATUS_VALUES, featureRegistryForPrompt, featuresById } from '../core/features.mjs';
@@ -243,17 +243,7 @@ function renderFullTemplate(company, autoBody) {
 
 <!-- Edit this section freely. It will NEVER be overwritten by scripts. -->
 
-### What we've actually heard in deals
-- _(add objections, quotes, loss reasons as you collect them)_
-
-### Our confirmed kill shots (used and landed)
-- _(promote kill shots from the AUTO section below after a rep lands one in a call)_
-
-### Accounts we've won from them
-- _(list customer names or industries)_
-
-### Accounts we've lost to them
-- _(list with loss reason)_
+${renderHumanScaffold(FRAMING)}
 
 ---
 
@@ -327,7 +317,9 @@ For featureMatrix, emit ONE entry per registry feature id — prefer "unknown" o
 
   const { file, existing } = loadBattlecard(company.id);
   const autoBody = renderAutoSection(company, json);
-  const next = spliceAutoSection(existing, autoBody) || renderFullTemplate(company, autoBody);
+  // Migrate first, so the splice below writes into the corrected shape.
+  const base = existing ? migrateHumanScaffold(existing, FRAMING) : existing;
+  const next = spliceAutoSection(base, autoBody) || renderFullTemplate(company, autoBody);
   fs.mkdirSync(BATTLECARDS_DIR, { recursive: true });
   fs.writeFileSync(file, next, 'utf8');
   console.log(`[bootstrap] wrote ${file}`);

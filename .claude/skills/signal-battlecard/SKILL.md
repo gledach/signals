@@ -45,10 +45,9 @@ Each battlecard at `battlecards/<companyId>.md` has two zones:
 ### HUMAN-EDITED (preserved on refresh, never overwritten)
 
 ```markdown
-## What we've actually heard in deals
-## Our confirmed kill shots (used and landed)
-## Accounts we've won from them
-## Accounts we've lost to them
+## … four headings generated from the deployment's anchor mode …
+## (isUs → deals / kill shots / accounts won + lost)
+## (isMain or market-watch → verified myself / corrections / open questions / sources)
 ## 🟢 Validated from real calls
 ```
 

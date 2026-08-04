@@ -61,6 +61,14 @@ export function framing(COMPANIES, { marketLabel = 'this market' } = {}) {
       voiceRule:
         'Write in the THIRD PERSON throughout. You do not work for any vendor here. '
         + `Never write "we", "our" or "us" about ${main.name} or anyone else — name the company instead.`,
+      // What a human is actually asked to write by hand. See the market-watch
+      // branch for why these differ per mode.
+      humanSections: [
+        ['What I have verified myself', 'first-hand checks — a claim you tested beats anything below'],
+        ['Corrections to the research', 'where the generated sections got it wrong. This is the highest-value thing on the page'],
+        ['Open questions', `what would actually change the ${main.name} comparison if you knew it`],
+        ['Sources worth keeping', 'links, threads, docs you keep going back to'],
+      ],
       killShotGoal: `1-2 sentences — where ${main.name} is materially stronger than this vendor, stated as a factual contrast a buyer could verify`,
       objectionGoal: `≤2 sentences — the even-handed counterpoint, including where the claim is fair`,
       objectionSource: `the strongest argument a buyer would make FOR this vendor over ${main.name}`,
@@ -84,6 +92,13 @@ export function framing(COMPANIES, { marketLabel = 'this market' } = {}) {
       selfCardHeading: `Our own self-card (${us.name})`,
       sheetTitle: (them) => `Battle Sheet — ${us.name} vs ${them}`,
       // Partisan on purpose: there IS a home vendor and the reader sells for it.
+      // A seller has deals, reps and named accounts, so these are answerable.
+      humanSections: [
+        ["What we've actually heard in deals", 'add objections, quotes, loss reasons as you collect them'],
+        ['Our confirmed kill shots (used and landed)', 'promote one from below after a rep lands it in a call'],
+        ['Accounts we\'ve won from them', 'list customer names or industries'],
+        ['Accounts we\'ve lost to them', 'list with loss reason'],
+      ],
       voiceRule: `Write for a seller at ${us.name}. First person ("we", "our") refers to ${us.name} and is correct here.`,
       killShotGoal: '1-2 sentences — a punchy counter a rep would say on a call',
       objectionGoal: '≤2 sentences — how the rep should respond',
@@ -109,6 +124,19 @@ export function framing(COMPANIES, { marketLabel = 'this market' } = {}) {
     winThemesHeading: 'Where They Win',
     selfCardHeading: 'Market context',
     sheetTitle: (them) => `Vendor Brief — ${them}`,
+    // The hand-written half of a card must ask for something the operator can
+    // actually answer. It used to ask every deployment for deal history —
+    // "What we've actually heard in deals", "Accounts we've won from them" —
+    // which a market-watch or anchored deployment has none of: no deals, no
+    // reps, no accounts. Four permanently-empty prompts on every card, and the
+    // only way to satisfy them would be to invent them, which is the one thing
+    // this section exists to keep out.
+    humanSections: [
+      ['What I have verified myself', 'first-hand checks — a claim you tested beats anything below'],
+      ['Corrections to the research', 'where the generated sections got it wrong. This is the highest-value thing on the page'],
+      ['Open questions', 'what you still need to find out about this vendor'],
+      ['Sources worth keeping', 'links, threads, docs you keep going back to'],
+    ],
     // Pure market-watch: no vendor to speak for, and no anchor to compare
     // against either, so there is nobody a "kill shot" could belong to.
     voiceRule:
@@ -129,4 +157,51 @@ export function framing(COMPANIES, { marketLabel = 'this market' } = {}) {
 export function winThemeHeadings(COMPANIES) {
   const f = framing(COMPANIES);
   return [...new Set([f.winThemesHeading, 'Win Themes', 'Where They Win'])];
+}
+
+/** The hand-written prompts, worded for whoever actually runs this deployment. */
+export function renderHumanScaffold(f) {
+  return f.humanSections
+    .map(([heading, hint]) => `### ${heading}\n- _(${hint})_`)
+    .join('\n\n');
+}
+
+/**
+ * Replace an UNTOUCHED human scaffold with the one this deployment should have.
+ *
+ * The scaffold is written once, when a card is first created, and never
+ * rewritten — correct, because it is the half a human owns. But it meant a
+ * deployment that changed anchor mode kept asking for deal history it would
+ * never have: four permanently-empty prompts, on every card, that could only be
+ * satisfied by inventing them.
+ *
+ * So: rewrite it ONLY when every bullet in it is still an untouched italic
+ * placeholder. One real note anywhere and this does nothing — the rule that
+ * nobody overwrites human work outranks tidiness.
+ */
+export function migrateHumanScaffold(existing, f) {
+  const humanIdx = existing.indexOf('## HUMAN-EDITED');
+  const autoIdx = existing.indexOf('## AUTO-GENERATED');
+  if (humanIdx === -1 || autoIdx === -1 || autoIdx < humanIdx) return existing;
+
+  const section = existing.slice(humanIdx, autoIdx);
+  // Anything the operator or the research pass added stays untouched.
+  const researchIdx = section.indexOf('<!-- AI-RESEARCH:START -->');
+  const scaffold = researchIdx === -1 ? section : section.slice(0, researchIdx);
+
+  const bullets = [...scaffold.matchAll(/^\s*-\s+(.*)$/gm)].map((m) => m[1].trim());
+  if (!bullets.length) return existing;
+  const allPlaceholders = bullets.every((b) => /^_\(.*\)_$/.test(b));
+  if (!allPlaceholders) return existing;
+
+  const wanted = renderHumanScaffold(f);
+  const headings = f.humanSections.map(([h]) => h);
+  if (headings.every((h) => scaffold.includes(`### ${h}`))) return existing;  // already current
+
+  const rebuilt = `## HUMAN-EDITED (survives auto-refresh)\n\n`
+    + `<!-- Edit this section freely. It will NEVER be overwritten by scripts. -->\n\n`
+    + `${wanted}\n\n`
+    + (researchIdx === -1 ? '' : section.slice(researchIdx));
+  console.log('[bootstrap] human scaffold was untouched and worded for a different anchor mode — rewritten to match');
+  return existing.slice(0, humanIdx) + rebuilt + existing.slice(autoIdx);
 }

@@ -674,6 +674,32 @@ section('13. Anchor modes');
   // correctly neutral "Where <anchor> Wins" heading, because framing reached the
   // headings and one audience line while a dozen field descriptions stayed
   // rep-voiced.
+  // The hand-written half must ask for something the operator can ANSWER.
+  // Every card shipped four deal-history prompts — "What we've actually heard in
+  // deals", "Accounts we've won from them" — to deployments that have no deals,
+  // no reps and no accounts. Permanently empty, and satisfiable only by
+  // inventing them, which is the one thing that section exists to keep out.
+  for (const [label, companies] of modes) {
+    const f = framing(companies);
+    const sections = f.humanSections;
+    const shaped = Array.isArray(sections) && sections.length
+      && sections.every((s) => Array.isArray(s) && s.length === 2 && s[0] && s[1]);
+    if (!shaped) { bad(`${label} framing has no usable humanSections`); continue; }
+
+    const text = sections.flat().join(' ');
+    const assumesSelling = /\bdeals?\b|\baccounts?\b|\brep\b|prospect|won from|lost to/i.test(text);
+    if (f.hasHome && !assumesSelling) bad(`${label} has a home brand but asks the operator for nothing about their deals`);
+    else if (!f.hasHome && assumesSelling) bad(`${label} has no home brand but asks for deal history it cannot have: ${text.slice(0, 80)}…`);
+    else ok(`${label} asks the operator for ${sections.length} things it can actually answer`);
+  }
+
+  // The scaffold must be generated, not written into the CLI as literal text —
+  // that is how it outlived the deployment mode it was written for.
+  const bootSrc = fs.readFileSync(path.join(ROOT, 'cli/bootstrap-battlecard.mjs'), 'utf8');
+  if (/### What we've actually heard in deals/.test(bootSrc)) {
+    bad('cli/bootstrap-battlecard.mjs hardcodes the human scaffold — it must come from framing().humanSections');
+  } else ok('human scaffold is generated from framing, not hardcoded');
+
   const VOICE_KEYS = ['voiceRule', 'killShotGoal', 'objectionGoal', 'objectionSource', 'winThemeGoal'];
   for (const [label, companies] of modes) {
     const f = framing(companies);
