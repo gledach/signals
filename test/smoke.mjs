@@ -1047,6 +1047,36 @@ section('14. Viewer vocabulary tracks the roster');
   if (!modeIds.length) bad('could not parse SIDEBAR_MODES');
   else if (!hasDefault) bad('COMPANY_CLICK_HINT_DEFAULT missing — unhinted modes would show no caption');
   else ok(`${modeIds.length} modes, ${hinted.size} with a specific click hint, rest covered by default`);
+
+  // A sidebar entry with no matching <main id="<mode>-mode"> is a dead link:
+  // setMode toggles `.active` on a section that does not exist, so the click
+  // blanks the page. Cheap to introduce when adding a mode, invisible until
+  // someone clicks it.
+  // SIDEBAR_MODES is the only list of modes. A second one — the URL-state
+  // validator carried a hardcoded array — means a new mode reaches the nav but
+  // not deep links, so `#mode=compare` silently fell back to Feed and the page
+  // looked like it had simply ignored the click.
+  // Signature of a FULL enumeration: feed + market + report together. A scoped
+  // subset like ['feed','intel','inbox'] — the company-scoped modes — is
+  // legitimate domain logic, not a duplicated list, and must not be flagged.
+  const rival = [...viewer.matchAll(/\[(?:\s*'\w+',?\s*){3,}\]/g)]
+    .map((m) => m[0])
+    .find((arr) => ["'feed'", "'market'", "'report'"].every((k) => arr.includes(k)));
+  if (rival) bad(`a second hardcoded mode list exists: ${rival[0].slice(0, 70)}… — derive it from SIDEBAR_MODES`);
+  else ok('SIDEBAR_MODES is the only mode list');
+
+  const orphanModes = modeIds.filter((id) => !html.includes(`id="${id}-mode"`));
+  if (orphanModes.length) bad(`sidebar modes with no page section: ${orphanModes.join(', ')}`);
+  else ok(`all ${modeIds.length} sidebar modes have a page section`);
+
+  // And every element a renderer writes into must exist. This repo has twice
+  // shipped controls that rendered into nothing — once because the markup moved,
+  // once because it was never added.
+  const targets = [...viewer.matchAll(/getElementById\('((?:compare|intel|battle)-[a-z-]+)'\)/g)]
+    .map((m) => m[1]);
+  const missingTargets = [...new Set(targets)].filter((id) => !html.includes(`id="${id}"`));
+  if (missingTargets.length) bad(`renderer targets that do not exist in index.html: ${missingTargets.join(', ')}`);
+  else ok(`${new Set(targets).size} mode render targets all exist in the markup`);
 }
 
 section('15. Agent surface reports its own blind spots');

@@ -178,27 +178,23 @@
       <div id="battle-objections" class="battle-panel"></div>
       <div id="battle-wins" class="battle-panel"></div>
 
-      <!-- Features comparison (side-by-side capability matrix, us vs them). -->
-      <div id="battle-features" class="battle-panel"></div>
-
-      <!-- Infrastructure observed (cert transparency + sitemap + robots snapshots). -->
-      <div id="battle-infrastructure" class="battle-panel"></div>
-
-      <!-- Static side-by-side comparison — collapsed by default; reference material, not action content. -->
-      <details id="battle-grid-accordion" class="battle-accordion">
-        <summary>
-          <span class="accordion-icon">▸</span>
-          <span class="accordion-title">📊 Full side-by-side comparison</span>
-          <!-- Hint is filled by renderBattle() from the rows it actually built.
-               Hardcoded, it listed "compliance" long after that row stopped
-               resolving — a collapsed section advertising content it no longer
-               contains is worse than one advertising nothing. -->
-          <span class="accordion-hint" id="battle-grid-hint">positioning · pricing · strengths · weaknesses · verified facts</span>
-        </summary>
-        <div class="battle-grid" id="battle-grid"></div>
-      </details>
-
       <div id="battle-saved-preps" class="battle-panel"></div>
+      </div><!-- /page-content -->
+    </main>
+
+    <!-- COMPARE — how two vendors differ. Split out of Battle, which was doing
+         three jobs in one 3,587px page: the feature matrix alone was 35% of it
+         and the infrastructure panels another 19%, leaving call-prep at under a
+         third. Comparison lives here; prep stays in Battle. -->
+    <main id="compare-mode" class="mode">
+      <div class="page-head">
+        <h1>Compare <span class="page-subtitle" id="compare-subtitle"></span></h1>
+      </div>
+      <div class="page-content">
+        <!-- Not collapsed. In Battle this was reference material behind a
+             disclosure; here it is the entire point of the page. -->
+        <div class="battle-grid" id="compare-grid"></div>
+        <div id="compare-features" class="battle-panel"></div>
       </div><!-- /page-content -->
     </main>
 
@@ -235,6 +231,11 @@
       </header>
       <div class="page-content intel-content">
         <div id="intel-convergence-cards"></div>
+
+        <!-- Infrastructure observed (cert transparency + sitemap + robots).
+             Moved here from Battle: this is intel about ONE company, not a
+             comparison of two, and it was 19% of Battle's height. -->
+        <div id="intel-infrastructure" class="battle-panel"></div>
       </div>
     </main>
 

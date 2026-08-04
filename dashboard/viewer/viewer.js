@@ -201,7 +201,10 @@ window.addEventListener('message', (e) => {
   const msg = e?.data;
   if (!msg || msg.signal !== 'setMode') return;
   const mode = msg.mode;
-  if (!mode || !['feed', 'battle', 'market', 'intel', 'report', 'inbox'].includes(mode)) return;
+  // Third copy of the mode list when the gate found it, and already stale — it
+  // was missing 'briefs', so the report iframe could never switch to it. Reads
+  // SIDEBAR_MODES at call time, which is always after module init.
+  if (!mode || !SIDEBAR_MODES.some((m) => m.id === mode)) return;
   setMode(mode);
 });
 
@@ -274,7 +277,7 @@ function setMode(mode) {
     const iframe = document.getElementById('report-iframe');
     iframe.src = `/report?t=${Date.now()}`;
   }
-  if (mode === 'battle') {
+  if (mode === 'battle' || mode === 'compare') {
     populateBattleSelector();
   }
   if (mode === 'briefs') {
@@ -317,12 +320,13 @@ const icon = (name) => ICONS[name] || '';
 
 const SIDEBAR_MODES = [
   { id: 'feed',   label: 'Live Feed', icon: ICONS.feed,   kbd: '1' },
-  { id: 'battle', label: 'Battle',    icon: ICONS.battle, kbd: '2' },
-  { id: 'market', label: 'Market',    icon: ICONS.market, kbd: '3' },
-  { id: 'intel',  label: 'Intel',     icon: ICONS.intel,  kbd: '4' },
-  { id: 'report', label: 'Report',    icon: ICONS.report, kbd: '5' },
-  { id: 'briefs', label: 'Briefs',    icon: ICONS.briefs, kbd: '6' },
-  { id: 'inbox',  label: 'Inbox',     icon: ICONS.inbox,  kbd: '7' },
+  { id: 'battle',  label: 'Battle',  icon: ICONS.battle, kbd: '2' },
+  { id: 'compare', label: 'Compare', icon: ICONS.market, kbd: '3' },
+  { id: 'market',  label: 'Market',  icon: ICONS.market, kbd: '4' },
+  { id: 'intel',   label: 'Intel',   icon: ICONS.intel,  kbd: '5' },
+  { id: 'report',  label: 'Report',  icon: ICONS.report, kbd: '6' },
+  { id: 'briefs',  label: 'Briefs',  icon: ICONS.briefs, kbd: '7' },
+  { id: 'inbox',   label: 'Inbox',   icon: ICONS.inbox,  kbd: '8' },
 ];
 
 // Category ids (from the roster) → sidebar group labels. Multiple raw categories
@@ -353,8 +357,10 @@ const SIDEBAR_GROUP_ORDER = ['coding-agent', 'app-builder'];
 // deliberate shortcut, but it was undeclared, which is what made the sidebar
 // read as "sometimes one click, sometimes two". Say it out loud instead.
 const COMPANY_CLICK_HINT = {
-  feed:   'click to filter the feed',
-  battle: 'click to pick the rival',
+  feed:    'click to filter the feed',
+  battle:  'click to pick the rival',
+  compare: 'click to pick the other side',
+  intel:   'click to scope the intel',
 };
 const COMPANY_CLICK_HINT_DEFAULT = 'click opens Battle';
 
@@ -509,8 +515,8 @@ function renderSidebarCompanyRow(c) {
   // pointed at whatever was last picked in a different mode during a different
   // interaction. A selection indicator that marks something the current view is
   // not scoped to is worse than none.
-  const activeId = state.mode === 'battle' ? state.battleCompetitor
-    : state.mode === 'feed' ? state.currentCompany
+  const activeId = (state.mode === 'battle' || state.mode === 'compare') ? state.battleCompetitor
+    : (state.mode === 'feed' || state.mode === 'intel') ? state.currentCompany
     : null;
   const isActive = activeId != null && activeId === c.id;
 
@@ -561,7 +567,13 @@ function selectCompanyFromSidebar(id) {
   const co = state.companies.find((c) => c.id === id);
   if (!co) return;
 
-  if (state.mode === 'feed') {
+  if (state.mode === 'intel') {
+    // Scoped in place — Intel's infrastructure panel follows this selection.
+    state.currentCompany = id;
+    renderIntelInfrastructure();
+    renderSidebar();
+    writeUrlState();
+  } else if (state.mode === 'feed') {
     state.currentCompany = id;
     renderKPI(); renderCompetitorCard();
     renderBattlecard();
@@ -569,7 +581,7 @@ function selectCompanyFromSidebar(id) {
     renderSidebar();
     writeUrlState();
     document.getElementById('battlecard-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } else if (state.mode === 'battle') {
+  } else if (state.mode === 'battle' || state.mode === 'compare') {
     // The sidebar picks WHO THE SUBJECT IS COMPARED AGAINST. It never moves the subject.
     //
     // An earlier version swapped the two sides when you clicked the anchor, on the
@@ -585,7 +597,7 @@ function selectCompanyFromSidebar(id) {
     }
     state.battleCompetitor = id;
     populateBattleSelector();
-    renderBattle();
+    if (state.mode === 'compare') renderCompare(); else renderBattle();
     renderSidebar();
     writeUrlState();
   } else {
@@ -689,6 +701,10 @@ function renderAll() {
     renderSignals();
   } else if (state.mode === 'battle') {
     renderBattle();
+  } else if (state.mode === 'compare') {
+    renderCompare();
+  } else if (state.mode === 'intel') {
+    renderIntelInfrastructure();
   } else if (state.mode === 'market') {
     renderMarket();
   } else if (state.mode === 'briefs') {
@@ -2834,49 +2850,8 @@ function populateBattleSelector() {
   document.getElementById('battle-anchor-reset')?.classList.add('hidden');
 }
 
-async function renderBattle() {
-  const grid = document.getElementById('battle-grid');
-  const killshotsEl = document.getElementById('battle-killshots');
-  const objectionsEl = document.getElementById('battle-objections');
-  const winsEl = document.getElementById('battle-wins');
-  const subtitle = document.getElementById('battle-subtitle');
-  const sheetBtn = document.getElementById('btn-sheet');
-
-  // Anchor on the MAIN company. That is the home brand when one is configured, the
-  // company marked `isMain` otherwise, and — failing both — simply the first tracked
-  // company, so a pure market-watch deployment still gets a usable comparison instead of
-  // an permanently empty view.
-  const us = state.companies.find((c) => c.id === battleAnchorId());
-  const themId = (state.battleCompetitor && state.battleCompetitor !== us?.id)
-    ? state.battleCompetitor
-    : state.companies.find((c) => c.id !== us?.id)?.id;
-  const them = state.companies.find((c) => c.id === themId);
-  if (!us || !them) {
-    grid.innerHTML = '<p class="empty">Add at least two companies to config/companies.local.mjs to compare.</p>';
-    return;
-  }
-  if (sheetBtn) sheetBtn.href = `/battle-sheet/${them.id}`;
-
-  const [ourMd, theirMd] = await Promise.all([getBattlecard(us.id), getBattlecard(them.id)]);
-
-  // Update chip counts + filter-status banner BEFORE rendering the panels,
-  // so user sees "(2)", "(0)" etc. on each chip indicating what's clickable.
-  updateChipCounts(theirMd);
-  updateFilterStatus(theirMd);
-
-  // ── KPIs (our signals tracked is usually sparse; primarily show theirs)
-  const theirSignals = state.signals.filter((s) => s.companyId === them.id);
-  const their7d = theirSignals.filter((s) => ageDays(s) <= 7);
-  const theirConv7d = their7d.filter((s) => s.signalType === 'convergence');
-  const theirCritical7d = their7d.filter((s) => s.impactBand === 'critical' && s.signalType !== 'convergence');
-  const theirWins30 = theirSignals.filter((s) => s.signalType === 'customer_win' && ageDays(s) <= 30);
-
-  subtitle.innerHTML = `
-    <span class="kpi-chip"><strong>${their7d.length}</strong> signals (7d)</span>
-    <span class="kpi-chip ${theirConv7d.length ? 'alert' : ''}"><strong>${theirConv7d.length}</strong> convergences</span>
-    <span class="kpi-chip ${theirCritical7d.length ? 'alert' : ''}"><strong>${theirCritical7d.length}</strong> critical (7d)</span>
-    <span class="kpi-chip"><strong>${theirWins30.length}</strong> customer wins (30d)</span>`;
-
+/** The two comparison tables: section grid, then verified facts. */
+function renderComparisonTables(grid, ourMd, theirMd, us, them) {
   // ── Side-by-side section comparison
   const rows = BATTLE_SECTIONS.map((section) => {
     const ourText = firstMatchingSection(ourMd, section.ours) || '';
@@ -2903,17 +2878,94 @@ async function renderBattle() {
     </table>
     ${renderVerifiedFactsTable(ourMd, theirMd, us, them)}`;
 
-  // Advertise what the collapsed accordion actually contains, from the rows
-  // that resolved rather than a fixed list. Rows that stop resolving stop being
-  // promised.
-  const hintEl = document.getElementById('battle-grid-hint');
-  if (hintEl) {
-    const filled = BATTLE_SECTIONS
-      .filter((s) => firstMatchingSection(ourMd, s.ours) || firstMatchingSection(theirMd, s.theirs))
-      .map((s) => s.label.toLowerCase());
-    if (parseVerifiedFacts(ourMd) || parseVerifiedFacts(theirMd)) filled.push('verified facts');
-    hintEl.textContent = filled.join(' · ');
+}
+
+/**
+ * Resolve the two sides and load both cards. ONE loader, two renderers.
+ *
+ * Battle and Compare both need the anchor, the competitor and both markdown
+ * cards. Letting each derive its own would be a second read path for the same
+ * data — the duplication that has already cost this repo three scoring tables,
+ * two synthesis prompts and a battlecard reader that bypassed its chokepoint.
+ *
+ * @returns {Promise<{us,them,ourMd,theirMd}|null>} null when the roster is too small.
+ */
+async function loadComparisonPair() {
+  // Anchor on the MAIN company: the home brand when configured, the company
+  // marked `isMain` otherwise, and failing both the first tracked company, so a
+  // pure market-watch deployment still gets a usable comparison.
+  const us = state.companies.find((c) => c.id === battleAnchorId());
+  const themId = (state.battleCompetitor && state.battleCompetitor !== us?.id)
+    ? state.battleCompetitor
+    : state.companies.find((c) => c.id !== us?.id)?.id;
+  const them = state.companies.find((c) => c.id === themId);
+  if (!us || !them) return null;
+  const [ourMd, theirMd] = await Promise.all([getBattlecard(us.id), getBattlecard(them.id)]);
+  return { us, them, ourMd, theirMd };
+}
+
+/**
+ * COMPARE mode — how two vendors differ.
+ *
+ * Split out of Battle because Battle was doing three jobs in one 3,587px page:
+ * the feature matrix alone was 35% of it and the infrastructure panels another
+ * 19%, leaving call-prep — the thing Battle is named for — at under a third.
+ * Comparison material now lives here, prep stays in Battle, and single-company
+ * infrastructure intel moved to Intel.
+ *
+ * Deliberately does NOT read state.battleFilters. Those chips live in Battle and
+ * rank prep bullets by deal context; applying them here would mean a view
+ * silently ordered by a control the user cannot see from it.
+ */
+async function renderCompare() {
+  const grid = document.getElementById('compare-grid');
+  const subtitle = document.getElementById('compare-subtitle');
+  if (!grid) return;
+
+  const pair = await loadComparisonPair();
+  if (!pair) {
+    grid.innerHTML = '<p class="empty">Add at least two companies to config/companies.local.mjs to compare.</p>';
+    return;
   }
+  const { us, them, ourMd, theirMd } = pair;
+  if (subtitle) subtitle.textContent = `${us.name} vs ${them.name}`;
+
+  renderComparisonTables(grid, ourMd, theirMd, us, them);
+  renderFeatureMatrixPanel(ourMd, theirMd, us, them, 'compare-features');
+}
+
+async function renderBattle() {
+  const killshotsEl = document.getElementById('battle-killshots');
+  const objectionsEl = document.getElementById('battle-objections');
+  const winsEl = document.getElementById('battle-wins');
+  const subtitle = document.getElementById('battle-subtitle');
+  const sheetBtn = document.getElementById('btn-sheet');
+
+  const pair = await loadComparisonPair();
+  if (!pair) {
+    killshotsEl.innerHTML = '<p class="empty">Add at least two companies to config/companies.local.mjs to compare.</p>';
+    return;
+  }
+  const { us, them, ourMd, theirMd } = pair;
+  if (sheetBtn) sheetBtn.href = `/battle-sheet/${them.id}`;
+
+  // Update chip counts + filter-status banner BEFORE rendering the panels,
+  // so user sees "(2)", "(0)" etc. on each chip indicating what's clickable.
+  updateChipCounts(theirMd);
+  updateFilterStatus(theirMd);
+
+  // ── KPIs (our signals tracked is usually sparse; primarily show theirs)
+  const theirSignals = state.signals.filter((s) => s.companyId === them.id);
+  const their7d = theirSignals.filter((s) => ageDays(s) <= 7);
+  const theirConv7d = their7d.filter((s) => s.signalType === 'convergence');
+  const theirCritical7d = their7d.filter((s) => s.impactBand === 'critical' && s.signalType !== 'convergence');
+  const theirWins30 = theirSignals.filter((s) => s.signalType === 'customer_win' && ageDays(s) <= 30);
+
+  subtitle.innerHTML = `
+    <span class="kpi-chip"><strong>${their7d.length}</strong> signals (7d)</span>
+    <span class="kpi-chip ${theirConv7d.length ? 'alert' : ''}"><strong>${theirConv7d.length}</strong> convergences</span>
+    <span class="kpi-chip ${theirCritical7d.length ? 'alert' : ''}"><strong>${theirCritical7d.length}</strong> critical (7d)</span>
+    <span class="kpi-chip"><strong>${theirWins30.length}</strong> customer wins (30d)</span>`;
 
   // ── Deal-context filters applied to these panels — RANK, don't filter out.
   // Bullets that match the active filters move to the top + get highlighted;
@@ -2942,12 +2994,6 @@ async function renderBattle() {
        <div class="battle-panel-body">${mdBlockToCopyable(winThemes, { competitorId: them.id, kind: 'wintheme', filterContext })}</div>
        <div class="battle-panel-hint">Lead with these ICPs / use-cases when positioning against ${esc(them.name)}.</div>`
     : `<h3>${icon('award')} Where we win vs ${esc(them.name)}</h3><p class="empty">No win-themes section in battlecard.</p>`;
-
-  // ── Features Comparison matrix (us vs them — canonical registry, colored chips)
-  renderFeatureMatrixPanel(ourMd, theirMd, us, them);
-
-  // ── Infrastructure (cert + sitemap + robots snapshots)
-  await renderInfrastructure(them.id, them.name);
 
   // ── Saved call preps for this competitor
   await renderSavedPreps(them.id);
@@ -2990,8 +3036,8 @@ function parseFeatureMatrix(md) {
 // Groups by FEATURE_CATEGORIES; within each group, sorts by "biggest advantage for us" first
 // so reps see the wins immediately. Each cell is a colored status chip with the LLM's note
 // surfaced in the `title` attribute on hover.
-function renderFeatureMatrixPanel(ourMd, theirMd, us, them) {
-  const el = document.getElementById('battle-features');
+function renderFeatureMatrixPanel(ourMd, theirMd, us, them, targetId = 'compare-features') {
+  const el = document.getElementById(targetId);
   if (!el) return;
   const FEATURES = state.features;
   const FEATURE_CATEGORIES = state.featureCategories;
@@ -3106,8 +3152,26 @@ function renderFeatureMatrixPanel(ourMd, theirMd, us, them) {
   onlyLead?.addEventListener('change', applyToggles);
 }
 
+/**
+ * Intel's infrastructure panel, scoped to the company selected in the sidebar.
+ *
+ * Infrastructure is intel about ONE company — subdomains, sitemap paths, robots
+ * rules — so it needed an owner when it moved out of Battle, where the
+ * competitor was implied. It follows `currentCompany`, which makes Intel the
+ * third company-scoped mode alongside Feed and Battle, and means a sidebar
+ * click here refines the view in place instead of teleporting to Battle.
+ */
+async function renderIntelInfrastructure() {
+  const el = document.getElementById('intel-infrastructure');
+  if (!el) return;
+  const co = state.companies.find((c) => c.id === state.currentCompany)
+    || state.companies.find((c) => c.id === battleAnchorId());
+  if (!co) { el.innerHTML = ''; return; }
+  await renderInfrastructure(co.id, co.name);
+}
+
 async function renderInfrastructure(companyId, companyName) {
-  const el = document.getElementById('battle-infrastructure');
+  const el = document.getElementById('intel-infrastructure');
   if (!el) return;
   el.innerHTML = `<h3>${icon('radio')} Infrastructure observed <span class="saved-loading">loading…</span></h3>`;
   try {
@@ -3770,7 +3834,10 @@ function readUrlState() {
   if (!h) return;
   const params = new URLSearchParams(h);
   const mode = params.get('mode');
-  if (mode && ['feed', 'battle', 'market', 'intel', 'report', 'briefs', 'inbox'].includes(mode)) {
+  // Derived from SIDEBAR_MODES, never restated. This was a second hardcoded
+  // list, so adding a mode to the nav left its URL silently falling back to
+  // Feed — a deep link that looked like it worked and did not.
+  if (mode && SIDEBAR_MODES.some((m) => m.id === mode)) {
     state.mode = mode;
     for (const btn of document.querySelectorAll('#mode-nav button')) btn.classList.toggle('active', btn.dataset.mode === mode);
     for (const m of document.querySelectorAll('main.mode')) m.classList.toggle('active', m.id === `${mode}-mode`);
@@ -3824,9 +3891,14 @@ function writeUrlState() {
   ) {
     params.set('company', state.currentCompany);
   }
-  if (state.mode === 'battle' && state.battleCompetitor) {
+  // Compare is competitor-scoped too, so its selection has to survive a
+  // refresh or a shared link. Deal-context dimensions stay Battle-only: those
+  // chips exist there, and Compare deliberately ignores them.
+  if ((state.mode === 'battle' || state.mode === 'compare') && state.battleCompetitor) {
     params.set('vs', state.battleCompetitor);
-    for (const [dimId, value] of Object.entries(activeDims())) params.set(dimId, value);
+    if (state.mode === 'battle') {
+      for (const [dimId, value] of Object.entries(activeDims())) params.set(dimId, value);
+    }
   }
   if (state.mode === 'feed' && state.highlightSignal) {
     params.set('signal', state.highlightSignal);
