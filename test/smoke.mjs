@@ -1017,24 +1017,25 @@ section('14. Viewer vocabulary tracks the roster');
     ].filter(Boolean));
   });
 
-  const battleRows = [...viewer.matchAll(/label: '([^']+)',\s*\n\s*ours: \[([^\]]*)\],\s*\n\s*theirs: \[([^\]]*)\],/g)];
-  if (!battleRows.length) {
-    bad('could not parse BATTLE_SECTIONS — the comparison table may be unchecked');
+  // Rows are {label, headings} now — one candidate list applied to every
+  // column, since Compare is N-way. The previous version of this check parsed
+  // `ours:`/`theirs:` literally, so reshaping the rows would have made it match
+  // nothing and quietly stop checking. It fails loudly on an unparseable shape
+  // instead, which is how this was caught.
+  const compareRows = [...viewer.matchAll(/label: '([^']+)',\s*headings: \[([^\]]*)\]/g)];
+  if (!compareRows.length) {
+    bad('could not parse COMPARE_SECTIONS — the comparison table would be unchecked');
   } else {
     const dead = [];
     const MODE_NAMES = ['home-brand', 'anchored', 'market-watch'];
-    for (const [, label, oursRaw, theirsRaw] of battleRows) {
-      const names = (raw) => [...raw.matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
+    for (const [, label, headingsRaw] of compareRows) {
+      const names = [...headingsRaw.matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
       emittedPerMode.forEach((emitted, i) => {
-        const oursOk = names(oursRaw).some((h) => emitted.has(h));
-        const theirsOk = names(theirsRaw).some((h) => emitted.has(h));
-        if (!oursOk || !theirsOk) {
-          dead.push(`${label} in ${MODE_NAMES[i]}(${[!oursOk && 'anchor', !theirsOk && 'competitor'].filter(Boolean).join('+')})`);
-        }
+        if (!names.some((h) => emitted.has(h))) dead.push(`${label} in ${MODE_NAMES[i]}`);
       });
     }
-    if (dead.length) bad(`Battle comparison rows no heading can fill: ${dead.join(', ')}`);
-    else ok(`all ${battleRows.length} Battle comparison rows map to a heading the generator emits`);
+    if (dead.length) bad(`Compare rows no heading can fill: ${dead.join(', ')}`);
+    else ok(`all ${compareRows.length} Compare rows map to a heading the generator emits, in every mode`);
   }
 
   // A sidebar click means something different in each mode, and only the modes

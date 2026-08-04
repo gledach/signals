@@ -23,6 +23,10 @@ const state = {
   // config), not from this file — see renderBattleFilters.
   battleFilters: {},
   dealContext: [],
+  // Companies shown as columns in Compare, EXCLUDING the anchor (always first).
+  // Empty means "just the current Battle competitor", so arriving from Battle
+  // shows the pair you were already looking at.
+  compareIds: [],
   battlecards: {},               // cached MD by companyId
   filters: { minImpact: 0, type: '', showNoise: false },
   highlightSignal: null,         // hashId to scroll-to + flash on next Feed render
@@ -596,8 +600,16 @@ function selectCompanyFromSidebar(id) {
       return;
     }
     state.battleCompetitor = id;
-    populateBattleSelector();
-    if (state.mode === 'compare') renderCompare(); else renderBattle();
+    if (state.mode === 'compare') {
+      // One click from the sidebar means "compare against just this one" —
+      // additive selection lives on the chips, where it is visible.
+      state.compareIds = [id];
+      populateBattleSelector();
+      renderCompare();
+    } else {
+      populateBattleSelector();
+      renderBattle();
+    }
     renderSidebar();
     writeUrlState();
   } else {
@@ -2337,62 +2349,28 @@ function firstMatchingSection(md, candidates) {
 // Pairs of (OUR section headings, THEIR section headings) — first match wins.
 // Section headings in the order they show up in the comparison table.
 // NOTE: pass raw strings (no regex escaping) — matchSection() escapes for us.
-// Rows of the side-by-side comparison. Each lists the headings that can supply
-// it, newest naming first, older names kept so previously-generated cards still
-// resolve.
+// Rows of the comparison, one candidate heading list per row tried against
+// EVERY column. This was a list of {ours, theirs} PAIRS, which structurally
+// capped the view at two companies — the anchor and one rival. Comparing three
+// tools at once is a question no mode could answer.
 //
-// `ours` USED TO BE A DIFFERENT VOCABULARY — 'One-liner', 'Target ICP', 'Core
-// differentiators' — because it was written for a self-card produced by
-// bootstrap-self-card.mjs. In anchored mode there is no self-card: the anchor's
-// own card comes from bootstrap-battlecard like every other, with headings
-// 'Positioning', 'Target Segment', 'Strengths (their story)'. So the anchor
-// column resolved nothing and four of nine rows rendered as a dash against a
-// populated competitor — a comparison view that could not compare. `ours` now
-// falls back to `theirs`, which is what the anchor's card actually contains.
+// `ours` used to be a separate vocabulary written for a self-card produced by
+// bootstrap-self-card.mjs; in anchored mode there is no self-card, so the anchor
+// column resolved nothing and four of nine rows rendered as a dash. Merged, so
+// one list serves any company whichever mode wrote its card.
 //
-// Two rows were removed rather than repaired: Integrations and Compliance /
-// security have had no source section since the generator moved that data into
-// the Features Comparison matrix, which renders directly below this table. A row
-// that can never fill is worse than an absent one — it reads as "no data" about
-// the vendor instead of "this view stopped asking".
-const BATTLE_SECTIONS = [
-  {
-    label: 'Positioning',
-    ours: ['Positioning', 'One-liner', 'Public one-liner (as the market sees us)', 'Public one-liner', 'Observed positioning'],
-    theirs: ['Positioning', 'Public one-liner (as the market sees us)', 'Public one-liner'],
-  },
-  {
-    label: 'Target segment',
-    ours: ['Target Segment', 'Target ICP', 'Likely target segment (inferred)', 'Likely target segment'],
-    theirs: ['Target Segment', 'Likely target segment (inferred)', 'Likely target segment'],
-  },
-  {
-    label: 'Pricing model',
-    ours: ['Pricing Model', 'Pricing model', 'Observed pricing signals'],
-    theirs: ['Pricing Model', 'Observed pricing signals'],
-  },
-  {
-    label: 'Strengths',
-    ours: ['Strengths (their story)', 'Core differentiators', 'Likely differentiators (flagged)', 'Likely differentiators'],
-    theirs: ['Strengths (their story)', 'Likely differentiators (flagged)', 'Likely differentiators'],
-  },
-  {
-    // 'Weaknesses (our ammo)' is the partisan spelling, emitted only when a home
-    // brand exists. Both are listed so a card written under either mode resolves.
-    label: 'Weaknesses',
-    ours: ['Weaknesses', 'Weaknesses (our ammo)'],
-    theirs: ['Weaknesses', 'Weaknesses (our ammo)'],
-  },
-  {
-    label: 'Product direction',
-    ours: ['Product Direction'],
-    theirs: ['Product Direction'],
-  },
-  {
-    label: 'Recent moves',
-    ours: ['Recent Moves', 'Recent public signals'],
-    theirs: ['Recent Moves', 'Recent public signals'],
-  },
+// Two rows are gone rather than repaired: Integrations and Compliance had no
+// source section left once that data moved into the feature matrix and the
+// verified-facts table. A row that can never fill reads as "no data about this
+// vendor" instead of "this view stopped asking".
+const COMPARE_SECTIONS = [
+  { label: 'Positioning',       headings: ['Positioning', 'One-liner', 'Public one-liner (as the market sees us)', 'Public one-liner', 'Observed positioning'] },
+  { label: 'Target segment',    headings: ['Target Segment', 'Target ICP', 'Likely target segment (inferred)', 'Likely target segment'] },
+  { label: 'Pricing model',     headings: ['Pricing Model', 'Pricing model', 'Observed pricing signals'] },
+  { label: 'Strengths',         headings: ['Strengths (their story)', 'Core differentiators', 'Likely differentiators (flagged)', 'Likely differentiators'] },
+  { label: 'Weaknesses',        headings: ['Weaknesses', 'Weaknesses (our ammo)'] },
+  { label: 'Product direction', headings: ['Product Direction'] },
+  { label: 'Recent moves',      headings: ['Recent Moves', 'Recent public signals'] },
 ];
 
 // ── Verified facts, side by side ────────────────────────────────────────────
@@ -2432,30 +2410,23 @@ function parseVerifiedFacts(md) {
   return facts.size ? facts : null;
 }
 
-function renderVerifiedFactsTable(ourMd, theirMd, us, them) {
-  const ours = parseVerifiedFacts(ourMd);
-  const theirs = parseVerifiedFacts(theirMd);
-  if (!ours && !theirs) {
-    // Say which side is missing and how to get it, rather than rendering
-    // nothing — an absent panel is indistinguishable from a panel with no data.
-    const missing = [!ours && us?.id, !theirs && them?.id].filter(Boolean);
-    return `<p class="empty verified-facts-empty">No deep-research facts yet for
-      ${missing.map((id) => `<code>${esc(id)}</code>`).join(' and ')}.
-      Generate with <code>npm run research -- --company=${esc(missing[0])}</code>.</p>`;
+function renderVerifiedFactsTable(cards) {
+  const parsed = cards.map(({ company, md }) => ({ company, facts: parseVerifiedFacts(md) }));
+  if (parsed.every((c) => !c.facts)) {
+    const first = parsed[0]?.company?.id || '<id>';
+    return `<p class="empty verified-facts-empty">No deep-research facts yet for these companies.
+      Generate with <code>npm run research -- --company=${esc(first)}</code>.</p>`;
   }
 
   const labels = [
-    ...VERIFIED_FACT_ORDER.filter((l) => ours?.has(l) || theirs?.has(l)),
-    ...[...new Set([...(ours?.keys() || []), ...(theirs?.keys() || [])])]
+    ...VERIFIED_FACT_ORDER.filter((l) => parsed.some((c) => c.facts?.has(l))),
+    ...[...new Set(parsed.flatMap((c) => [...(c.facts?.keys() || [])]))]
       .filter((l) => !VERIFIED_FACT_ORDER.includes(l)),
   ];
 
-  // A BLANK CELL IN A COMPARISON TABLE IS AN ARGUMENT. Left as a bare dash, an
-  // empty Compliance row reads as "this vendor holds no certifications" — a
-  // false and damaging inference, when what it actually means is that the
-  // research could not establish the fact from public signals. Same distinction
-  // the agent surface makes between "nothing happened" and "we stopped looking",
-  // and it matters more here because the reader is comparing two columns.
+  // A BLANK CELL IN A COMPARISON TABLE IS AN ARGUMENT. Left as a dash, an empty
+  // Compliance row reads as "this vendor holds no certifications" — false, and
+  // damaging, when it means the research could not establish the fact.
   const cell = (facts, label) => {
     const v = facts?.get(label);
     if (v) return mdBlockToHtml(v);
@@ -2465,15 +2436,14 @@ function renderVerifiedFactsTable(ourMd, theirMd, us, them) {
     return `<span class="fact-unknown" title="${esc(why)}">not established</span>`;
   };
 
-  // When one side has NO research at all, its entire column reads "not
-  // established" — four muted cells that scan as "this vendor has no pricing,
-  // no integrations, no customers". Per-cell tooltips are not enough for a
-  // whole missing column; say it once, visibly, with the command to fix it.
-  const unresearched = [!ours && us, !theirs && them].filter(Boolean);
+  // A whole missing column scans as "no pricing, no integrations, no customers".
+  // Say it once, visibly, instead of leaving it to per-cell tooltips.
+  const unresearched = parsed.filter((c) => !c.facts).map((c) => c.company);
   const notice = unresearched.length
     ? `<p class="verified-facts-notice">No deep-research pass has been run for
-        <strong>${unresearched.map((c) => esc(c.name)).join('</strong> or <strong>')}</strong>,
-        so that column is blank about the research — not about the vendor. Run
+        <strong>${unresearched.map((c) => esc(c.name)).join('</strong>, <strong>')}</strong>,
+        so ${unresearched.length > 1 ? 'those columns are' : 'that column is'} blank about the
+        research — not about the vendor. Run
         <code>npm run research -- --company=${esc(unresearched[0].id)}</code>.</p>`
     : '';
 
@@ -2482,22 +2452,20 @@ function renderVerifiedFactsTable(ourMd, theirMd, us, them) {
       <small>from the deep-research pass · every claim cited or flagged — verify before quoting</small>
     </h3>
     ${notice}
-    <table class="battle-table verified-facts">
-      <thead>
-        <tr>
-          <th></th>
-          <th><span class="team us">${esc(us.name)}</span></th>
-          <th><span class="team them">${esc(them.name)}</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${labels.map((label) => `<tr>
-          <th scope="row">${esc(label)}</th>
-          <td>${cell(ours, label)}</td>
-          <td>${cell(theirs, label)}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>`;
+    <div class="compare-scroll">
+      <table class="battle-table verified-facts compare-n${cards.length}">
+        <thead>
+          <tr><th></th>${parsed.map(({ company }, i) =>
+            `<th><span class="team ${i === 0 ? 'us' : 'them'}">${esc(company.name)}</span></th>`).join('')}</tr>
+        </thead>
+        <tbody>
+          ${labels.map((label) => `<tr>
+            <th scope="row">${esc(label)}</th>
+            ${parsed.map(({ facts }) => `<td>${cell(facts, label)}</td>`).join('')}
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 function wireBattleSelector() {
@@ -2850,34 +2818,38 @@ function populateBattleSelector() {
   document.getElementById('battle-anchor-reset')?.classList.add('hidden');
 }
 
-/** The two comparison tables: section grid, then verified facts. */
-function renderComparisonTables(grid, ourMd, theirMd, us, them) {
-  // ── Side-by-side section comparison
-  const rows = BATTLE_SECTIONS.map((section) => {
-    const ourText = firstMatchingSection(ourMd, section.ours) || '';
-    const theirText = firstMatchingSection(theirMd, section.theirs) || '';
-    const ourFormatted = ourText ? mdBlockToHtml(ourText) : '<span class="empty-inline">—</span>';
-    const theirFormatted = theirText ? mdBlockToHtml(theirText) : '<span class="empty-inline">—</span>';
-    return `<tr>
+/**
+ * The comparison tables — section grid, then verified facts — across N columns.
+ *
+ * @param cards  [{ company, md }] in display order; the anchor is first.
+ */
+function renderComparisonTables(grid, cards) {
+  const cell = (md, headings) => {
+    const text = firstMatchingSection(md, headings);
+    return text ? mdBlockToHtml(text) : '<span class="empty-inline">—</span>';
+  };
+
+  const rows = COMPARE_SECTIONS.map((section) => `<tr>
       <th scope="row">${esc(section.label)}</th>
-      <td>${ourFormatted}</td>
-      <td>${theirFormatted}</td>
-    </tr>`;
-  }).join('');
+      ${cards.map(({ md }) => `<td>${cell(md, section.headings)}</td>`).join('')}
+    </tr>`).join('');
+
+  const head = cards.map(({ company }, i) => `
+    <th>
+      <span class="team ${i === 0 ? 'us' : 'them'}">${esc(company.name)}${
+        i === 0 ? ` <small>${company.isUs ? '(us)' : '(anchor)'}</small>` : ''
+      }</span>
+      <span class="team-domain">${esc(company.domain || '')}</span>
+    </th>`).join('');
 
   grid.innerHTML = `
-    <table class="battle-table">
-      <thead>
-        <tr>
-          <th></th>
-          <th><span class="team us">${esc(us.name)} <small>${us.isUs ? '(us)' : '(anchor)'}</small></span><span class="team-domain">${esc(us.domain)}</span></th>
-          <th><span class="team them">${esc(them.name)}</span><span class="team-domain">${esc(them.domain)}</span></th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-    ${renderVerifiedFactsTable(ourMd, theirMd, us, them)}`;
-
+    <div class="compare-scroll">
+      <table class="battle-table compare-n${cards.length}">
+        <thead><tr><th></th>${head}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    ${renderVerifiedFactsTable(cards)}`;
 }
 
 /**
@@ -2917,21 +2889,77 @@ async function loadComparisonPair() {
  * rank prep bullets by deal context; applying them here would mean a view
  * silently ordered by a control the user cannot see from it.
  */
+/** Anchor first, then the selected rivals. Capped for readability. */
+const COMPARE_MAX_RIVALS = 3;
+
+function compareColumnIds() {
+  const anchor = battleAnchorId();
+  const chosen = state.compareIds.filter((id) => id !== anchor && state.companies.some((c) => c.id === id));
+  const rivals = chosen.length
+    ? chosen
+    : [state.battleCompetitor, state.companies.find((c) => c.id !== anchor)?.id]
+      .filter((id) => id && id !== anchor).slice(0, 1);
+  return [anchor, ...rivals.slice(0, COMPARE_MAX_RIVALS)].filter(Boolean);
+}
+
 async function renderCompare() {
   const grid = document.getElementById('compare-grid');
   const subtitle = document.getElementById('compare-subtitle');
   if (!grid) return;
 
-  const pair = await loadComparisonPair();
-  if (!pair) {
+  const ids = compareColumnIds();
+  if (ids.length < 2) {
     grid.innerHTML = '<p class="empty">Add at least two companies to config/companies.local.mjs to compare.</p>';
     return;
   }
-  const { us, them, ourMd, theirMd } = pair;
-  if (subtitle) subtitle.textContent = `${us.name} vs ${them.name}`;
+  const companies = ids.map((id) => state.companies.find((c) => c.id === id)).filter(Boolean);
+  const mds = await Promise.all(companies.map((c) => getBattlecard(c.id)));
+  const cards = companies.map((company, i) => ({ company, md: mds[i] }));
 
-  renderComparisonTables(grid, ourMd, theirMd, us, them);
-  renderFeatureMatrixPanel(ourMd, theirMd, us, them, 'compare-features');
+  if (subtitle) subtitle.textContent = companies.map((c) => c.name).join(' vs ');
+  renderComparePicker(ids);
+  renderComparisonTables(grid, cards);
+  // The feature matrix is still a two-way widget; show it only for the pair.
+  renderFeatureMatrixPanel(cards[0].md, cards[1].md, cards[0].company, cards[1].company, 'compare-features');
+}
+
+/**
+ * Column picker. The anchor is shown but not removable — it is the subject of
+ * every comparison, set in config, exactly as in Battle.
+ */
+function renderComparePicker(activeIds) {
+  const el = document.getElementById('compare-picker');
+  if (!el) return;
+  const anchor = battleAnchorId();
+  const selected = new Set(activeIds);
+  el.innerHTML = state.companies.map((c) => {
+    const isAnchor = c.id === anchor;
+    const on = selected.has(c.id);
+    return `<button type="button" class="compare-chip ${on ? 'on' : ''} ${isAnchor ? 'anchor' : ''}"
+      data-compare-id="${esc(c.id)}" ${isAnchor ? 'disabled' : ''}
+      title="${isAnchor ? 'The subject of every comparison — set in config' : (on ? 'Remove this column' : 'Add as a column')}"
+      >${esc(c.name)}${isAnchor ? ' <small>anchor</small>' : ''}</button>`;
+  }).join('');
+
+  for (const btn of el.querySelectorAll('[data-compare-id]')) {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.compareId;
+      if (id === anchor) return;
+      const current = new Set(compareColumnIds().filter((x) => x !== anchor));
+      if (current.has(id)) current.delete(id);
+      else if (current.size >= COMPARE_MAX_RIVALS) {
+        flashHint(`Compare shows at most ${COMPARE_MAX_RIVALS} rivals at once — remove one first.`);
+        return;
+      } else current.add(id);
+      if (!current.size) { flashHint('Keep at least one company to compare against.'); return; }
+      state.compareIds = [...current];
+      // Keep Battle in step with the first rival, so switching modes is not a surprise.
+      state.battleCompetitor = state.compareIds[0];
+      renderCompare();
+      renderSidebar();
+      writeUrlState();
+    });
+  }
 }
 
 async function renderBattle() {
@@ -3853,7 +3881,11 @@ function readUrlState() {
     if (known) state.currentCompany = company;
   }
   const vs = params.get('vs');
-  if (vs) state.battleCompetitor = vs;
+  if (vs) {
+    const ids = vs.split(',').map((x) => x.trim()).filter(Boolean);
+    state.battleCompetitor = ids[0];
+    state.compareIds = ids;
+  }
   // Deal-context dimensions carry their own id as the query param, so a config
   // that adds a dimension gets shareable URLs for free. An unknown param is
   // ignored rather than stored — a link shared from a deployment with a
@@ -3894,11 +3926,13 @@ function writeUrlState() {
   // Compare is competitor-scoped too, so its selection has to survive a
   // refresh or a shared link. Deal-context dimensions stay Battle-only: those
   // chips exist there, and Compare deliberately ignores them.
-  if ((state.mode === 'battle' || state.mode === 'compare') && state.battleCompetitor) {
+  if (state.mode === 'compare') {
+    // Every column, so a three-way comparison survives a refresh or a shared link.
+    const rivals = compareColumnIds().slice(1);
+    if (rivals.length) params.set('vs', rivals.join(','));
+  } else if (state.mode === 'battle' && state.battleCompetitor) {
     params.set('vs', state.battleCompetitor);
-    if (state.mode === 'battle') {
-      for (const [dimId, value] of Object.entries(activeDims())) params.set(dimId, value);
-    }
+    for (const [dimId, value] of Object.entries(activeDims())) params.set(dimId, value);
   }
   if (state.mode === 'feed' && state.highlightSignal) {
     params.set('signal', state.highlightSignal);

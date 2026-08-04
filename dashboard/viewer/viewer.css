@@ -2800,3 +2800,28 @@ table.verified-facts ul { margin: 4px 0 0; padding-left: 16px; }
   background: color-mix(in srgb, var(--accent) 7%, transparent);
   border-radius: 0 4px 4px 0;
 }
+
+/* ─── Compare mode ────────────────────────────────────────────────────────
+   Column picker. The anchor chip is disabled rather than hidden: the subject
+   should be visible in the picker even though it is a config decision. */
+.compare-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.compare-chip {
+  font: inherit; font-size: 12px;
+  padding: 4px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+}
+.compare-chip:hover:not(:disabled) { border-color: var(--accent); }
+.compare-chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+.compare-chip.anchor { cursor: default; opacity: 1; }
+.compare-chip.anchor small { opacity: 0.75; font-size: 10px; }
+.compare-chip:disabled { cursor: default; }
+
+/* N columns of long prose need horizontal room rather than a squeezed table. */
+.compare-scroll { overflow-x: auto; }
+.compare-scroll table { min-width: 100%; }
+.compare-n3 td, .compare-n3 th { min-width: 210px; }
+.compare-n4 td, .compare-n4 th { min-width: 190px; font-size: 11.5px; }
