@@ -38,6 +38,14 @@ export function hasApiKey() {
 
 const MAX_ATTEMPTS = 4;
 const BASE_DELAY_MS = 1500;
+// Default request timeout. Right for the high-volume paths — a hung
+// classification call must not stall a 200-call fetch.
+//
+// WRONG for a deep-research call, and silently so: those completed in 116-118s
+// against this 120s ceiling, and raising max_tokens so the model could finish
+// its JSON pushed them straight past it. The failure is an AbortError that
+// looks like a network fault, AFTER the tokens have been generated and billed.
+// So the ceiling is per-call, and the deep path sets its own.
 const REQUEST_TIMEOUT_MS = 120_000;
 
 function isTransient(err) {
@@ -128,7 +136,7 @@ function registerCostFooter() {
   });
 }
 
-export async function chat({ model, messages, temperature = 0.2, maxTokens = 1024, responseFormat, meta } = {}) {
+export async function chat({ model, messages, temperature = 0.2, maxTokens = 1024, responseFormat, meta, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error('OPENROUTER_API_KEY not set in env');
 
@@ -149,7 +157,11 @@ export async function chat({ model, messages, temperature = 0.2, maxTokens = 102
   let lastErr;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), REQUEST_TIMEOUT_MS);
+    // Track whether WE gave up, as opposed to the socket dying. The two look
+    // identical from the outside — both surface as AbortError — but only one of
+    // them is worth retrying.
+    let selfAborted = false;
+    const timer = setTimeout(() => { selfAborted = true; ac.abort(); }, timeoutMs);
     try {
       const res = await fetch(BASE_URL, {
         method: 'POST',
@@ -227,6 +239,18 @@ export async function chat({ model, messages, temperature = 0.2, maxTokens = 102
       return { content, finishReason, usage };
     } catch (err) {
       lastErr = err;
+      // A timeout WE caused is not a transient fault. The server was working;
+      // we stopped waiting. Retrying re-runs the same slow generation, hits the
+      // same ceiling, and bills for every attempt — this path silently paid for
+      // a deep-research response four times before giving up. Fail once, and say
+      // which knob to turn.
+      if (selfAborted) {
+        throw new Error(
+          `OpenRouter request exceeded timeoutMs=${timeoutMs}ms on ${chosenModel}. `
+          + 'The model was still generating and those tokens are billed. '
+          + 'Raise timeoutMs for this call (deep-research passes its own) or lower maxTokens.',
+        );
+      }
       if (attempt < MAX_ATTEMPTS && isTransient(err)) {
         const delay = BASE_DELAY_MS * 2 ** (attempt - 1);
         console.warn(`[openrouter] transient error (${err?.cause?.code || err?.name || 'unknown'}) — retry ${attempt}/${MAX_ATTEMPTS - 1} in ${delay}ms`);
@@ -281,7 +305,36 @@ function salvageJson(raw) {
   try { return JSON.parse(s); } catch { return null; }
 }
 
+/**
+ * @param opts.jsonRetries  extra attempts when the model returns a COMPLETE but
+ *   malformed response. Default 1.
+ *
+ *   A parse failure at finish_reason=stop is a formatting slip, not a fault: one
+ *   deep-research response arrived 21,030 characters long and fully formed apart
+ *   from a single stray `]` the model emitted mid-string. That response was
+ *   generated and BILLED, then discarded — so refusing to retry does not save
+ *   money, it guarantees paying for nothing. One more attempt converts a certain
+ *   loss into a likely result. Deliberately not retried forever: if a prompt
+ *   reliably produces unparseable output, that is a prompt bug and should surface
+ *   as one rather than as a bill.
+ */
 export async function chatJson(opts) {
+  const retries = opts.jsonRetries ?? 1;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await chatJsonOnce(opts);
+    } catch (err) {
+      // Only a formatting slip is worth another attempt. Truncation means the
+      // ceiling is too low and a retry hits it again; anything else is a real
+      // failure.
+      if (!/returned non-JSON/.test(String(err?.message))) throw err;
+      console.warn(`[openrouter] malformed JSON despite finish_reason=stop — retrying (${i + 1}/${retries})`);
+    }
+  }
+  return chatJsonOnce(opts);
+}
+
+async function chatJsonOnce(opts) {
   const { content: raw, finishReason } = await chat({ ...opts, responseFormat: { type: 'json_object' } });
   if (finishReason === 'length') {
     // Try to salvage the truncated JSON before giving up — the useful fields

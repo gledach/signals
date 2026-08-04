@@ -333,6 +333,12 @@ Produce the deep-research JSON. Fact-check every claim. Flag every inference.`;
     // paid for when reached, so sizing it generously is close to free while
     // sizing it tightly bills you for the failure.
     maxTokens: 20000,
+    // This call is minutes, not seconds: the deepest model, the largest signal
+    // digest, and a 20k-token ceiling. The shared 120s default was sized for
+    // high-volume classification, where a hung call must not stall a 200-call
+    // fetch — and it silently capped this path at almost exactly its own
+    // runtime, so raising maxTokens turned success into an AbortError.
+    timeoutMs: 600_000,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userMsg },
