@@ -2730,3 +2730,31 @@ li.signal.flash-highlight {
 .brief-modal-actions .mini-btn:hover {
   background: var(--panel-hover);
 }
+
+/* ─── Markdown tables (Features Comparison) ───────────────────────────────
+   The viewer's markdown renderer had no table rule, so every row of the
+   feature matrix rendered as literal pipes. Wrapped in an overflow container
+   because the matrix is five columns wide with a free-text note column, and
+   a battlecard panel is not. */
+.md-table-wrap { overflow-x: auto; margin: 10px 0 16px; }
+.md-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.md-table th,
+.md-table td {
+  border: 1px solid var(--border-soft);
+  padding: 5px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+.md-table th {
+  background: var(--panel-hover);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Status column reads at a glance rather than as one more word. */
+.md-table td:nth-child(4) { white-space: nowrap; font-weight: 600; }
+.md-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel-hover) 40%, transparent); }

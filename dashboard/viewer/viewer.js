@@ -1937,9 +1937,39 @@ async function renderBattlecard() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const md = await res.text();
     target.innerHTML = renderMarkdown(md);
+    describeBattlecard(md);
   } catch {
     target.innerHTML = `<p class="empty">No battlecard for <code>${id}</code>. Run:<br><code>npm run bootstrap -- --company=${id}</code></p>`;
   }
+}
+
+/**
+ * Say what is inside the collapsed battlecard.
+ *
+ * The summary read "View full battlecard" no matter what the card held. A deep
+ * research pass costing real money writes 80+ lines into the HUMAN section, and
+ * the only sign of it was a disclosure triangle that looked identical before and
+ * after — so the honest conclusion from the dashboard was that nothing had
+ * happened. A collapsed section has to advertise its contents or it is
+ * indistinguishable from an empty one.
+ */
+function describeBattlecard(md) {
+  const el = document.getElementById('feed-battlecard-summary');
+  if (!el) return;
+  const parts = [];
+
+  const research = md.match(/### Deep research \(AI-generated — ([0-9-]+)/);
+  if (research) parts.push(`deep research ${research[1]}`);
+
+  const features = (md.match(/^\|\s*[a-z0-9-]+\s*\|/gm) || []).length;
+  if (features) parts.push(`${features}-feature matrix`);
+
+  const refreshed = md.match(/_Last refreshed:\s*([0-9-]+)/);
+  if (refreshed) parts.push(`refreshed ${refreshed[1]}`);
+
+  el.textContent = parts.length
+    ? `View full battlecard — ${parts.join(' · ')}`
+    : 'View full battlecard';
 }
 
 // ────────────────────────────── signal feed ─────────────────────────────────
@@ -3950,16 +3980,52 @@ function esc(s) {
 }
 
 // Dead-simple Markdown renderer — enough for battlecard MD.
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+// A GFM header underline: | --- | :--- | ---: |
+const TABLE_DIVIDER = /^\s*\|[\s|:-]+\|\s*$/;
+
+/** Split "| a | b |" into ["a","b"], dropping the empty edges the pipes create. */
+function tableCells(line) {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+}
+
 function renderMarkdown(md) {
   const lines = md.split('\n');
   const out = [];
   let inList = false;
-  for (let line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (/^---+\s*$/.test(line)) { closeList(); out.push('<hr>'); continue; }
     if (/^<!--/.test(line)) continue;
     if (/^> /.test(line)) { closeList(); out.push(`<blockquote>${inlineFmt(line.slice(2))}</blockquote>`); continue; }
     const h = line.match(/^(#{1,4})\s+(.*)$/);
     if (h) { closeList(); out.push(`<h${h[1].length}>${inlineFmt(h[2])}</h${h[1].length}>`); continue; }
+
+    // TABLES. There was no table rule here at all, so every row of the Features
+    // Comparison matrix — which bootstrap-battlecard emits as a proper GFM
+    // table — fell through to the paragraph branch and rendered as literal
+    // pipes. A header row is only a table when the NEXT line is a divider;
+    // without that check a sentence containing pipes would become a table.
+    if (TABLE_ROW.test(line) && TABLE_DIVIDER.test(lines[i + 1] || '')) {
+      closeList();
+      const head = tableCells(line);
+      const body = [];
+      let j = i + 2;
+      while (j < lines.length && TABLE_ROW.test(lines[j])) { body.push(tableCells(lines[j])); j++; }
+      out.push(
+        '<div class="md-table-wrap"><table class="md-table"><thead><tr>'
+        + head.map((c) => `<th>${inlineFmt(c)}</th>`).join('')
+        + '</tr></thead><tbody>'
+        + body.map((row) => `<tr>${
+          // Pad short rows so a ragged table cannot shift every later column.
+          head.map((_, k) => `<td>${inlineFmt(row[k] ?? '')}</td>`).join('')
+        }</tr>`).join('')
+        + '</tbody></table></div>',
+      );
+      i = j - 1;
+      continue;
+    }
+
     const li = line.match(/^(?:\s*)-\s+(.*)$/);
     if (li) { openList(); out.push(`<li>${inlineFmt(li[1])}</li>`); continue; }
     if (line.trim() === '') { closeList(); out.push(''); continue; }

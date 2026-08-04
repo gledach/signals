@@ -94,9 +94,13 @@
              Data-populated by renderCompetitorCard(). -->
         <section id="feed-competitor-card" class="competitor-card" aria-label="Current competitor at a glance"></section>
 
-        <!-- Collapsible full-battlecard peek for power users. Default collapsed. -->
+        <!-- Collapsible full battlecard. The summary is filled by
+             renderBattlecard() so it says what is actually inside — a bare
+             "View full battlecard" gave no clue that a card held a fresh
+             deep-research brief, so an expensive research pass looked like it
+             had done nothing at all. -->
         <details class="battlecard-details" id="feed-battlecard-details">
-          <summary>View full battlecard</summary>
+          <summary id="feed-battlecard-summary">View full battlecard</summary>
           <article id="battlecard"></article>
         </details>
 
