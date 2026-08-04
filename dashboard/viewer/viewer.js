@@ -2379,6 +2379,111 @@ const BATTLE_SECTIONS = [
   },
 ];
 
+// ── Verified facts, side by side ────────────────────────────────────────────
+//
+// The deep-research pass writes a "Verified facts" block per company — pricing
+// model, published tiers, confirmed integrations, compliance certifications,
+// named customers, founders — each grounded in a cited signal or marked
+// unverified. It is the most directly COMPARABLE material the system produces,
+// and it was reachable only by expanding a 40KB markdown blob in Feed mode. The
+// view built for comparison never read it.
+//
+// This also restores what removing the dead Integrations and Compliance rows
+// took away: that data did not disappear, it moved here.
+
+/** Preferred row order. Anything else the research emits is appended after. */
+const VERIFIED_FACT_ORDER = [
+  'Pricing model', 'Published tiers', 'Confirmed integrations',
+  'Compliance', 'Publicly-named customers', 'Founders',
+];
+
+/** Parse "- **Label**: value" (with nested bullets) out of a Verified facts block. */
+function parseVerifiedFacts(md) {
+  const sec = firstMatchingSection(md, ['Verified facts']);
+  if (!sec) return null;
+  const facts = new Map();
+  let current = null;
+  for (const line of sec.split('\n')) {
+    const top = line.match(/^-\s+\*\*(.+?)\*\*:?\s*(.*)$/);
+    if (top) { current = top[1].trim(); facts.set(current, top[2].trim()); continue; }
+    // Nested rows (Founders) belong to the label above them.
+    const nested = line.match(/^\s{2,}-\s+(.*)$/);
+    if (nested && current) {
+      const prev = facts.get(current);
+      facts.set(current, `${prev ? `${prev}\n` : ''}- ${nested[1]}`);
+    }
+  }
+  return facts.size ? facts : null;
+}
+
+function renderVerifiedFactsTable(ourMd, theirMd, us, them) {
+  const ours = parseVerifiedFacts(ourMd);
+  const theirs = parseVerifiedFacts(theirMd);
+  if (!ours && !theirs) {
+    // Say which side is missing and how to get it, rather than rendering
+    // nothing — an absent panel is indistinguishable from a panel with no data.
+    const missing = [!ours && us?.id, !theirs && them?.id].filter(Boolean);
+    return `<p class="empty verified-facts-empty">No deep-research facts yet for
+      ${missing.map((id) => `<code>${esc(id)}</code>`).join(' and ')}.
+      Generate with <code>npm run research -- --company=${esc(missing[0])}</code>.</p>`;
+  }
+
+  const labels = [
+    ...VERIFIED_FACT_ORDER.filter((l) => ours?.has(l) || theirs?.has(l)),
+    ...[...new Set([...(ours?.keys() || []), ...(theirs?.keys() || [])])]
+      .filter((l) => !VERIFIED_FACT_ORDER.includes(l)),
+  ];
+
+  // A BLANK CELL IN A COMPARISON TABLE IS AN ARGUMENT. Left as a bare dash, an
+  // empty Compliance row reads as "this vendor holds no certifications" — a
+  // false and damaging inference, when what it actually means is that the
+  // research could not establish the fact from public signals. Same distinction
+  // the agent surface makes between "nothing happened" and "we stopped looking",
+  // and it matters more here because the reader is comparing two columns.
+  const cell = (facts, label) => {
+    const v = facts?.get(label);
+    if (v) return mdBlockToHtml(v);
+    const why = facts
+      ? 'The research pass did not establish this — absence of a finding, not a finding of absence.'
+      : 'No deep-research pass has been run for this company yet.';
+    return `<span class="fact-unknown" title="${esc(why)}">not established</span>`;
+  };
+
+  // When one side has NO research at all, its entire column reads "not
+  // established" — four muted cells that scan as "this vendor has no pricing,
+  // no integrations, no customers". Per-cell tooltips are not enough for a
+  // whole missing column; say it once, visibly, with the command to fix it.
+  const unresearched = [!ours && us, !theirs && them].filter(Boolean);
+  const notice = unresearched.length
+    ? `<p class="verified-facts-notice">No deep-research pass has been run for
+        <strong>${unresearched.map((c) => esc(c.name)).join('</strong> or <strong>')}</strong>,
+        so that column is blank about the research — not about the vendor. Run
+        <code>npm run research -- --company=${esc(unresearched[0].id)}</code>.</p>`
+    : '';
+
+  return `
+    <h3 class="verified-facts-heading">Verified facts
+      <small>from the deep-research pass · every claim cited or flagged — verify before quoting</small>
+    </h3>
+    ${notice}
+    <table class="battle-table verified-facts">
+      <thead>
+        <tr>
+          <th></th>
+          <th><span class="team us">${esc(us.name)}</span></th>
+          <th><span class="team them">${esc(them.name)}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${labels.map((label) => `<tr>
+          <th scope="row">${esc(label)}</th>
+          <td>${cell(ours, label)}</td>
+          <td>${cell(theirs, label)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
 function wireBattleSelector() {
   const sel = document.getElementById('battle-competitor-select');
   if (sel) {
@@ -2795,7 +2900,20 @@ async function renderBattle() {
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>
+    ${renderVerifiedFactsTable(ourMd, theirMd, us, them)}`;
+
+  // Advertise what the collapsed accordion actually contains, from the rows
+  // that resolved rather than a fixed list. Rows that stop resolving stop being
+  // promised.
+  const hintEl = document.getElementById('battle-grid-hint');
+  if (hintEl) {
+    const filled = BATTLE_SECTIONS
+      .filter((s) => firstMatchingSection(ourMd, s.ours) || firstMatchingSection(theirMd, s.theirs))
+      .map((s) => s.label.toLowerCase());
+    if (parseVerifiedFacts(ourMd) || parseVerifiedFacts(theirMd)) filled.push('verified facts');
+    hintEl.textContent = filled.join(' · ');
+  }
 
   // ── Deal-context filters applied to these panels — RANK, don't filter out.
   // Bullets that match the active filters move to the top + get highlighted;

@@ -2758,3 +2758,45 @@ li.signal.flash-highlight {
 /* Status column reads at a glance rather than as one more word. */
 .md-table td:nth-child(4) { white-space: nowrap; font-weight: 600; }
 .md-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel-hover) 40%, transparent); }
+
+/* ─── Verified facts comparison (Battle) ──────────────────────────────────
+   The deep-research pass produces the most directly comparable material in
+   the system; it used to be reachable only inside a 40KB markdown blob in
+   Feed mode. Cells hold long cited prose, so they get room to breathe and a
+   smaller type size than the section grid above. */
+.verified-facts-heading {
+  margin: 22px 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.verified-facts-heading small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+table.verified-facts td {
+  font-size: 12px;
+  line-height: 1.5;
+  vertical-align: top;
+}
+table.verified-facts th[scope='row'] { white-space: nowrap; }
+table.verified-facts ul { margin: 4px 0 0; padding-left: 16px; }
+.verified-facts-empty { margin-top: 18px; font-size: 12px; }
+/* "not established" ≠ "none". Muted and italic so it reads as a gap in the
+   research rather than as a property of the vendor. */
+.fact-unknown { color: var(--muted); font-style: italic; font-size: 11px; cursor: help; }
+/* A whole missing column needs one visible sentence, not four tooltips. */
+.verified-facts-notice {
+  margin: 0 0 10px;
+  padding: 7px 11px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 0 4px 4px 0;
+}

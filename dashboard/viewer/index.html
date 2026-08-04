@@ -189,7 +189,11 @@
         <summary>
           <span class="accordion-icon">▸</span>
           <span class="accordion-title">📊 Full side-by-side comparison</span>
-          <span class="accordion-hint">positioning · target · pricing · differentiators · compliance · recent moves</span>
+          <!-- Hint is filled by renderBattle() from the rows it actually built.
+               Hardcoded, it listed "compliance" long after that row stopped
+               resolving — a collapsed section advertising content it no longer
+               contains is worse than one advertising nothing. -->
+          <span class="accordion-hint" id="battle-grid-hint">positioning · pricing · strengths · weaknesses · verified facts</span>
         </summary>
         <div class="battle-grid" id="battle-grid"></div>
       </details>
