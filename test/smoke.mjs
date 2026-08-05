@@ -1066,6 +1066,20 @@ section('14. Viewer vocabulary tracks the roster');
   if (rival) bad(`a second hardcoded mode list exists: ${rival[0].slice(0, 70)}… — derive it from SIDEBAR_MODES`);
   else ok('SIDEBAR_MODES is the only mode list');
 
+  // Every mode needs BOTH bindings, and the sidebar must not advertise one it
+  // does not have. The number badges were decoration for the whole life of the
+  // sidebar — 1-8 rendered beside every mode and nothing listened — while the
+  // letter map was a separate hardcoded object that silently lacked an entry for
+  // any mode added after it was written.
+  const modeBlock = viewer.match(/const SIDEBAR_MODES = \[[\s\S]*?\n\];/)?.[0] || '';
+  const missingBind = [...modeBlock.matchAll(/\{ id: '(\w+)'[^}]*\}/g)]
+    .filter((m) => !/kbd: '\w'/.test(m[0]) || !/key: '\w'/.test(m[0]))
+    .map((m) => m[1]);
+  if (missingBind.length) bad(`modes missing a keyboard binding: ${missingBind.join(', ')}`);
+  else if (!/Object\.fromEntries\(SIDEBAR_MODES\.map\(\(m\) => \[m\.key/.test(viewer)) {
+    bad('the g-leader map is not derived from SIDEBAR_MODES — a new mode would silently have no shortcut');
+  } else ok('every mode has a number and a letter shortcut, both derived from one list');
+
   const orphanModes = modeIds.filter((id) => !html.includes(`id="${id}-mode"`));
   if (orphanModes.length) bad(`sidebar modes with no page section: ${orphanModes.join(', ')}`);
   else ok(`all ${modeIds.length} sidebar modes have a page section`);

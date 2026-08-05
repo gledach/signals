@@ -323,14 +323,19 @@ const ICONS = {
 const icon = (name) => ICONS[name] || '';
 
 const SIDEBAR_MODES = [
-  { id: 'feed',   label: 'Live Feed', icon: ICONS.feed,   kbd: '1' },
-  { id: 'battle',  label: 'Battle',  icon: ICONS.battle, kbd: '2' },
-  { id: 'compare', label: 'Compare', icon: ICONS.market, kbd: '3' },
-  { id: 'market',  label: 'Market',  icon: ICONS.market, kbd: '4' },
-  { id: 'intel',   label: 'Intel',   icon: ICONS.intel,  kbd: '5' },
-  { id: 'report',  label: 'Report',  icon: ICONS.report, kbd: '6' },
-  { id: 'briefs',  label: 'Briefs',  icon: ICONS.briefs, kbd: '7' },
-  { id: 'inbox',   label: 'Inbox',   icon: ICONS.inbox,  kbd: '8' },
+  // `kbd` is the number badge shown in the sidebar AND the key that switches to
+  // the mode; `key` is the letter after the `g` leader. Both derive from this
+  // one list. The badges used to be decoration — the sidebar advertised 1-8 and
+  // nothing was listening, while the letter map was a separate hardcoded object
+  // that silently lacked an entry for any mode added after it.
+  { id: 'feed',    label: 'Live Feed', icon: ICONS.feed,   kbd: '1', key: 'f' },
+  { id: 'battle',  label: 'Battle',    icon: ICONS.battle, kbd: '2', key: 'b' },
+  { id: 'compare', label: 'Compare',   icon: ICONS.market, kbd: '3', key: 'c' },
+  { id: 'market',  label: 'Market',    icon: ICONS.market, kbd: '4', key: 'm' },
+  { id: 'intel',   label: 'Intel',     icon: ICONS.intel,  kbd: '5', key: 'i' },
+  { id: 'report',  label: 'Report',    icon: ICONS.report, kbd: '6', key: 'r' },
+  { id: 'briefs',  label: 'Briefs',    icon: ICONS.briefs, kbd: '7', key: 's' },
+  { id: 'inbox',   label: 'Inbox',     icon: ICONS.inbox,  kbd: '8', key: 'x' },
 ];
 
 // Category ids (from the roster) → sidebar group labels. Multiple raw categories
@@ -1055,7 +1060,8 @@ function wireKeyboardShortcuts() {
   let leaderG = false;
   let leaderTimer = null;
   const clearLeader = () => { leaderG = false; if (leaderTimer) clearTimeout(leaderTimer); };
-  const modeKey = { f: 'feed', b: 'battle', m: 'market', i: 'intel', r: 'report', s: 'briefs', x: 'inbox' };
+  const modeKey = Object.fromEntries(SIDEBAR_MODES.map((m) => [m.key, m.id]));
+  const modeNum = Object.fromEntries(SIDEBAR_MODES.map((m) => [m.kbd, m.id]));
 
   document.addEventListener('keydown', (e) => {
     // Don't hijack typing in any field. Also skip when a modifier is held — those
@@ -1073,6 +1079,13 @@ function wireKeyboardShortcuts() {
       clearLeader();
       return;
     }
+    // The sidebar shows a number beside every mode. Make it true.
+    if (modeNum[e.key]) {
+      e.preventDefault();
+      setMode(modeNum[e.key]);
+      return;
+    }
+
     if (e.key === 'g') {
       leaderG = true;
       leaderTimer = setTimeout(clearLeader, 1500);

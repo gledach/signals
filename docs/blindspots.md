@@ -11,7 +11,7 @@ Review quarterly alongside `PLAN.md` — some blind spots move into plans, some 
 
 **Signal is structurally blind to:**
 - Customer voice inside gated review sites and private communities
-- Actual product behavior (demos, API internals, real voice quality)
+- Actual product behavior (agent quality on a real repo, API internals, failure modes under load)
 - Employment / team signals (LinkedIn posts, jobs, Glassdoor)
 - Short-form social (Twitter/X, LinkedIn posts, TikTok)
 - Non-English coverage
@@ -23,11 +23,11 @@ Review quarterly alongside `PLAN.md` — some blind spots move into plans, some 
 
 ## Priority matrix — what matters most for the home vendor
 
-Ranked by expected impact for a AI coding founder-seller:
+Ranked by expected impact for someone tracking the AI coding-agent market:
 
 | # | Blind spot | Impact | Fix effort | Fix status |
 |---|---|---|---|---|
-| 1 | **Actual product behavior** of their demos (latency, model provider, barge-in, hallucination) | Critical — you're a AI coding company, product IS the pitch | 1 week + legal check | [Plan 03 T4](./plans/03-thinkable-bets.md) scoped, not built |
+| 1 | **Actual product behavior** on a real codebase (latency, model choice, multi-file edit reliability, hallucination) | Critical — in this market the product IS the pitch | 1 week + legal check | [Plan 03 T4](./plans/03-thinkable-bets.md) scoped, not built |
 | 2 | **Customer voice in private channels** (G2, Capterra, Gartner, Discord, Reddit threads) | High — where real dissatisfaction lives | 2 days Reddit; G2 is scraping-heavy | [Plan 02 G7](./plans/02-good-builds.md) Reddit, partial |
 | 3 | **Employment signals** (LinkedIn jobs, Glassdoor, Levels) | High — jobs leak roadmap months ahead | 2 days Proxycurl | [Plan 02 G3](./plans/02-good-builds.md), not built |
 | 4 | **Social short-form** (Twitter/X, LinkedIn posts) | Medium — 30–40% of real-time signal lives here | 1–2 days + $100/mo Twitter API | Not planned |
@@ -82,12 +82,12 @@ Ranked by expected impact for a AI coding founder-seller:
 
 | Gap | Detail | Priority | Fix status |
 |---|---|---|---|
-| **Their demo-call behavior** | model provider, latency, barge-in, hallucination under adversarial questions | **CRITICAL** | [Plan 03 T4](./plans/03-thinkable-bets.md) scoped |
+| **Their behavior on a real repo** | model choice, latency, multi-file edit reliability, hallucination under adversarial prompts | **CRITICAL** | [Plan 03 T4](./plans/03-thinkable-bets.md) scoped |
 | API docs changelog | New endpoints = new product surface | Medium | [Plan 01 Q8](./plans/01-quick-wins.md), not built |
 | TLS certificate transparency | New subdomains weeks before product launch | Medium | [Plan 01 Q2](./plans/01-quick-wins.md), not built |
 | Customer-logo wall diff | First-order customer-win signal | Medium | [Plan 03 T6](./plans/03-thinkable-bets.md), not built |
 | App Store changelog | iOS / Android version bumps leak features | Low | [Plan 06 C16](./plans/06-crazy-ideas.md), not built |
-| Voice-provider fingerprinting from HTML | Their codegen / STT vendor leaks in SDK imports | Medium | Part of [Plan 03 T4](./plans/03-thinkable-bets.md) |
+| Model-provider fingerprinting from HTML | Which frontier models they call leaks in SDK imports and network config | Medium | Part of [Plan 03 T4](./plans/03-thinkable-bets.md) |
 | Service status pages | Their real uptime / incidents | Low | Manual check |
 | OG image changes | Leading indicator of rebrand / announcement | Low | [Plan 01 Q5](./plans/01-quick-wins.md), not built |
 | DNS MX / CNAME changes | Infra migrations leak ops shifts | Low | [Plan 01 Q7](./plans/01-quick-wins.md), not built |
