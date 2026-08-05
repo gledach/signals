@@ -125,6 +125,32 @@
       </div>
     </main>
 
+    <!-- ─── COMPANY page — everything about ONE company ───────────────────
+         The pattern every well-loved dashboard uses: the sidebar picks the
+         OBJECT, tabs inside pick the VIEW. Stripe does it with customers,
+         GitHub with repos, Vercel with projects. Signal used to make a
+         sidebar company click mean four different things depending on the
+         mode, and clicking the ANCHOR meant nothing at all — a dead end
+         that also made the anchor's own infrastructure unreachable. One
+         click, one destination, same meaning everywhere. -->
+    <main id="company-mode" class="mode">
+      <header class="page-header">
+        <h1 id="company-title">Company</h1>
+        <div class="page-actions" id="company-actions"></div>
+      </header>
+      <nav class="company-tabs" id="company-tabs" aria-label="Company views"></nav>
+      <div class="page-content">
+        <section id="company-overview" class="company-panel"></section>
+        <section id="company-signals" class="company-panel hidden">
+          <ul id="company-signal-list"></ul>
+        </section>
+        <section id="company-infrastructure" class="company-panel hidden"></section>
+        <section id="company-battlecard" class="company-panel hidden">
+          <article id="company-card"></article>
+        </section>
+      </div>
+    </main>
+
     <!-- ─── BATTLE mode (us vs one competitor — primary sales view) ─── -->
     <main id="battle-mode" class="mode">
       <header class="page-header">

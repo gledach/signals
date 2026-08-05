@@ -7,8 +7,6 @@ Tiered plans by ambition. Pick by mood, budget, and time available.
 | [01-quick-wins](./01-quick-wins.md) | QUICK | ~1 day each, 8 items | $0 | You have an afternoon and want visible wins |
 | [02-good-builds](./02-good-builds.md) | GOOD | ~1 week each, 7 items | $5–100/mo total | You want the system to *feel complete* |
 | [03-thinkable-bets](./03-thinkable-bets.md) | THINKABLE | 1–2 weeks, design-heavy | $0–20/mo | You want the system to be *smart*, not just *present* |
-| [04-exec-travel](./04-exec-travel.md) | HARD | 3–5 days + ongoing research | ~$10/mo | Competitors are Series C+ and their execs fly private |
-| [05-investor-network](./05-investor-network.md) | HARD | 2 weeks + ongoing OSINT | $50–100/mo | You want leading indicators no other CI tool surfaces |
 | [06-crazy-ideas](./06-crazy-ideas.md) | CRAZY | variable | variable | You're killing time or feeling creative |
 | [07-email-ingest](./07-email-ingest.md) | **READY · GOOD** | ~4h first parser / ~1–2d full | $0–12/mo | Google Alerts / Mention / newsletters → signals (email ingest pipeline) |
 | [08-knowledge-graph](./08-knowledge-graph.md) | **APPROVED · THINKABLE+** | 4–5 days | ~$3/mo | **The compounding move** — Turso canonical + Obsidian workspace hybrid |
@@ -17,6 +15,11 @@ Tiered plans by ambition. Pick by mood, budget, and time available.
 | [11-railway-deploy](./11-railway-deploy.md) | **READY · GOOD** | ~30 min first time | ~$5/mo | Ship the 9 ingest/correlation crons to Railway; viewer stays local. Depends on Plan 10 |
 | [12-notion-publish](./12-notion-publish.md) | **THINKABLE · GOOD** | ~1–3 days | $0–10/mo | Publish battlecards + briefs to Notion as a downstream read mirror for non-git collaborators. Markdown stays canonical |
 | [13-arxiv-watcher](./13-arxiv-watcher.md) | **IDEA · GOOD** | ~1–1.5 days | ~$0.05–0.20/mo | arXiv preprint watcher — capability research signal + author-affiliation tracking. Closes BLINDSPOTS #3 (employment) at $0 instead of $49/mo Proxycurl |
+
+**04 and 05 are skipped numbers.** Exec-travel and investor-network tracking were sketched
+in conversation and never written up, so there is no `04-*.md` or `05-*.md` to read. They
+survive only as rows in [blindspots.md](../blindspots.md); the numbering is left with holes
+rather than renumbered, because the other plan files cite each other by number.
 
 ## How to read a plan file
 
@@ -31,13 +34,19 @@ Every plan file uses the same structure per item:
 
 If you're optimizing for *compounding value* rather than *biggest idea first*, do them in this order:
 
-1. **Pick 2–3 from [01-quick-wins](./01-quick-wins.md)** — Website diffing + Cert transparency + Toast alerts. Total: one weekend. Immediate daily value.
-2. **Ship [02-good-builds](./02-good-builds.md) §Customer-win miner + §Weekly digest.** ~1 week. Transforms the system from pull → push.
-3. **Ship [02-good-builds](./02-good-builds.md) §YouTube+Whisper.** Founders leak strategy on podcasts constantly.
-4. **Ship [03-thinkable-bets](./03-thinkable-bets.md) §Demo-call recording.** The AI coding-specific moat. Nobody else can build this.
-5. **Ship [03-thinkable-bets](./03-thinkable-bets.md) §Correlation engine re-wire.** Now you have enough signal sources that convergence detection starts paying off.
-6. **Then [05-investor-network](./05-investor-network.md)** before [04-exec-travel](./04-exec-travel.md) — investor-tracking has higher signal density than founder-tracking, and the target list serves all three competitors at once.
-7. **[06-crazy-ideas](./06-crazy-ideas.md)** is for when you're unblocked and want to experiment.
+Website diffing, cert transparency, YouTube+Whisper, the weekly digest and the correlation
+engine are all shipped — see the ✅ list in [roadmap.md](../roadmap.md). What is left, in
+order:
+
+1. **Ship [02-good-builds](./02-good-builds.md) §Customer-win miner.** The single most
+   actionable signal type; turns the system from pull → push.
+2. **Ship [03-thinkable-bets](./03-thinkable-bets.md) §Demo-call recording.** The AI
+   coding-specific moat. Nobody else can build this.
+3. **Ship [07-email-ingest](./07-email-ingest.md) or [09-document-ingest](./09-document-ingest.md).**
+   Both are READY and both widen collection rather than deepening synthesis.
+4. **Then [08-knowledge-graph](./08-knowledge-graph.md)** — the compounding move, and the
+   one that pays off more the more of the above you have already shipped.
+5. **[06-crazy-ideas](./06-crazy-ideas.md)** is for when you're unblocked and want to experiment.
 
 ## What's missing from these plans (deliberately)
 

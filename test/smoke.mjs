@@ -1041,7 +1041,11 @@ section('14. Viewer vocabulary tracks the roster');
   // A sidebar click means something different in each mode, and only the modes
   // that scope their view to a company may show one selected. Assert the hint
   // table covers every mode so a new mode cannot ship with a silent teleport.
-  const modeIds = [...viewer.matchAll(/\{ id: '(\w+)',\s+label: '/g)].map((m) => m[1]);
+  // Scoped to the SIDEBAR_MODES block. An unscoped scan also matched
+  // COMPANY_TABS and reported the company page's tabs as modes with no page
+  // section — a confident, entirely wrong failure.
+  const modesBlockSrc = viewer.match(/const SIDEBAR_MODES = \[[\s\S]*?\n\];/)?.[0] || '';
+  const modeIds = [...modesBlockSrc.matchAll(/\{ id: '(\w+)'/g)].map((m) => m[1]);
   const hintBody = viewer.match(/const COMPANY_CLICK_HINT = \{([\s\S]*?)\n\};/)?.[1] ?? '';
   const hinted = new Set([...hintBody.matchAll(/^\s*(\w+):/gm)].map((m) => m[1]));
   const hasDefault = /COMPANY_CLICK_HINT_DEFAULT\s*=\s*'/.test(viewer);
@@ -1080,9 +1084,15 @@ section('14. Viewer vocabulary tracks the roster');
     bad('the g-leader map is not derived from SIDEBAR_MODES — a new mode would silently have no shortcut');
   } else ok('every mode has a number and a letter shortcut, both derived from one list');
 
-  const orphanModes = modeIds.filter((id) => !html.includes(`id="${id}-mode"`));
-  if (orphanModes.length) bad(`sidebar modes with no page section: ${orphanModes.join(', ')}`);
-  else ok(`all ${modeIds.length} sidebar modes have a page section`);
+  // Routes, not just nav entries: `company` has a page and a URL but no sidebar
+  // button, and validating deep links against the nav list alone sent
+  // #mode=company to Feed.
+  const extraRoutes = [...(viewer.match(/const EXTRA_ROUTES = \[([^\]]*)\]/)?.[1] || '')
+    .matchAll(/'(\w+)'/g)].map((m) => m[1]);
+  const allRoutes = [...modeIds, ...extraRoutes];
+  const orphanModes = allRoutes.filter((id) => !html.includes(`id="${id}-mode"`));
+  if (orphanModes.length) bad(`routes with no page section: ${orphanModes.join(', ')}`);
+  else ok(`all ${allRoutes.length} routes (${modeIds.length} in the nav + ${extraRoutes.length} reached by click) have a page section`);
 
   // And every element a renderer writes into must exist. This repo has twice
   // shipped controls that rendered into nothing — once because the markup moved,

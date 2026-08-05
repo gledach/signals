@@ -514,7 +514,7 @@ Signal/
 
 - **Standalone repo** — originally lived inside `news-into-intelligence/competitive/`; extracted when it proved 100% self-contained.
 - **libSQL** — plain SQL over HTTP, no schema-deploy step, and no reactive runtime this workload has any use for. Works behind a corporate proxy, and runs identically as a local file or a hosted database, which is what lets a fresh clone work with no account.
-- **Schema source of truth** — `sql/*.sql` migration files. Applied via `npm run db:migrate`. Never talk to the DB directly from caller code — use `store.mjs`.
+- **Schema source of truth** — `sql/*.sql` migration files. Applied via `npm run db:migrate`. Never talk to the DB directly from caller code — use `core/store.mjs`.
 - **JSONL → Turso** — original signals were flat files; now stored in Turso with indexes for fast queries.
 - **Zero-dep philosophy** — only libSQL + a couple of adjacent tools added; everything else uses Node built-ins.
 - **Battlecards as Markdown in git** — versioning for free; HUMAN section never overwritten by LLM refreshes.

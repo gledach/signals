@@ -32,6 +32,9 @@ const state = {
   // panel only ever received the competitor, and the anchor is excluded from
   // "competitor" by definition.
   infraSide: 'them',
+  // Which tab of the company page is open. Persisted in the URL so a link to a
+  // company's infrastructure is a link, not an instruction.
+  companyTab: 'overview',
   battlecards: {},               // cached MD by companyId
   filters: { minImpact: 0, type: '', showNoise: false },
   highlightSignal: null,         // hashId to scroll-to + flash on next Feed render
@@ -213,7 +216,7 @@ window.addEventListener('message', (e) => {
   // Third copy of the mode list when the gate found it, and already stale — it
   // was missing 'briefs', so the report iframe could never switch to it. Reads
   // SIDEBAR_MODES at call time, which is always after module init.
-  if (!mode || !SIDEBAR_MODES.some((m) => m.id === mode)) return;
+  if (!mode || !isValidMode(mode)) return;
   setMode(mode);
 });
 
@@ -364,18 +367,23 @@ const SIDEBAR_GROUP_LABELS = {
 // falls to the end in insertion order.
 const SIDEBAR_GROUP_ORDER = ['coding-agent', 'app-builder'];
 
+// Routes that are NOT sidebar entries. `company` is reached by clicking a
+// company, never from the mode nav — but it is still a real mode with a page
+// section and a URL, so validating deep links against SIDEBAR_MODES alone sent
+// #mode=company to Feed. "Every mode in the nav" and "every valid route" are
+// different sets, and conflating them cost a working deep link.
+const EXTRA_ROUTES = ['company'];
+const isValidMode = (m) => SIDEBAR_MODES.some((x) => x.id === m) || EXTRA_ROUTES.includes(m);
+
 // What a sidebar company click DOES, per mode. The sidebar is one flat list
 // holding two different kinds of control — a view switcher and a subject
 // picker — and only Feed and Battle consume the subject. In the other five
 // modes a click leaves the mode entirely for Battle. That teleport is a
 // deliberate shortcut, but it was undeclared, which is what made the sidebar
 // read as "sometimes one click, sometimes two". Say it out loud instead.
-const COMPANY_CLICK_HINT = {
-  feed:    'click to filter the feed',
-  battle:  'click to pick the rival',
-  compare: 'click to pick the other side',
-};
-const COMPANY_CLICK_HINT_DEFAULT = 'click opens Battle';
+// One caption, because a click now means one thing from every mode.
+const COMPANY_CLICK_HINT = {};
+const COMPANY_CLICK_HINT_DEFAULT = 'click to open the company';
 
 // Companies with a one-word context pill — surfaces ambient self-awareness.
 // "employer" on OpenAI Codex keeps the "operator lens" thinking-discipline step live
@@ -456,7 +464,10 @@ function renderSidebarConvergenceChip() {
 function renderSidebarModes() {
   const el = document.getElementById('sidebar-modes');
   if (!el) return;
-  el.innerHTML = SIDEBAR_MODES.map((m) => `
+  el.innerHTML = `<div class="sb-section-caption first">
+      <span class="sb-section-title">Views</span>
+      <span class="sb-section-hint">the whole market</span>
+    </div>` + SIDEBAR_MODES.map((m) => `
     <button class="sb-mode ${state.mode === m.id ? 'active' : ''}" data-sb-mode="${m.id}" title="${esc(m.label)}">
       <span class="sb-icon">${m.icon}</span>
       <span class="sb-label">${esc(m.label)}</span>
@@ -501,11 +512,12 @@ function renderSidebarCompanies() {
   // One caption for the whole brand list, stating the consequence of a click in
   // THIS mode. Without it the list looks identically clickable in all seven
   // modes while meaning four different things.
-  const hint = COMPANY_CLICK_HINT[state.mode] || COMPANY_CLICK_HINT_DEFAULT;
+  // Two axes, labelled as such. The sidebar mixes a view switcher and an object
+  // list; a first-time visitor cannot tell them apart unless you say so.
   const caption = `
     <div class="sb-section-caption">
-      <span class="sb-section-title">Brands</span>
-      <span class="sb-section-hint">${esc(hint)}</span>
+      <span class="sb-section-title">Companies</span>
+      <span class="sb-section-hint">${esc(COMPANY_CLICK_HINT[state.mode] || COMPANY_CLICK_HINT_DEFAULT)}</span>
     </div>`;
 
   el.innerHTML = caption + groups.map((g) => `
@@ -529,7 +541,7 @@ function renderSidebarCompanyRow(c) {
   // interaction. A selection indicator that marks something the current view is
   // not scoped to is worse than none.
   const activeId = (state.mode === 'battle' || state.mode === 'compare') ? state.battleCompetitor
-    : state.mode === 'feed' ? state.currentCompany
+    : (state.mode === 'company' || state.mode === 'feed') ? state.currentCompany
     : null;
   const isActive = activeId != null && activeId === c.id;
 
@@ -575,61 +587,22 @@ function renderSidebarCompanyRow(c) {
 //   Battle  → set battleCompetitor, re-render battle panels in place
 //   Market  → jump to Battle mode for that competitor (most useful action)
 //   Report  → jump to Battle mode for that competitor
+/**
+ * A sidebar company click opens that company's page. Always. From any mode.
+ *
+ * It used to mean four different things — filter the feed, pick the rival, pick
+ * the other side, or teleport to Battle — and clicking the ANCHOR meant nothing
+ * at all, because the anchor is by definition not a rival. Users learned the
+ * sidebar was unpredictable, which is the complaint that started this.
+ *
+ * The comparison workflows keep their own pickers: Battle has its "against"
+ * dropdown, Compare has its chips. Those are the places you choose a SECOND
+ * company, and they are visible in the view that uses them.
+ */
 function selectCompanyFromSidebar(id) {
   if (!id) return;
-  const co = state.companies.find((c) => c.id === id);
-  if (!co) return;
-
-  if (state.mode === 'feed') {
-    state.currentCompany = id;
-    renderKPI(); renderCompetitorCard();
-    renderBattlecard();
-    renderSignals();
-    renderSidebar();
-    writeUrlState();
-    document.getElementById('battlecard-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } else if (state.mode === 'battle' || state.mode === 'compare') {
-    // The sidebar picks WHO THE SUBJECT IS COMPARED AGAINST. It never moves the subject.
-    //
-    // An earlier version swapped the two sides when you clicked the anchor, on the
-    // reasoning that a silent no-op reads as broken. That was the wrong fix: it made the
-    // subject jump from company to company as you clicked around, which is the same
-    // unpredictability in a new costume. The subject is a setting; settings change in
-    // one deliberate place — now config, not a dropdown.
-    if (id === battleAnchorId()) {
-      flashHint(anchorIsImplicit()
-        ? `${nameOf(id)} is the subject of every comparison. Use the "Compare" dropdown to change it.`
-        : `${nameOf(id)} is the subject of every comparison — set by isMain in config/companies.local.mjs.`);
-      return;
-    }
-    state.battleCompetitor = id;
-    if (state.mode === 'compare') {
-      // One click from the sidebar means "compare against just this one" —
-      // additive selection lives on the chips, where it is visible.
-      state.compareIds = [id];
-      populateBattleSelector();
-      renderCompare();
-    } else {
-      populateBattleSelector();
-      renderBattle();
-    }
-    renderSidebar();
-    writeUrlState();
-  } else {
-    // Every remaining mode — Market, Intel, Report, Briefs, Inbox — is global:
-    // none of them scope to a company, so there is nothing for a click to
-    // refine in place. It jumps to Battle for that company instead. The
-    // sidebar caption announces this ("click opens Battle") so leaving the
-    // mode is an advertised shortcut rather than the view vanishing.
-    if (id === battleAnchorId()) {
-      flashHint(anchorIsImplicit()
-        ? `${nameOf(id)} is the comparison anchor — open Battle to change it.`
-        : `${nameOf(id)} is the comparison anchor — set by isMain in config/companies.local.mjs.`);
-      return;
-    }
-    state.battleCompetitor = id;
-    setMode('battle');
-  }
+  if (!state.companies.some((c) => c.id === id)) return;
+  openCompany(id);
   document.body.classList.remove('sidebar-open');
 }
 
@@ -716,6 +689,8 @@ function renderAll() {
     renderSignals();
   } else if (state.mode === 'battle') {
     renderBattle();
+  } else if (state.mode === 'company') {
+    renderCompanyPage();
   } else if (state.mode === 'compare') {
     renderCompare();
   } else if (state.mode === 'market') {
@@ -2009,6 +1984,146 @@ function describeBattlecard(md) {
     : 'View full battlecard';
 }
 
+// ────────────────────────────── company page ────────────────────────────────
+//
+// THE SIDEBAR PICKS THE OBJECT; TABS PICK THE VIEW.
+//
+// A sidebar company click used to mean four different things depending on the
+// mode — filter the feed, pick the rival, pick the other side, or teleport to
+// Battle — and clicking the ANCHOR meant nothing at all, because the anchor is
+// by definition not a "rival". That dead end is also why the anchor's own
+// infrastructure was unreachable: no view ever received it.
+//
+// One click, one destination, the same meaning from every mode.
+
+const COMPANY_TABS = [
+  { id: 'overview',       label: 'Overview' },
+  { id: 'signals',        label: 'Signals' },
+  { id: 'infrastructure', label: 'Infrastructure' },
+  { id: 'battlecard',     label: 'Battlecard' },
+];
+
+function openCompany(id, tab) {
+  state.currentCompany = id;
+  if (tab) state.companyTab = tab;
+  setMode('company');
+}
+
+async function renderCompanyPage() {
+  const co = state.companies.find((c) => c.id === state.currentCompany);
+  const title = document.getElementById('company-title');
+  if (!co) { if (title) title.textContent = 'No company selected'; return; }
+
+  if (title) {
+    title.innerHTML = `${esc(co.name)}
+      ${co.id === battleAnchorId() ? '<span class="sb-pill">anchor</span>' : ''}
+      <span class="company-domain">${esc(co.domain || '')}</span>`;
+  }
+
+  // Actions that only make sense with a second company in play.
+  const actions = document.getElementById('company-actions');
+  if (actions) {
+    const isAnchor = co.id === battleAnchorId();
+    actions.innerHTML = isAnchor ? '' : `
+      <button class="btn-secondary" data-company-action="battle">Prep against ${esc(co.name)}</button>
+      <button class="btn-secondary" data-company-action="compare">Compare</button>`;
+    for (const b of actions.querySelectorAll('[data-company-action]')) {
+      b.addEventListener('click', () => {
+        state.battleCompetitor = co.id;
+        if (b.dataset.companyAction === 'compare') { state.compareIds = [co.id]; setMode('compare'); }
+        else setMode('battle');
+      });
+    }
+  }
+
+  renderCompanyTabs();
+  for (const t of COMPANY_TABS) {
+    document.getElementById(`company-${t.id}`)?.classList.toggle('hidden', t.id !== state.companyTab);
+  }
+
+  if (state.companyTab === 'overview') renderCompanyOverview(co);
+  else if (state.companyTab === 'signals') renderCompanySignals(co);
+  else if (state.companyTab === 'infrastructure') await renderInfrastructure(co, null, 'company-infrastructure');
+  else if (state.companyTab === 'battlecard') await renderCompanyBattlecard(co);
+}
+
+function renderCompanyTabs() {
+  const el = document.getElementById('company-tabs');
+  if (!el) return;
+  el.innerHTML = COMPANY_TABS.map((t) => `
+    <button type="button" class="company-tab ${state.companyTab === t.id ? 'active' : ''}"
+      data-company-tab="${t.id}">${esc(t.label)}</button>`).join('');
+  for (const b of el.querySelectorAll('[data-company-tab]')) {
+    b.addEventListener('click', () => {
+      state.companyTab = b.dataset.companyTab;
+      writeUrlState();
+      renderCompanyPage();
+    });
+  }
+}
+
+function renderCompanyOverview(co) {
+  const el = document.getElementById('company-overview');
+  if (!el) return;
+  const mine = state.signals.filter((s) => s.companyId === co.id);
+  const d7 = mine.filter((s) => ageDays(s) <= 7);
+  const conv = mine.filter((s) => s.signalType === 'convergence');
+  const critical = mine.filter((s) => s.impactBand === 'critical' && s.signalType !== 'convergence');
+  const wins = mine.filter((s) => s.signalType === 'customer_win' && ageDays(s) <= 30);
+  const newest = mine.map((s) => s.firstSeen).sort().pop();
+
+  const top = [...mine].sort((a, b) => (b.impactScore ?? 0) - (a.impactScore ?? 0)).slice(0, 5);
+
+  el.innerHTML = `
+    <div class="company-kpis">
+      <span class="kpi-chip"><strong>${mine.length}</strong> signals</span>
+      <span class="kpi-chip"><strong>${d7.length}</strong> in 7d</span>
+      <span class="kpi-chip ${conv.length ? 'alert' : ''}"><strong>${conv.length}</strong> convergences</span>
+      <span class="kpi-chip ${critical.length ? 'alert' : ''}"><strong>${critical.length}</strong> critical</span>
+      <span class="kpi-chip"><strong>${wins.length}</strong> customer wins (30d)</span>
+    </div>
+    ${newest
+      ? `<p class="company-freshness">Last collected ${esc(String(newest).slice(0, 16).replace('T', ' '))}Z.</p>`
+      : `<p class="company-freshness warn">No signal has ever been collected for ${esc(co.name)} — that is a coverage gap, not a quiet vendor. Check its feeds before concluding anything.</p>`}
+    <h3 class="company-section-title">Highest impact</h3>
+    ${top.length
+      ? `<ul class="company-top">${top.map((s) => `<li>
+          <span class="impact-badge">${s.impactScore ?? '–'}</span>
+          <a href="${esc(s.link || s.sourceUrl || '#')}" target="_blank" rel="noopener">${esc(s.title || '(untitled)')}</a>
+          <span class="company-top-meta">${esc(s.signalType || '')} · ${esc(String(s.firstSeen).slice(0, 10))}</span>
+        </li>`).join('')}</ul>`
+      : '<p class="empty">Nothing collected yet.</p>'}`;
+}
+
+function renderCompanySignals(co) {
+  const ul = document.getElementById('company-signal-list');
+  if (!ul) return;
+  // signalItem() is the one row builder — copy/expand/deep-link wiring included.
+  // A second one would drift, and the rows carry behaviour, not just markup.
+  const mine = state.signals
+    .filter((s) => s.companyId === co.id && (state.filters.showNoise || s.signalType !== 'noise'))
+    .slice(0, MAX_VISIBLE_SIGNALS);
+  ul.innerHTML = '';
+  if (!mine.length) {
+    ul.innerHTML = `<li class="empty">No signals for ${esc(co.name)} yet.</li>`;
+    return;
+  }
+  for (const s of mine) ul.appendChild(signalItem(s));
+}
+
+async function renderCompanyBattlecard(co) {
+  const el = document.getElementById('company-card');
+  if (!el) return;
+  try {
+    const md = await getBattlecard(co.id);
+    el.innerHTML = md
+      ? renderMarkdown(md)
+      : `<p class="empty">No battlecard for <code>${esc(co.id)}</code> yet. Run:<br><code>npm run bootstrap -- --company=${esc(co.id)}</code></p>`;
+  } catch (err) {
+    el.innerHTML = `<p class="empty">Could not load: ${esc(err.message)}</p>`;
+  }
+}
+
 // ────────────────────────────── signal feed ─────────────────────────────────
 
 function renderSignals() {
@@ -3208,8 +3323,8 @@ function infraSwitch(sides) {
   return `<span class="infra-switch">${btn('them', sides.them)}${btn('us', sides.us)}</span>`;
 }
 
-async function renderInfrastructure(company, sides) {
-  const el = document.getElementById('battle-infrastructure');
+async function renderInfrastructure(company, sides, targetId = 'battle-infrastructure') {
+  const el = document.getElementById(targetId);
   if (!el || !company) return;
   const companyId = company.id;
   const companyName = company.name;
@@ -3890,7 +4005,7 @@ function readUrlState() {
   // Derived from SIDEBAR_MODES, never restated. This was a second hardcoded
   // list, so adding a mode to the nav left its URL silently falling back to
   // Feed — a deep link that looked like it worked and did not.
-  if (mode && SIDEBAR_MODES.some((m) => m.id === mode)) {
+  if (mode && isValidMode(mode)) {
     state.mode = mode;
     for (const btn of document.querySelectorAll('#mode-nav button')) btn.classList.toggle('active', btn.dataset.mode === mode);
     for (const m of document.querySelectorAll('main.mode')) m.classList.toggle('active', m.id === `${mode}-mode`);
@@ -3927,6 +4042,9 @@ function readUrlState() {
   }
   // Deep-link to a specific signal (e.g. shared URL). Also switch company context
   // so the row is actually in the Feed filter when Feed mode renders.
+  const tab = params.get('tab');
+  if (tab && COMPANY_TABS.some((t) => t.id === tab)) state.companyTab = tab;
+
   const sig = params.get('signal');
   if (sig) {
     state.highlightSignal = sig;
@@ -3942,11 +4060,11 @@ function writeUrlState() {
   params.set('mode', state.mode);
   // Persist the selected competitor across refresh / share / bookmark for
   // every mode except Market + Report (which aren't competitor-scoped).
-  if (
-    state.currentCompany &&
-    ['feed', 'intel', 'inbox'].includes(state.mode)
-  ) {
+  if (state.currentCompany && ['feed', 'company', 'intel', 'inbox'].includes(state.mode)) {
     params.set('company', state.currentCompany);
+  }
+  if (state.mode === 'company' && state.companyTab !== 'overview') {
+    params.set('tab', state.companyTab);
   }
   // Compare is competitor-scoped too, so its selection has to survive a
   // refresh or a shared link. Deal-context dimensions stay Battle-only: those

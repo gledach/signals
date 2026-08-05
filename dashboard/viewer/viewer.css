@@ -2839,3 +2839,27 @@ table.verified-facts ul { margin: 4px 0 0; padding-left: 16px; }
 .infra-side:first-child { border-radius: 12px 0 0 12px; }
 .infra-side:last-child { border-radius: 0 12px 12px 0; }
 .infra-side.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/* ─── Company page ────────────────────────────────────────────────────────
+   One destination per company, tabs for the views — the pattern Stripe uses
+   for customers and GitHub for repos. */
+.company-tabs { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--border-soft); }
+.company-tab {
+  font: inherit; font-size: 13px;
+  padding: 8px 14px;
+  background: none; border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted); cursor: pointer;
+}
+.company-tab:hover { color: var(--text); }
+.company-tab.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.company-panel.hidden { display: none; }
+.company-domain { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 8px; }
+.company-kpis { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.company-freshness { font-size: 12px; color: var(--muted); margin: 0 0 16px; }
+.company-freshness.warn { color: var(--text); border-left: 3px solid var(--accent); padding-left: 10px; }
+.company-section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 18px 0 8px; }
+.company-top { list-style: none; padding: 0; margin: 0; }
+.company-top li { display: flex; align-items: baseline; gap: 9px; padding: 6px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
+.company-top-meta { color: var(--muted); font-size: 11px; margin-left: auto; white-space: nowrap; }
+.sb-section-caption.first { border-top: none; margin-top: 0; padding-top: 4px; }

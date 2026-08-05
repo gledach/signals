@@ -54,7 +54,7 @@ Detailed executable plan: [plans/08-knowledge-graph.md](./plans/08-knowledge-gra
 - ✅ Turso (libSQL) canonical store — dedup on `hashId PRIMARY KEY`
 - ✅ Config override layer — `$SIGNALS_*` → `*.local.mjs` (gitignored) → `*.default.mjs` for companies, feeds, deal-context, subdomain-signals, agent-policy and aeo-prompts. You never edit a tracked file to make the deployment yours, so `git pull` never conflicts with your configuration
 - ✅ Comparison anchor card (`battlecards/<MAIN_COMPANY_ID>.md`) grounds every other battlecard. Only an `isUs` deployment gets a true partisan self-card; in anchored (`isMain`) mode the same file is a neutral reference profile
-- ✅ 12 competitor battlecards with kill shots + objection handlers + feature matrix
+- ✅ 13 competitor battlecards with kill shots + objection handlers + feature matrix
 - ✅ Correlation engine + convergence signals with structured `evidence` citations
 - ✅ Tavily search (budget-guarded), YouTube transcripts, cert transparency, sitemap + robots diff, Google Trends, Hacker News, GitHub releases/activity, Reddit, and weekly answer-engine visibility (`watch:aeo`)
 - ✅ Localhost viewer at `:5180` — Linear-style sidebar, eight modes: Live Feed / Battle / Compare / Market / Intel / Report / Briefs / Inbox. Number keys 1-8 switch modes; `g` + letter (f/b/c/m/i/r/s/x) also works. Battle is call-prep (deal-context filters, kill shots, objections, win themes, talk-track, saved preps, Infrastructure panel); Compare is the N-way side-by-side (anchor + up to 3 rivals, `vs=a,b,c`) with the section grid, verified-facts table and feature matrix
