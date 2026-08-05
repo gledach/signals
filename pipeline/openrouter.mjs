@@ -187,7 +187,20 @@ export async function chat({ model, messages, temperature = 0.2, maxTokens = 102
         }
         throw err;
       }
-      const json = await res.json();
+      // A truncated HTTP BODY is a transport failure, not a bad model response.
+      // res.json() throws a bare SyntaxError for it, which isTransient() did not
+      // recognise — so a half-delivered 37KB response failed the whole run with
+      // "Unexpected end of JSON input" and no retry, after the tokens were
+      // generated and billed. Retrying is right: the model succeeded, the wire
+      // did not.
+      let json;
+      try {
+        json = await res.json();
+      } catch (bodyErr) {
+        const e = new Error(`OpenRouter response body did not arrive intact: ${bodyErr.message}`);
+        e.name = 'AbortError';   // routes through the transient path below
+        throw e;
+      }
       const msg = json?.choices?.[0]?.message;
       const finishReason = json?.choices?.[0]?.finish_reason;
       const content = extractContent(msg);

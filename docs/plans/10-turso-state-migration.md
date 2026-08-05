@@ -130,7 +130,7 @@ No logic changes; just I/O layer swap.
 1. **Write `sql/003-watcher-state.sql`** with the four tables above. Apply via `npm run db:migrate`. (Idempotent; safe to re-run.)
 2. **Extend `store.mjs`** with eight new helpers. Follow the existing
    pattern — each one is ~10 lines of libSQL query + JSON serialize.
-3. **Extend `test-store.mjs`** round-trip tests:
+3. **Extend `test/store-roundtrip.mjs`** round-trip tests:
    - `loadSitemapSnapshot` before `saveSitemapSnapshot` returns null
    - After save, load returns the exact payload (JSON round-trip intact)
    - Save twice with different payloads → load returns the second one

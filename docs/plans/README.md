@@ -21,6 +21,12 @@ in conversation and never written up, so there is no `04-*.md` or `05-*.md` to r
 survive only as rows in [blindspots.md](../blindspots.md); the numbering is left with holes
 rather than renumbered, because the other plan files cite each other by number.
 
+**Plans 01–03 predate the repo extraction.** They were written while this code still lived
+inside `news-into-intelligence/competitive/`, so their build steps say `competitive/x.mjs`
+where today's repo means `watchers/x.mjs`, `pipeline/x.mjs` or `cli/x.mjs`. Read the prefix
+as "the repo root". Several of their items have also shipped since — check the ✅ list in
+[roadmap.md](../roadmap.md) before building anything from them.
+
 ## How to read a plan file
 
 Every plan file uses the same structure per item:

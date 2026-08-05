@@ -89,7 +89,7 @@ bandwidth cost, backed up by whatever you already back up `data/` with.
 
 ---
 
-## Schema — add to `sql/003-documents.sql`
+## Schema — add to `sql/010-documents.sql`
 
 ```sql
 CREATE TABLE IF NOT EXISTS documents (
@@ -143,7 +143,7 @@ in sql/004-chunk-embeddings.sql — non-breaking.
    `pipx install docling` so it doesn't pollute system Python.
    Verify: `docling --version`. Document the install in START.md
    troubleshooting.
-2. **Write `sql/003-documents.sql`** per schema above. Apply with
+2. **Write `sql/010-documents.sql`** per schema above. Apply with
    `npm run db:migrate`. Verify with `npm run db:test` (extend the
    smoke test to touch the new tables too).
 3. **Extend `store.mjs`** with new public API:
@@ -309,9 +309,9 @@ against existing OpenRouter spend.
 
 ## Pre-merge checklist
 
-- [ ] `sql/003-documents.sql` applied to Turso via `npm run db:migrate`
+- [ ] `sql/010-documents.sql` applied to Turso via `npm run db:migrate`
 - [ ] `npm run db:test` extended and green
-- [ ] `store.mjs` public API additions covered by `test-store.mjs`
+- [ ] `store.mjs` public API additions covered by `test/store-roundtrip.mjs`
 - [ ] `document-watch.mjs` idempotent (dedup on sha256)
 - [ ] One test PDF ingested end-to-end; chunks queryable; signal emitted
 - [ ] `npm run correlate` still passes with `document_indexed` signals

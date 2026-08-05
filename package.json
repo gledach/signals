@@ -39,7 +39,7 @@
     "backfill:transcripts": "node --env-file-if-exists=.env cli/backfill-transcripts.mjs",
     "reclassify": "node --env-file-if-exists=.env cli/reclassify-signals.mjs",
     "reclassify:dry": "node --env-file-if-exists=.env cli/reclassify-signals.mjs --dry-run",
-    "clean:convergences": "node --env-file-if-exists=.env -e \"import('./store.mjs').then(async m => { const r = await m.deleteSignalsByType('convergence'); console.log('deleted:', r.deleted); })\"",
+    "clean:convergences": "node --env-file-if-exists=.env -e \"import('./core/store.mjs').then(async m => { const r = await m.deleteSignalsByType('convergence'); console.log('deleted:', r.deleted); })\"",
     "transcripts": "node --env-file-if-exists=.env cli/transcripts-cli.mjs",
     "notify:test": "node --env-file-if-exists=.env ops/notify-test.mjs",
     "all": "npm run fetch && npm run watch:hn && npm run watch:sites && npm run watch:certs && npm run watch:youtube && npm run watch:tavily && npm run watch:trends && npm run correlate && npm run refresh",

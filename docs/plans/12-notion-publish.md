@@ -86,7 +86,7 @@ sections of battlecards.
 ## New Turso table
 
 ```sql
--- plans/12 — sql/004-notion-mappings.sql (when built)
+-- plans/12 — sql/011-notion-mappings.sql (when built)
 CREATE TABLE IF NOT EXISTS notion_mappings (
   localPath          TEXT PRIMARY KEY,       -- e.g. 'battlecards/lovable.md'
   notionPageId       TEXT NOT NULL,          -- Notion's opaque page ID
@@ -165,7 +165,7 @@ problem — you're already paying it or not.
 
 ### Phase 1 — core publish (1 day)
 
-1. Apply `sql/004-notion-mappings.sql` via `npm run db:migrate`
+1. Apply `sql/011-notion-mappings.sql` via `npm run db:migrate`
 2. Extend `store.mjs` with 2 helpers: `loadNotionMapping(localPath)`,
    `saveNotionMapping(localPath, {notionPageId, lastLocalHash, blockIdByHeading})`
 3. Install `@tryfabric/martian` (or equivalent; needs ~20 KB of deps)

@@ -7,7 +7,16 @@ Each has clear ROI and non-trivial but well-bounded build effort.
 
 ---
 
-## G1. YouTube channel ingest + Whisper transcription
+## G1. YouTube channel ingest + Whisper transcription — ✅ SHIPPED
+
+**Built, and it does not look much like the plan below.** The shipped path is
+`watchers/youtube-watch.mjs` + `pipeline/transcript.mjs` (`npm run watch:youtube`), which
+fetches captions over HTTP via the `youtube-transcript` package — free for roughly 80% of
+videos — and only falls back to local Whisper (`nodejs-whisper`, opt-in behind
+`CI_WHISPER_ENABLED`, needs `yt-dlp` + `ffmpeg` on PATH) for caption-less videos. There is
+no OpenAI Whisper API call and no `youtubei.js` dependency; the build steps below name
+both and are kept only as a record of what was originally scoped. See the README's YouTube
+pipeline summary for what actually runs.
 
 ### Summary
 Pull every upload from each competitor's YouTube channel, extract existing captions OR Whisper-transcribe audio, LLM-summarize for product/strategy/customer mentions.

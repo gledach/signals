@@ -1,7 +1,7 @@
 <!-- turso-db-start -->
 This project uses [Turso](https://turso.tech/) (hosted libSQL) as its signal store.
 
-Schema source of truth: `sql/*.sql` migration files, applied via `npm run db:migrate`. The public store API lives in `store.mjs` (functions: `appendSignal`, `loadAllSignals`, `alreadySeen`, `importBatch`, `totalCount`, `updateSignal`, `deleteSignalsByType`). Never talk to the DB directly from caller code — use `store.mjs`.
+Schema source of truth: `sql/*.sql` migration files, applied via `npm run db:migrate`. The public store API lives in `core/store.mjs` (functions: `appendSignal`, `loadAllSignals`, `alreadySeen`, `importBatch`, `totalCount`, `updateSignal`, `deleteSignalsByType`). Never talk to the DB directly from caller code — use `core/store.mjs`.
 
 Turso is canonical. The pre-Turso implementation is not recoverable from this repository — its history was reinitialised.
 <!-- turso-db-end -->

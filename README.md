@@ -16,8 +16,8 @@ npm run doctor         # confirm it worked, and see what each missing key unlock
 npm run view           # a populated dashboard at 127.0.0.1:5180
 ```
 
-That works offline on a fresh clone. There is no build step, no framework, and six
-dependencies.
+That works offline on a fresh clone. There is no build step, no framework, and five
+runtime dependencies (plus Playwright, dev-only, for screenshots).
 
 ## Who consumes it
 
@@ -56,7 +56,7 @@ scoring), `agent-policy` (what an MCP agent may do), `aeo-prompts`, and `feeds`.
 |---|---|
 | [docs/start.md](./docs/start.md) | Install guide assuming no prior git/Node knowledge |
 | [docs/howto.md](./docs/howto.md) | Task-oriented "how do I…" |
-| [docs/why.md](./docs/why.md) | Why this architecture — zero build step, 6 deps |
+| [docs/why.md](./docs/why.md) | Why this architecture — zero build step, 5 runtime deps |
 | [docs/cost.md](./docs/cost.md) | LLM spend, model ladder, budget guardrails |
 | [docs/mcp.md](./docs/mcp.md) | The MCP server — tools, resources, agent policy |
 | [docs/blindspots.md](./docs/blindspots.md) | What Signal cannot see. Honest audit |
@@ -319,7 +319,6 @@ Chromium download to avoid corporate-proxy TLS issues.
 |---|---|
 | `npm run chrome-data` | Generate `chrome-extension/data/companies.json` — pre-baked signal digest (last 7 days) for instant Intel Check |
 | `npm run chrome-data -- --days=14` (or `npm run chrome-data:14d`) | Same, but last 14 days |
-| `npm run chrome-data -- --dry-run` | Preview output without writing file |
 
 The extension itself loads as an unpacked Chrome extension — see [`chrome-extension/README.md`](./chrome-extension/README.md) for install instructions.
 

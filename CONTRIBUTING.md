@@ -90,7 +90,8 @@ spend is a receipt, not a ceiling.
 An agent reading `matched: 0` cannot otherwise tell "nothing happened" from "we stopped
 looking".
 
-**No new dependencies without a good reason.** Seven is the budget. No build step, no
+**No new dependencies without a good reason.** Five runtime dependencies plus one dev
+dependency is the whole budget, and the number has only ever gone down. No build step, no
 framework, no TypeScript.
 
 ## Making it track your own market
