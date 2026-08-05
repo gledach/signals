@@ -52,7 +52,11 @@ export const SNAPSHOTS_DIR = at('data', 'snapshots');
 export const TRENDS_DIR = at('data', 'trends');
 export const LOGS_DIR = at('.logs');
 export const DEBUG_DIR = at('.debug');
-export const SCREENSHOTS_DIR = at('screenshots');
+// Screenshots live under .apsolut/, the operator's scratch area, which is
+// already gitignored as a whole — so a dashboard capture can never be committed
+// by accident. Previously `screenshots/` at the repo root, which needed its own
+// ignore rule and sat next to tracked directories.
+export const SCREENSHOTS_DIR = at('.apsolut', 'screenshots');
 export const CHROME_DATA_DIR = at('chrome-extension', 'data');
 
 // ── Individual files ────────────────────────────────────────────────────────

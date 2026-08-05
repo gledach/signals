@@ -14,7 +14,11 @@ npm-debug.log
 # Local runtime logs (fetch output, etc.)
 .logs/
 
-# Playwright screenshot outputs (derivable via `npm run shot`)
+# Screenshots — dashboard captures from `npm run shot` and from browser
+# sessions. They live under .apsolut/screenshots/, inside the operator scratch
+# area that is already ignored wholesale above, so a capture cannot be committed
+# by accident. This root-level rule is kept only so an older working copy with
+# a stale screenshots/ directory stays clean.
 screenshots/
 
 # Analyst briefs — committed to git per Plan 13 Phase 5. Durability comes from

@@ -13,7 +13,11 @@ Quick-scan layout: each how-to is self-contained; jump in and out.
   - [edit a battlecard by hand](#how-to-edit-a-battlecard-by-hand)
   - [add or edit a competitor](#how-to-add-or-edit-a-competitor)
   - [add a new RSS feed](#how-to-add-a-new-rss-feed)
+  - [monitor Certificate Transparency (new subdomains)](#how-to-monitor-certificate-transparency-new-subdomains)
   - [track competitor websites (sitemap + robots)](#how-to-track-competitor-websites)
+  - [watch Hacker News mentions](#how-to-watch-hacker-news-mentions)
+  - [watch GitHub repos](#how-to-watch-github-repos)
+  - [measure answer-engine visibility](#how-to-measure-answer-engine-visibility)
   - [get Windows toast alerts](#how-to-get-windows-toast-alerts)
   - [tune the toast threshold and rate-limit](#how-to-tune-the-toast-threshold-and-rate-limit)
   - [track YouTube channels](#how-to-track-youtube-channels)
@@ -23,6 +27,7 @@ Quick-scan layout: each how-to is self-contained; jump in and out.
   - [schedule automation (Windows Task Scheduler)](#how-to-schedule-automation)
   - [view signals from your phone](#how-to-view-signals-from-your-phone)
   - [tune models or swap providers](#how-to-tune-models-or-swap-providers)
+  - [drive Signal from an AI agent (MCP)](#how-to-drive-signal-from-an-ai-agent-mcp)
 - [Troubleshooting](#troubleshooting)
 - [Reference](#reference)
 - [Architecture decisions](#architecture-decisions)
@@ -1313,14 +1318,14 @@ Writes go through `INSERT OR IGNORE` on `hashId PRIMARY KEY` — safe to re-run 
 
 ---
 
-### How briefs are named and committed
+### How briefs are named and stored
 
 Analyst + weekly-report output lands in two places:
 
 1. **The `briefs` table** — canonical, shared across machines, durable
 2. **Local `briefs/` folder** — markdown files, editor-friendly
 
-Both `briefs/*.md` and `battlecards/*.md` are **gitignored** (`battlecards/_template.md` is
+Both `briefs/*.md` and `battlecards/*.md` are **gitignored** (the blank `_template.md` is
 force-added as the shape reference). Durability comes from the database — the `briefs` table
 and the `artifacts` table added by `sql/009-artifacts.sql`. The markdown on disk is an
 editable local mirror, not the source of truth.
@@ -1382,30 +1387,39 @@ analysis, kill shots and customer names, not a convenience.
 
 Short "why" notes for anyone reading the code later.
 
-**Why libSQL (rather than plain SQLite files or flat JSONL)?**
-Single HTTP endpoint + SQL ergonomics fit a Node-CLI workload better than
-Free tier (9 GB / 1B reads / 25M writes)
-is more than enough. Hosted not embedded, so the viewer and any future cron
-on a different machine hit the same data. Works behind corporate TLS-intercepting
-proxies.
+**Why libSQL (rather than flat JSONL files)?**
+SQL ergonomics fit a Node-CLI workload better than hand-rolled reads over append-only
+JSONL — dedup is a primary key, "last 7 days for this company" is an index, and idempotent
+re-runs are `INSERT OR IGNORE`. The **default is a local libSQL file**
+(`data/signals.db`), deliberately: `git clone && npm run db:migrate` has to work with no
+account, no token and no `.env`, because people run before they configure. Hosted Turso is
+the opt-in, for when a viewer and a cron on different machines must share one store — free
+tier (9 GB / 1B reads / 25M writes) is more than enough, and it works behind corporate
+TLS-intercepting proxies.
 
-**Why flat `.mjs` at repo root, not `src/`?**
-14 files, CLI tool, no build step. Flat root keeps invocations short (`node fetch-signals.mjs`). If we grow past 30 files we'll revisit.
+**Why directories, not a flat repo root?**
+It used to be flat: 14 files, a CLI tool, no build step, and short invocations. The note said
+"if we grow past 30 files we'll revisit". It grew to 78 `.mjs` files and the revisit happened
+— everything now lives in a purpose-named directory (`cli/`, `watchers/`, `pipeline/`,
+`core/`, `config/`, `dashboard/`, `ops/`, `runtime/`). Only `mcp-server.mjs` stayed at the
+root, because MCP clients launch it by path. See `docs/plans/REORG.md`.
 
-**Why JSON files for transcripts + snapshots, not Turso?**
+**Why JSON files for transcripts, not the database?**
 Cheap, grep-friendly, no bandwidth cost. Transcripts can be 20K+ chars; putting
 them through the database on every query wastes row-read budget. They're
 purely local reference material — the DB stores the fact of the video +
-classification, the transcript lives on disk.
+classification, the transcript lives on disk. Note this does *not* apply to sitemap/cert
+snapshots or trend baselines any more: those moved into the database so a watcher behaves
+identically on any host.
 
-**Why zero-dep RSS parser (`rss.mjs`)?**
+**Why zero-dep RSS parser (`watchers/adapters/rss.mjs`)?**
 Avoids pulling in `fast-xml-parser` and its deps. Our feeds are predictable shapes (RSS 2.0 or Atom) and regex-based extraction is fine at our scale.
 
 **Why single-tenant (no auth, no multi-user)?**
 This is the founder's local CI tool. Adding tenancy would cost a week and serve no one. Revisit if you hire a PMM who wants their own battlecards.
 
 **Why zero-dep notify (not Slack/email by default)?**
-Windows toast is already in the OS, fires instantly, and clicks open the viewer. Slack/email adds delivery dependencies. The `notify.mjs` helper is a fan-out point — add Slack later without touching any watcher.
+Windows toast is already in the OS, fires instantly, and clicks open the viewer. Slack/email adds delivery dependencies. The `pipeline/notify.mjs` helper is a fan-out point — add Slack later without touching any watcher.
 
 **Why YouTube channel HTML scraping instead of the RSS feed?**
 Corporate proxies commonly block `https://www.youtube.com/feeds/videos.xml`. The channel `/videos` HTML page isn't blocked. We parse `ytInitialData` JSON out of the HTML.
@@ -1414,7 +1428,9 @@ Corporate proxies commonly block `https://www.youtube.com/feeds/videos.xml`. The
 
 ## More reading
 
-- [README.md](./README.md) — intro + what Signal does
-- [PLAN.md](./PLAN.md) — master roadmap
-- [plans/](./plans/) — tiered plan files (quick → crazy)
-- [reference/README.md](./reference/README.md) — pointer to the originating news-into-intelligence repo for modules worth porting later (correlation engine, OpenSky ingest, AIS relay for yacht tracking)
+- [../README.md](../README.md) — intro + what Signal does
+- [roadmap.md](./roadmap.md) — master roadmap
+- [mcp.md](./mcp.md) — driving Signal from an AI agent over MCP
+- [plans/](./plans/) — tiered plan files (01, 02, 03, 06–14, plus REORG.md)
+- [decisions/](./decisions/) — why the data layer, roster, agent surface and demo data are shaped the way they are
+- [../reference/README.md](../reference/README.md) — pointer to the originating news-into-intelligence repo for modules worth porting later (correlation engine, OpenSky ingest, AIS relay for yacht tracking)

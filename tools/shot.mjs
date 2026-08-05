@@ -8,7 +8,7 @@
 //   node tools/shot.mjs --width=1920       # wider viewport
 //   node tools/shot.mjs --theme=light      # light theme
 //
-// Output: screenshots/dash-{mode}-{theme}.png
+// Output: .apsolut/screenshots/dash-{mode}-{theme}.png
 
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -16,7 +16,7 @@ import path from 'node:path';
 import { SCREENSHOTS_DIR } from '../runtime/paths.mjs';
 
 // ROOT comes from the shared resolver, not from this file's own location.
-const OUT_DIR = path.join(ROOT, 'screenshots');
+const OUT_DIR = SCREENSHOTS_DIR;
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 const argv = process.argv.slice(2);
