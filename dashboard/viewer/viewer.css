@@ -2889,3 +2889,24 @@ table.verified-facts ul { margin: 4px 0 0; padding-left: 16px; }
 .card-section-hint { margin-left: auto; font-size: 11px; color: var(--muted); }
 .card-section-body { padding: 2px 0 14px 20px; }
 .card-section-body > h4 { margin: 14px 0 6px; font-size: 12px; }
+
+/* ─── Comparison table column widths ──────────────────────────────────────
+   Without table-layout:fixed the browser sizes columns by CONTENT, so the
+   `width` on the label column was only a suggestion and two vendors with
+   different amounts of prose came out ~50/40 with the label eating the rest.
+   Fixed layout honours the label width and splits the remainder evenly, so
+   two companies are genuinely 50/50 and three are 33/33/33 — which is the
+   point of a comparison: equal room to be judged.
+
+   Safe because both comparison tables sit inside .compare-scroll, so a long
+   unbreakable token scrolls rather than bursting the layout. */
+.battle-table { table-layout: fixed; }
+.battle-table thead th:first-child,
+.battle-table tbody th { width: 150px; }
+.battle-table td,
+.battle-table tbody th { overflow-wrap: anywhere; }
+/* Below this the label column costs more than it explains — stack it. */
+@media (max-width: 860px) {
+  .battle-table thead th:first-child,
+  .battle-table tbody th { width: 96px; font-size: 10px; }
+}
