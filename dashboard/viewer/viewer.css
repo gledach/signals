@@ -2825,3 +2825,17 @@ table.verified-facts ul { margin: 4px 0 0; padding-left: 16px; }
 .compare-scroll table { min-width: 100%; }
 .compare-n3 td, .compare-n3 th { min-width: 210px; }
 .compare-n4 td, .compare-n4 th { min-width: 190px; font-size: 11.5px; }
+
+/* Infrastructure side switch — whose snapshots the panel shows. */
+.infra-switch { display: inline-flex; gap: 2px; margin-left: 10px; vertical-align: middle; }
+.infra-side {
+  font: inherit; font-size: 11px; font-weight: 500;
+  padding: 2px 9px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  cursor: pointer;
+}
+.infra-side:first-child { border-radius: 12px 0 0 12px; }
+.infra-side:last-child { border-radius: 0 12px 12px 0; }
+.infra-side.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }

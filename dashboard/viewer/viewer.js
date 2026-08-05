@@ -27,6 +27,11 @@ const state = {
   // Empty means "just the current Battle competitor", so arriving from Battle
   // shows the pair you were already looking at.
   compareIds: [],
+  // Whose infrastructure the Battle panel shows: 'them' (default) or 'us'.
+  // The anchor's snapshots were collected and served but unreachable — the
+  // panel only ever received the competitor, and the anchor is excluded from
+  // "competitor" by definition.
+  infraSide: 'them',
   battlecards: {},               // cached MD by companyId
   filters: { minImpact: 0, type: '', showNoise: false },
   highlightSignal: null,         // hashId to scroll-to + flash on next Feed render
@@ -3029,7 +3034,7 @@ async function renderBattle() {
 
   // ── Saved call preps for this competitor
   // Infrastructure (cert + sitemap + robots snapshots) for the competitor.
-  await renderInfrastructure(them.id, them.name);
+  await renderInfrastructure(state.infraSide === 'us' ? us : them, { us, them });
 
   await renderSavedPreps(them.id);
 }
@@ -3187,9 +3192,35 @@ function renderFeatureMatrixPanel(ourMd, theirMd, us, them, targetId = 'compare-
   onlyLead?.addEventListener('change', applyToggles);
 }
 
-async function renderInfrastructure(companyId, companyName) {
+/**
+ * Infrastructure snapshots for ONE side of the comparison.
+ *
+ * `sides` supplies both companies so the panel can offer a switch. Without it
+ * the anchor's own snapshots were collected by the watchers, served by
+ * /api/snapshots, and reachable from nowhere in the UI: this panel only ever
+ * received `them`, and the anchor is excluded from "them" by definition. On
+ * this deployment that hid 29 subdomains and 1,000 sitemap paths.
+ */
+function infraSwitch(sides) {
+  if (!sides?.us || !sides?.them || sides.us.id === sides.them.id) return '';
+  const btn = (side, co) => `<button type="button" class="infra-side ${state.infraSide === side ? 'on' : ''}"
+    data-infra-side="${side}">${esc(co.name)}</button>`;
+  return `<span class="infra-switch">${btn('them', sides.them)}${btn('us', sides.us)}</span>`;
+}
+
+async function renderInfrastructure(company, sides) {
   const el = document.getElementById('battle-infrastructure');
-  if (!el) return;
+  if (!el || !company) return;
+  const companyId = company.id;
+  const companyName = company.name;
+  const wireSwitch = () => {
+    for (const b of el.querySelectorAll('[data-infra-side]')) {
+      b.addEventListener('click', () => {
+        state.infraSide = b.dataset.infraSide;
+        renderBattle();
+      });
+    }
+  };
   el.innerHTML = `<h3>${icon('radio')} Infrastructure observed <span class="saved-loading">loading…</span></h3>`;
   try {
     const res = await fetch(`/api/snapshots/${companyId}`);
@@ -3197,10 +3228,11 @@ async function renderInfrastructure(companyId, companyName) {
     const data = await res.json();
     const hasAny = data.subdomains || data.sitemap || data.robots;
     if (!hasAny) {
-      el.innerHTML = `<h3>${icon('radio')} Infrastructure observed</h3>
+      el.innerHTML = `<h3>${icon('radio')} Infrastructure observed ${infraSwitch(sides)}</h3>
         <p class="empty">No snapshots captured yet for ${esc(companyName)}. Run:<br>
         <code>npm run watch:sites -- --company=${esc(companyId)}</code><br>
         <code>npm run watch:certs -- --company=${esc(companyId)}</code></p>`;
+      wireSwitch();
       return;
     }
 
@@ -3238,13 +3270,17 @@ async function renderInfrastructure(companyId, companyName) {
         </details>`
       : '';
 
-    el.innerHTML = `<h3>${icon('radio')} Infrastructure observed <span class="infra-subtitle">accumulated from cert-transparency + sitemap + robots</span></h3>
+    el.innerHTML = `<h3>${icon('radio')} Infrastructure observed ${infraSwitch(sides)}<span class="infra-subtitle">accumulated from cert-transparency + sitemap + robots</span></h3>
       ${bandedSubdomains}
       ${sitemapHot}
       ${robotsBlock}
       <div class="battle-panel-hint">Scored subdomains + sitemap hot paths surface the leading indicators — customer deal names, enterprise pushes, new integrations, vertical moves — weeks before public announcements.</div>`;
+    wireSwitch();
   } catch (err) {
-    el.innerHTML = `<h3>${icon('radio')} Infrastructure observed</h3><p class="empty">Load failed: ${esc(err.message)}</p>`;
+    // Keep the switch usable on failure: one side erroring must not strand the
+    // reader on it with no way back to the other.
+    el.innerHTML = `<h3>${icon('radio')} Infrastructure observed ${infraSwitch(sides)}</h3><p class="empty">Load failed: ${esc(err.message)}</p>`;
+    wireSwitch();
   }
 }
 
