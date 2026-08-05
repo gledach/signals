@@ -1,4 +1,4 @@
-# Decision — Signal is consumed by agents, and the MCP surface is read-only
+# Decision — Signal is consumed by agents, and the MCP surface is read-only by default
 
 **Status:** adopted · **Date:** 2026-08-02
 
@@ -17,7 +17,7 @@ step and a dependency count you can hold in your head; adding an SDK to speak a 
 this small would cost more than it saves. Revisit if the protocol outgrows what is here —
 but not before.
 
-## The surface is READ-ONLY, deliberately
+## The surface is READ-ONLY BY DEFAULT, deliberately
 
 | Tool | Returns |
 |---|---|
@@ -27,10 +27,15 @@ but not before.
 | `get_battlecard` | markdown for one company |
 | `list_briefs` / `get_brief` | analyst output |
 | `market_summary` | counts by company and type, plus who produced nothing |
+| `run_analyst` | runs one analyst mode and returns its briefId — SPENDS MONEY, disabled unless the operator opts in |
 
-There is no tool that writes, deletes, fetches, or spends money on an LLM call. Those
-paths stay behind the CLI where a human runs them. `npm test` asserts this: any tool whose
-name begins `create|delete|write|update|fetch|run|refresh|bootstrap|seed` fails the suite.
+No tool writes or deletes, and nothing fetches. Exactly one tool spends money —
+`run_analyst` — and it is inert unless the operator opts in. Those other paths stay behind
+the CLI where a human runs them. `npm test` asserts this: any tool whose name begins
+`create|delete|write|update|remove|clear|import|seed` fails the suite. Names beginning
+`run|fetch|refresh|bootstrap` fail too unless they appear in the fixture's
+`PERMITTED_ACTIONS` set — today only `run_analyst` — and any permitted action must declare
+in its own description both that it spends money and that it is disabled by default.
 
 The reasoning is the same one that made convergence quality a precondition — an agent
 cannot be skeptical on its own behalf, so it should not be handed a trigger for anything
@@ -75,9 +80,10 @@ which attaches:
 - `warnings` — plain sentences naming the specific doubt, including per-company gaps
 - `companies` — last collection time per company, scoped to what the caller asked about
 
-Two aggregate queries (`coverageStats()`), no LLM call, affordable on every request. If
-the coverage check itself fails it degrades to a warning rather than failing the tool: a
-missing caveat is bad, a caveat that breaks the answer is worse.
+Three queries per request — the two aggregates in `coverageStats()` plus
+`getLastCronRun()` — no LLM call, affordable on every request. If the coverage check
+itself fails it degrades to a warning rather than failing the tool: a missing caveat is
+bad, a caveat that breaks the answer is worse.
 
 Artifact readers (`get_battlecard`, `get_brief`, `list_briefs`) are exempt — they return a
 document that either exists or does not, and already say which.
@@ -164,6 +170,15 @@ Cost is reported as *approximate* on purpose. `openrouter.mjs` mirrors each call
 database fire-and-forget so telemetry never slows the pipeline it measures, which means a
 child's last rows can land just after it exits. The ceiling is eventually accurate rather
 than instantaneously exact, and the next check sees the full amount.
+
+### Re-checkable, not just checked once
+
+`npm run doctor` has an `Agent surface (MCP)` section: it names the active policy file,
+says whether any paid action is enabled and what remains of the 24h ceiling, and spawns
+`mcp-server.mjs` from an unrelated directory to confirm it resolves the same store an agent
+would read. That last check is the one that matters — a client spawns this server from its
+own cwd, and a server that silently resolves an empty database makes an agent report that
+nothing is happening.
 
 ## Tools answer questions; resources are documents
 

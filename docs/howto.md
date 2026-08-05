@@ -35,41 +35,64 @@ One-time. Takes ~10 minutes.
 
 1. **Install Node deps**
    ```
-   cd C:\sites\d\Signal
+   cd <path-to-your-clone>
    npm install
    ```
 
-2. **Provision a Turso database** (one-time)
-   ```
-   turso db create signals
-   turso db show signals --url        # copy → TURSO_DATABASE_URL
-   turso db tokens create signals     # copy → TURSO_AUTH_TOKEN
-   ```
-   Free tier: 9 GB storage, 1B reads/mo, 25M writes/mo. At ~50 KB/signal
-   that's headroom for ~180k signals. Pick an edge region close to you
-   with `turso group list` / `turso group create`.
-
-3. **Put secrets in `.env`**
+2. **Put secrets in `.env`**
    ```
    copy .env.example .env
    ```
    Then edit `.env` and set:
    - `OPENROUTER_API_KEY=sk-or-v1-...`  (from https://openrouter.ai → top up $10)
-   - `TURSO_DATABASE_URL=libsql://<name>-<org>.turso.io`
-   - `TURSO_AUTH_TOKEN=eyJ...`
 
-4. **Apply schema**
+   You do **not** need a database account. `.env.example` ships
+   `TURSO_DATABASE_URL=file:./data/signals.db` with an empty token, and
+   `core/store.mjs` falls back to that same local libSQL file if neither is set —
+   `git clone && npm run db:migrate` has to work with no account and no token.
+
+3. **Apply schema**
    ```
-   npm run db:migrate    # creates signals table + indexes from sql/*.sql
+   npm run db:migrate    # applies every sql/*.sql in lexical order
    npm run db:test       # round-trip smoke test (append / exists / load / update / delete)
    ```
+   `sql/` holds nine migrations, not just the signals table: watcher state (003),
+   briefs (004), cron runs (005), a `firstSeen` index (006), cron signal counts (007),
+   `llm_cost` (008) and artifacts (009).
 
-5. **(Optional) Import signals from the old `competitive/` folder**
-   ```
-   ```
-   Safe to re-run; dedupes on `hashId PRIMARY KEY`.
+   On a **first** run against the shipped roster, `db:migrate` also seeds
+   `demo/seed-signals.jsonl` so the dashboard isn't an empty page. It prints
+   `loaded N demo signals` — those rows are a dated snapshot of public headlines,
+   not live data. Remove them with `npm run demo:clear` (it deletes exactly those
+   hashIds and nothing you collected). Skip the seed entirely with
+   `SIGNALS_NO_DEMO_SEED=1`, and note it never fires if you have your own
+   `config/companies.local.mjs`.
 
-6. **Verify** — `npm run help` should print the cheat-sheet; `npm run view` should open `http://localhost:5180`.
+4. **Verify**
+   ```
+   npm run doctor        # what works, what doesn't, and what each gap blocks
+   ```
+   `doctor` reports the roster + anchor mode, whether you're on a hosted or local
+   database, collection freshness, which keys are set and what each missing one
+   blocks, the agent policy + remaining budget, and it launches the MCP server from
+   an unrelated directory to confirm it resolves the same store.
+
+   `npm test` is the project's verification gate — 15 sections. Two of them police
+   this file: docs may only name companies on the roster, and may only name `npm run`
+   scripts that exist. Run it after editing any doc.
+
+   Then `npm run view` should open `http://localhost:5180`.
+
+**Going hosted (optional).** Only needed when a viewer and a cron live on different
+machines and must share one store:
+```
+turso db create signals
+turso db show signals --url        # copy → TURSO_DATABASE_URL
+turso db tokens create signals     # copy → TURSO_AUTH_TOKEN
+```
+Free tier: 9 GB storage, 1B reads/mo, 25M writes/mo. At ~50 KB/signal that's headroom
+for ~180k signals. Pick an edge region close to you with `turso group list` /
+`turso group create`.
 
 
 If any step fails, jump to [Troubleshooting](#troubleshooting).
@@ -79,13 +102,17 @@ If any step fails, jump to [Troubleshooting](#troubleshooting).
 ## Daily usage cheat sheet
 
 ```
-npm run help                  # full command list with costs + when to use
-npm run fetch                 # pull fresh RSS signals (every 30 min via Scheduler)
+npm run help                  # annotated cheat-sheet with costs + when to use
+npm run doctor                # what works, what doesn't, and what each gap blocks
+npm run fetch                 # pull fresh RSS signals (hourly via Scheduler)
 npm run watch:sites           # sitemap + robots diff (every 6 hours)
 npm run watch:youtube         # YouTube uploads + transcripts (once a day)
-npm run refresh               # re-generate all 4 battlecards from latest signals (weekly)
+npm run refresh               # re-generate stale battlecards from latest signals
+                              #   (weekly; --force to do all of them)
 npm run view                  # open http://localhost:5180
-npm run all                   # fetch + watch:sites + watch:youtube + refresh (one-shot)
+npm run all                   # fetch + watch:hn + watch:sites + watch:certs +
+                              #   watch:youtube + watch:tavily + watch:trends +
+                              #   correlate + refresh (one-shot, nine stages)
 npm run transcripts -- "X"    # search transcript archive for quote "X"
 ```
 
@@ -98,41 +125,107 @@ npm run transcripts -- "X"    # search transcript archive for quote "X"
 ```
 npm run view
 ```
-Then open <http://localhost:5180>. Pin the tab — it auto-refreshes every 30s.
+Then open <http://localhost:5180>. Pin the tab — it auto-refreshes every 2 minutes.
 
-**Four modes** (tabs at top of header):
+**Eight modes** (left sidebar): Live Feed (1) · Battle (2) · Compare (3) · Market (4) ·
+Intel (5) · Report (6) · Briefs (7) · Inbox (8). The mode list lives in one place —
+`SIDEBAR_MODES` in `dashboard/viewer/viewer.js` — and the sidebar, the number keys, the
+`g`-leader letters and the URL `mode=` parameter all derive from it.
 
 #### Live Feed (default)
-- **Convergence panel** at the top — always visible, shows all current-week convergences with click-to-jump into the competitor's tab
-- **Competitor tabs** — pick whose battlecard to view
-- **KPI strip** — signals (7d / 30d), convergences, critical count, latest signal time, top 3 signal types
-- **Battlecard** — HUMAN + AUTO sections
+- **Sidebar company list** — pick whose feed / battlecard to view, grouped by roster category
+- **Competitor card** — compact at-a-glance panel for the selected company
+- **Battlecard** — HUMAN + AUTO sections, inside a collapsible `<details>` whose summary
+  says what is actually in the card (deep-research date, feature-matrix size, last-refreshed
+  date), so an expensive research pass doesn't look like it did nothing
 - **Signal feed** — filterable by impact, type, show-noise toggle; YouTube signals get a `📄 transcript` button that opens a modal with the full archived transcript
-- **Auto-refresh** every 30s; pauses when tab is hidden; flashes a "N new signals" banner when new ones land
+- **Auto-refresh** every 2 minutes (`REFRESH_MS` in `viewer.js`); pauses when the tab is hidden; flashes a "N new signals" banner when new ones land. Press `.` to refresh on demand.
 
-#### ⚔ Battle (us vs one) — the **deal-prep view**
-- Pick the competitor you're up against via the selector
-- Two columns: **the home vendor (us)** on the left, **competitor** on the right
-- Side-by-side section comparison: Positioning · Target segment · Pricing · Differentiators · Weaknesses · Integrations · Compliance · Product direction · Recent moves — rendered from both battlecards' AUTO+HUMAN content
-- Below the grid, three dedicated panels:
+#### ⚔ Battle (anchor vs one) — the **call-prep view**
+- Battle compares the configured **anchor** (`isUs` if a company is marked as yours, else
+  `isMain`, else the first roster entry) against one rival. The anchor is locked to
+  `config/companies.local.mjs` and is only editable in pure market-watch mode — the subject
+  is a setting, not a per-view choice. The rival comes from the "against" dropdown or the sidebar.
+- Comparison content is **not** here — it moved to [Compare](#compare-n-way). Battle is prep.
+- Below the deal-context filters, four dedicated panels:
   - **🎯 Kill Shots vs `<competitor>`** — the rehearsed counter-pitches for when the prospect is leaning toward this competitor
   - **⚠ Objections to Expect** — what the prospect is going to say AND your pre-prepared response
   - **🏆 Where we win** — which ICPs / use-cases / segments to lead with
-- Small KPI chips at the top: their signals (7d) · convergences · critical · named customer wins (30d) — a sanity check that you're not about to get blindsided by a major move they just made
+  - **Infrastructure observed** — new subdomains from Certificate Transparency, banded by
+    score, plus the sitemap / robots snapshot. A side switch flips it between the competitor
+    and the anchor's own infrastructure. It sits here because it is what you check before a
+    conversation about this competitor, not a separate errand.
+- Saved call preps sit below those.
+- Small KPI chips at the top: their signals (7d) · convergences · critical (7d) · customer wins (30d) — a sanity check that you're not about to get blindsided by a major move they just made
 - **Use right before a sales call.** 90-second scan = you walk in with their positioning, their pitch, their weaknesses, and your counter-pitches memorized.
 
-#### Market (all three)
-- All 3 competitors side-by-side in columns, each showing: KPIs · this-week convergences · top 5 signals · positioning + top kill shot
+#### Compare (N-way)
+Everything that answers "how do these differ?" lives here. Battle was doing three jobs
+in one very long page; comparison was split out.
+
+- **Chip picker** — the anchor plus up to three rivals (`COMPARE_MAX_RIVALS = 3`). The
+  anchor chip is `disabled`: it is the subject of every comparison and is set in config.
+- **Side-by-side section grid** — Positioning · Target segment · Pricing model · Strengths ·
+  Weaknesses · Product direction · Recent moves, rendered from each battlecard's AUTO+HUMAN
+  content. (Integrations and Compliance are deliberately not rows any more — that data moved
+  into the verified-facts table and the feature matrix, and a row that can never fill reads
+  as "no data about this vendor" instead of "this view stopped asking".)
+- **Verified-facts table** — pricing model, published tiers, confirmed integrations,
+  compliance, publicly-named customers, founders. Written by the deep-research pass, each
+  fact grounded in a cited signal or marked unverified.
+- **Feature matrix** — still a two-way widget, so it renders for the anchor and the first rival.
+- Compare deliberately ignores Battle's deal-context chips: those controls aren't visible
+  from here, and a view silently ordered by an invisible control is worse than an unordered one.
+- Deep-link with `#mode=compare&vs=cursor,codex,windsurf`. `vs` lists the **rivals only** —
+  the anchor is implicit, so don't put it in the list.
+
+#### Market (whole roster)
+- A sortable table, one row per tracked competitor: Competitor · Category · 24h · 7d ·
+  Critical 7d · Conv. 7d · Latest. Built as a table rather than columns of cards because it
+  has to stay readable at 12+ competitors.
+- Click a row → Battle for that competitor.
+- Per-competitor detail cards (top signals, convergences, positioning, top kill shot) render
+  below the table.
 - Built for Monday-morning category review — what's moving across the whole field?
+
+#### Intel
+- The dedicated home for cross-signal **convergence** cards: this week's patterns where two
+  or more independent source kinds point at the same conclusion. They used to sit at the top
+  of Live Feed; they are their own mode now (`g i`, or key `5`).
+- `j` / `k` move through the cards.
 
 #### Weekly Report
 - Rendered by `/report` as a self-contained printable HTML page
 - Sections: convergences this week · top 10 signals by impact · per-competitor synopsis with battlecard excerpt
+- Re-generates on every load from live signal data
 - "Open in new tab" → Ctrl+P → save as PDF for forwarding to investors / cofounders
-- Re-generates on every load from live Turso data
+- **Save snapshot** freezes the current view into the Briefs archive as
+  `weekly-<ISO-week>-<epochms>`, so it survives later signals arriving. The scheduled
+  equivalent is `npm run report:weekly` (`npm run report:weekly:dry` to preview); both go
+  through the same renderer.
+
+#### Briefs
+- Browses everything the analyst CLI and the weekly report ever wrote, read from the
+  `briefs` table via `GET /api/briefs`.
+- Grouped by recency (this week / last week / each prior month) so the list stays scannable.
+- Filter by mode (`weekly` / `brief` / `scan` / `deep` / `gap` / `outside`), by competitor,
+  and by age. The competitor filter is fuzzy on purpose: it matches a strict `/deep` scope
+  **or** any brief whose body mentions that company.
+- Deep-link a single brief with `#mode=briefs&brief=<briefId>`.
+
+#### Inbox
+- Triage surface for the signals that warrant a look: critical-band signals and convergences.
+- Tabs: **Unread** · **Archived** · **All**, with counts. Read/archived state is per-browser,
+  not shared.
+- `j` / `k` move through the list; "Mark all read" clears the backlog.
 
 ### Keyboard / visual cheats
 - **`Cmd+K` / `Ctrl+K` anywhere** — opens the command palette. Type any keyword (competitor name, objection phrase, "pricing") to fuzzy-search across every kill shot, objection, and win theme. Enter copies the match to clipboard. Esc closes.
+- **`1`–`8`** — switch mode directly: Feed 1, Battle 2, Compare 3, Market 4, Intel 5, Report 6, Briefs 7, Inbox 8
+- **`g` then a letter** — the same thing, Linear-style: `g f` Feed, `g b` Battle, `g c` Compare, `g m` Market, `g i` Intel, `g r` Report, `g s` Briefs, `g x` Inbox. The leader stays live for 1.5 s.
+- **`.`** — refresh now, without waiting for the 2-minute interval
+- **`j` / `k`** — move down / up the current list (Feed signals, Inbox items, Intel convergence cards)
+- All of the above are ignored while you're typing in an input, and while a modifier key is held
 - `Esc` — close any open modal
 - Click a convergence card → jumps to that competitor's feed
 - Click the 📋 on any kill shot / objection / win theme → copies to clipboard (for pasting into Slack / email)
@@ -145,11 +238,11 @@ Then open <http://localhost:5180>. Pin the tab — it auto-refreshes every 30s.
 ### How to prep for a sales call (2-minute workflow)
 
 1. `Cmd+K` → type the competitor name → scan top kill shots → `Enter` copies the one you want (or close and browse)
-2. Click **⚔ Battle** tab → pick the competitor in the dropdown
-3. Set filter chips: codebase (`regulated`, `self-hosted` etc.) + team size (`Org-wide` etc.) — the kill shots / objections / win themes narrow to what's relevant to this deal
+2. Go to **⚔ Battle** (sidebar 2, or press `2`) → pick the competitor in the "against" dropdown
+3. Set filter chips: codebase (`regulated`, `self-hosted` etc.) + team size (`Org-wide` etc.) — matching kill shots / objections / win themes float to the top and get highlighted with a match badge; non-matching bullets stay visible but dimmed. **Nothing is ever hidden** — the chips rank relevance, they do not filter. That is why a wrong keyword is cheap: the cost is a bullet ranked slightly too high, not a bullet you never see.
 4. If the prospect already told you their concern ("their pricing is lower"), type it in the **Prospect said** search box — matching objection responses surface instantly
 5. Optionally: click **✨ Generate talk-track** → enter deal notes → Claude Sonnet generates a 30-second opener + 5 discovery questions + emphasize points + anticipated objections + close framing, all grounded in the competitor's battlecard
-6. After generation, enter a **deal label** ("Acme Healthcare 500-seat") and click **💾 Save this prep** — persists to `data/talk-tracks/<competitorId>/<slug>.json`
+6. After generation, enter a **deal label** ("Acme Healthcare 500-seat") and click **💾 Save this prep** — stored as a `talktrack` artifact in the database, mirrored to `data/talk-tracks/<competitorId>/<slug>.json`
 7. Optionally: click **🖨 1-pager PDF** → opens `/battle-sheet/:competitor` → Ctrl+P → printable single-sheet you can leave open on your second monitor during the call
 
 ### Saved call preps — never lose a prepared deal
@@ -157,11 +250,14 @@ Then open <http://localhost:5180>. Pin the tab — it auto-refreshes every 30s.
 Under the Battle panels, a **💾 Saved call preps** list shows all saved prep sheets for the current competitor:
 
 - **Open** — re-loads the saved talk-track into the modal without re-hitting the LLM (zero cost, instant)
-- **🗑 Delete** — removes it from disk
+- **🗑 Delete** — removes the artifact, not just the file
 
 If a call gets rescheduled or you join a prospect mid-deal, the prep you did last week is one click away.
 
-Files live at `data/talk-tracks/<competitorId>/<slug>.json`, gitignored. Grep them, version them, delete them — they're yours.
+Saved preps are `talktrack` artifacts in the database (`sql/009-artifacts.sql`), mirrored to
+`data/talk-tracks/<competitorId>/<slug>.json` so they stay greppable. The database copy is
+canonical — that is why a second operator, or the web viewer, sees the same list. They
+previously lived only as files on one laptop, which meant everyone else saw an empty list.
 
 **Useful workflow:**
 1. Sunday evening — generate prep for each of next week's 5 competitive deals. Save each with descriptive label.
@@ -188,12 +284,20 @@ npm run refresh
 ```
 
 Runs in order:
-1. `self-bootstrap` — refreshes `battlecards/<your-id>.md` (the home vendor's public-facing self card)
-2. `bootstrap --company=lovable`
-3. `bootstrap --company=cursor`
-4. `bootstrap --company=claudecode`
+1. `self-bootstrap` — **only** when a company is marked `isUs`. In anchored (`isMain`) or
+   market-watch mode there is no self-card, and the step prints
+   `self-card: skipped (no company marked isUs — market-watch mode)`. That line is expected,
+   not a failure. The shipped config has no `isUs`, so on a fresh clone this step never runs.
+2..N. `bootstrap --company=<id>` for every competitor on the roster (13 today).
 
-Each uses Claude Sonnet 4.5 via OpenRouter (~$0.03/battlecard). Total cost per refresh: ~$0.15.
+A competitor whose card has a `_Last refreshed:` stamp newer than its newest signal is
+**skipped** — regenerating it would be pure spend for identical output. Pass `--force` to
+synthesise anyway, or `--dry-run` to see what it would do without spending anything.
+
+Each synthesis call uses `CI_SYNTHESIS_MODEL` (default Claude Sonnet 4.5) via OpenRouter,
+~$0.03/battlecard. Total cost scales with roster size, and the staleness skip usually makes
+a real weekly run far cheaper than the worst case. Check what you actually spent with
+`npm run cost`.
 
 **The HUMAN section of every battlecard is never touched.** Only the `<!-- AUTO:START -->` … `<!-- AUTO:END -->` block gets regenerated.
 
@@ -217,7 +321,8 @@ Does this per competitor:
 
 Runs in ~30–60 s depending on which feeds are slow. Cost: ~$0.01/run.
 
-Run this **every 30 minutes** via Task Scheduler (see [scheduling](#how-to-schedule-automation)).
+Run this **hourly** via Task Scheduler (see [scheduling](#how-to-schedule-automation)) — every
+30 minutes doubles classifier spend for roughly zero extra signals.
 
 ---
 
@@ -263,50 +368,80 @@ When you land a kill shot on a real call, promote it manually by moving it from 
 
 ### How to add or edit a competitor
 
-Open `companies.mjs`. Each competitor is an object:
+Open `config/companies.local.mjs` — create it by copying `config/companies.default.mjs` if
+it isn't there yet. The loader `config/companies.mjs` resolves, highest first:
+`$SIGNALS_COMPANIES` → `config/companies.local.mjs` → `config/companies.default.mjs`. The
+point of the split is that you never edit a tracked file to customise the roster, so
+`git pull` never conflicts with your configuration.
+
+Each competitor is an object. This is the real `lovable` entry:
 
 ```javascript
 lovable: {
-  id: 'lovable',
-  name: 'Lovable',
-  domain: 'lovable.ai',
-  category: 'AI coding-agents',
-  aliases: ['Lovable AI', 'lovable.ai'],
-  segments: ['smb'],
-  personas: ['founder', 'ops-lead'],
-  positioningHypothesis: 'No-code voice agent builder, self-serve, SMB-first',
-  youtubeChannelId: 'UCItTSkM7qX2YmkZBl7ktpvQ',
+  id: 'lovable', name: 'Lovable', domain: 'lovable.dev',
+  category: 'app-builder', market: 'vibe-coding',
+  aliases: ['lovable.dev', 'Lovable AI', 'GPT Engineer'],
+  query: '"lovable.dev" OR "Lovable AI"',
+  collidesWith: 'the ordinary English adjective',
+  repos: [],
+  subreddits: ['lovable'],
+  changelog: 'https://lovable.dev/changelog',
+  segments: ['smb', 'non-technical'], personas: ['founder', 'product-manager', 'designer'],
+  positioningHypothesis: 'Prompt-to-product for non-engineers — design-led output',
 },
 ```
 
+The fields that do work beyond labelling:
+- `query` — the qualified search string. Both the news feeds and the HN watcher derive from
+  it, so the two can never disagree about what a company is called. `collidesWith` records
+  *why* the query has to be qualified.
+- `repos` — GitHub `owner/repo` list. Produces the `releases` feed and drives `watch:github`.
+- `subreddits` — produces the `reddit` feeds.
+- `market` — which category feed the company belongs to.
+- `isUs` / `isMain` — the anchor flags. `isUs` means "this is my company" and puts the whole
+  system in partisan mode; `isMain` means "this is the vendor I'm anchored on" and keeps the
+  voice third-person. Neither is required: with no flag at all, the deployment is in pure
+  market-watch mode.
+
 **To add one:**
 1. Copy an existing entry
-2. Change `id`, `name`, `domain`, `aliases`
-3. Leave `youtubeChannelId: null` if unknown (see [YouTube how-to](#how-to-track-youtube-channels))
-4. Add their feed URLs in `feeds.mjs`
+2. Change `id`, `name`, `domain`, `aliases`, `query`
+3. Add `repos` / `subreddits` if they have them — the feeds derive from those
+4. Leave `youtubeChannelId` off if unknown (see [YouTube how-to](#how-to-track-youtube-channels))
 5. Run `npm run fetch` and `npm run bootstrap -- --company=<new-id>`
-6. Commit
 
-**To remove one:** delete the key from `COMPANIES`. Old signals stay in Turso; battlecard file stays on disk.
+`config/*.local.mjs` is gitignored, so there is nothing to commit.
+
+**To remove one:** delete the key from `companies`. Old signals stay in the database; the
+battlecard file stays on disk.
 
 ---
 
 ### How to add a new RSS feed
 
-Open `feeds.mjs` and add an entry:
+Usually you don't. Feeds are **derived from the roster**: add a company to
+`config/companies.local.mjs` and its feeds appear automatically. `config/feeds.default.mjs`
+calls `buildFeeds(COMPANIES, extraFeeds)` for exactly this reason — it used to be a parallel
+hand-maintained list and it drifted from the registry until the two shared zero company ids.
+The roster tracked one market while every fetch pulled another, writing signals attributed to
+companies that no longer existed, and nothing checked.
+
+Kinds it builds today: `news` (Google News on the company's qualified query), `reviews`
+(Google News scoped to review / alternative / "vs" chatter — churn signal), `reddit` (search
+RSS plus any declared subreddits), `releases` (GitHub releases atom for declared repos), and
+`category` (market-wide, not attributable to one company). The shipped roster produces 61 feeds.
+
+The one thing that genuinely needs hand-adding is a **vendor blog or changelog RSS** (`blog`
+kind) — every vendor picks a different path, so it is not constructible and guessing produces
+404s on a user's first fetch. Add it to the `extraFeeds` array in `config/feeds.default.mjs`,
+or in your own `config/feeds.local.mjs` (`$SIGNALS_FEEDS` overrides both):
 
 ```javascript
-{ companyId: 'lovable', kind: 'news', url: 'https://example.com/feed.rss' },
+{ companyId: 'lovable', kind: 'blog', url: 'https://example.com/feed.rss' },
 ```
 
-`kind` values that get favored scoring:
-- `news` (Google News)
-- `hn` (Hacker News)
-- `reddit`
-- `blog` (first-party blog — weighted highest)
-- `reviews`
-- `jobs`
-- `youtube`
+Only add one you have verified resolves. Several tracked vendors publish changelogs as
+client-rendered HTML with no feed at all — those need an HTML-diff watcher, not a feed entry.
 
 Then `npm run fetch` to test.
 
@@ -366,13 +501,88 @@ npm run watch:sites:dry                   # preview without writing signals
 First run captures a **baseline** silently — no signals. Subsequent runs diff against baseline.
 
 Detects:
-- **New sitemap paths** — emits `sitemap_new_path` signal; score boosted by keyword match (`/launch`, `/pricing`, `/enterprise`, `/voice`, `/healthcare`, …)
+- **New sitemap paths** — emits `sitemap_new_path` signal; score boosted by keyword match (`/pricing`, `/enterprise`, `/self-hosted`, `/vscode`, `/launch`, …). The full list is `sitemapHotPaths` in `config/subdomain-signals.default.mjs` — the same file the cert watcher and the dashboard's snapshot panel read, so the watcher and the view that displays its output can never disagree about what counts as interesting.
 - **Removed sitemap paths** — logs them
 - **`robots.txt` Disallow/Allow rule changes** — emits `robots_rule_change` signal at impact 80
 
-Baselines live in `data/snapshots/<companyId>/`. Safe to delete to force a fresh baseline.
+Baselines live in the database (`sitemap_snapshots` / `cert_snapshots`, added by
+`sql/003-watcher-state.sql`), so the watchers behave identically on any host. Deleting
+`data/snapshots/` has no effect — nothing reads it any more.
 
 Run **every 6 hours** — sitemaps don't change faster than that.
+
+---
+
+### How to watch Hacker News mentions
+
+```
+npm run watch:hn                          # all competitors
+npm run watch:hn -- --company=lovable
+npm run watch:hn:dry                      # preview, no DB writes
+```
+
+Hits Algolia's public HN Search API directly (free, no auth). It replaced the hnrss.org RSS
+feeds that used to sit in the feed list: same corpus, but structured fields the RSS shape
+made us regex-guess — story points, comment count, author, ISO timestamps.
+
+Queries are derived from each company's `query:` field in the roster, so HN and the news
+feeds can never disagree about what a company is called. Signals land with
+`sourceKind='hn'` and `hashId=hn:<objectID>`; if one story mentions two competitors the
+hashId collides on purpose and the earliest attribution wins.
+
+Run **every 6 hours** — it's free, but the returns diminish above that.
+
+---
+
+### How to watch GitHub repos
+
+```
+npm run watch:github                      # every company with declared repos
+npm run watch:github -- --company=replit
+npm run watch:github:dry                  # preview, no DB writes
+```
+
+Developer-tool vendors live on developer adoption, and public repos leak SDK releases,
+breaking API changes and latency/outage complaints in issues *before* the blog post.
+
+Repos come from the `repos: ['owner/repo']` field on each roster entry — never from the
+search API. That is deliberate: search brings flaky false positives from homonyms and forks,
+and it burns rate-limit budget on discovery rather than on the signal. A company with no
+public repo is a normal skip, not an error.
+
+Set `GITHUB_TOKEN` (or `GH_TOKEN`) to raise the rate limit from 60 req/hr to 5,000. Without
+one the watcher still runs and says so.
+
+Not wired into the cron entrypoint — schedule it yourself if you want it.
+
+---
+
+### How to measure answer-engine visibility
+
+```
+npm run watch:aeo                         # every prompt on every engine
+npm run watch:aeo -- --engine=<slug>      # one engine
+npm run watch:aeo -- --prompt=<id>        # one prompt
+npm run watch:aeo:dry                     # preview, no DB writes
+```
+
+Every other watcher measures what a vendor says, or what the press says. This one measures
+what an AI recommends at the moment a buyer forms a shortlist. A vendor can ship weekly and
+still be invisible here — which is itself the finding.
+
+Detection is **deterministic**: the engines generate the answers, and a word-boundary matcher
+decides which brands were named. No model judges the result, so a run is reproducible and the
+numbers mean the same thing next month. The full answer is scanned rather than a truncated
+prefix, because truncating biases toward whatever an engine happens to list first.
+
+The buying-intent prompts and the engines that answer them live in
+`config/aeo-prompts.default.mjs` (override with `config/aeo-prompts.local.mjs`, or
+`$SIGNALS_AEO_PROMPTS`). Measure the engines *your* buyers actually use. Cost is one LLM call
+per prompt per engine per run.
+
+Signals land as `signalType='aeo_mention'` with `hashId=aeo:<day>:<promptId>:<model>:<hit>`,
+so one run per day per (prompt, engine, brand) — a retry after a partial failure is
+idempotent rather than double-counting.
 
 ---
 
@@ -386,7 +596,7 @@ npm run notify:test
 ```
 If no toast appears, jump to [Troubleshooting → Toasts not firing](#toasts-not-firing).
 
-**Clicking the toast** opens `http://localhost:5180/#<companyId>` — viewer pre-filtered to that competitor.
+**Clicking the toast** opens `http://localhost:5180/#mode=battle&vs=<companyId>` — Battle mode against that competitor, so call prep is one click away.
 
 ---
 
@@ -426,7 +636,7 @@ Two rule types fire:
 
 **COUNT convergence** — ≥N signals of the same signalType for the same competitor within a window. E.g., 3+ `customer_win` signals in 60 days = `customer-win-momentum`.
 
-Phase-1 rules (edit `correlation-rules.mjs` to tune or add):
+Phase-1 rules (edit `config/correlation-rules.mjs` to tune or add):
 
 | Rule | Kind | Window | Fires when |
 |---|---|---|---|
@@ -445,7 +655,7 @@ Output: a signal with `signalType=convergence`, `sourceKind=correlation`, and `i
 
 Run **nightly** via Task Scheduler.
 
-**Rule tuning:** the first fires will reveal rules that are too tight or too loose. Edit `correlation-rules.mjs`. Themes are keyword lists; counts are numeric thresholds + type filters. Restart the engine, no rebuild needed.
+**Rule tuning:** the first fires will reveal rules that are too tight or too loose. Edit `config/correlation-rules.mjs`. Themes are keyword lists; counts are numeric thresholds + type filters. Restart the engine, no rebuild needed.
 
 ---
 
@@ -473,7 +683,8 @@ Signals land in Turso as:
 
 hashId is `trend:<slug>:<iso-week>` — safe to re-run same week, fires again on week rollover.
 
-Raw time series archived to `data/trends/<slug>.json` for historical analysis.
+Raw time series are archived as trend baselines in the database (read back by
+`loadTrendBaseline`), which is also what drives the oldest-first query batching.
 
 Run **weekly** — category search volumes don't move faster than that.
 
@@ -489,11 +700,15 @@ Plan 02 G1 — pulls each competitor's recent uploads, fetches captions, LLM-cla
 1. Find their YouTube channel ID (24-char `UCxxx…`):
    - Open their channel in a browser → right-click → View Source → Ctrl+F for `"externalId"`, or
    - Paste the channel URL into <https://commentpicker.com/youtube-channel-id.php>
-2. Paste it into `companies.mjs` as `youtubeChannelId: 'UC...'`
+2. Paste it into your roster entry in `config/companies.local.mjs` as `youtubeChannelId: 'UC...'`
+
+None of the 13 shipped entries in `config/companies.default.mjs` declares one, so on an
+unmodified checkout the watcher prints `skipping — no youtubeChannelId` for every company.
+That is the expected output, not a failure.
 
 **Run:**
 ```
-npm run watch:youtube                        # all 4
+npm run watch:youtube                        # every company that declares a youtubeChannelId
 npm run watch:youtube -- --company=claudecode    # just one
 npm run watch:youtube -- --limit=3           # 3 most-recent per company (cheap test)
 npm run watch:youtube -- --force-reclassify  # ignore dedup (use sparingly)
@@ -604,8 +819,8 @@ Whichever you pick, the **recommended cadence table** is the same:
 For each row above, create one task:
 
 - **Program:** `C:\Program Files\nodejs\node.exe`
-- **Arguments:** `--env-file=.env <script>.mjs` (e.g. `fetch-signals.mjs`, `hn-watch.mjs`, `sitemap-watch.mjs`, `cert-watch.mjs`, `youtube-watch.mjs`, `tavily-watch.mjs`, `trends-watch.mjs`, `correlate.mjs`, `refresh-battlecards.mjs`)
-- **Start in:** `C:\sites\d\Signal`
+- **Arguments:** `--env-file=.env <script>` (e.g. `watchers/fetch-signals.mjs`, `watchers/hn-watch.mjs`, `watchers/sitemap-watch.mjs`, `watchers/cert-watch.mjs`, `watchers/youtube-watch.mjs`, `watchers/tavily-watch.mjs`, `watchers/trends-watch.mjs`, `pipeline/correlate.mjs`, `cli/refresh-battlecards.mjs`)
+- **Start in:** `<path-to-your-clone>`
 - **Trigger:** Daily with "repeat every X" for the hourly ones, or set specific times for the daily/weekly ones.
 
 Shortcut if you don't want nine tasks: **one daily task** at 03:00 running `npm run all`. That hits fetch → watch:hn → watch:sites → watch:certs → watch:youtube → watch:tavily → watch:trends → correlate → refresh in sequence. You lose intra-day spike detection on fetch but gain simplicity.
@@ -714,7 +929,63 @@ Switch, run once, compare battlecard quality. Keep whatever you prefer.
 
 ---
 
+### How to drive Signal from an AI agent (MCP)
+
+Signal exposes itself over MCP on stdio. Full reference: [docs/mcp.md](./mcp.md).
+
+```
+npm run mcp
+```
+
+The server needs no arguments and no environment — it locates the project and loads `.env`
+from a root-anchored path, so it works no matter which directory the client launches it from.
+
+**Tools:** `list_companies`, `search_signals`, `get_convergences`, `get_battlecard`,
+`list_briefs`, `get_brief`, `market_summary`, `run_analyst`.
+**Resources:** `signal://battlecard/{companyId}` and `signal://brief/{briefId}`.
+
+Every signal-reporting tool returns a **`coverage` block** alongside its results: a status of
+`fresh` / `slowing` / `stale` / `never`, a `trustEmptyResult` flag, and any warnings. This is
+the part that matters for an agent. Without it, `matched: 0` reads as "nothing is happening"
+when the truthful answer is often "we stopped looking" — a human opening the dashboard sees an
+empty page and gets suspicious, an agent just reports the zero.
+
+The contract is **read-only by default**, not read-only. `run_analyst` spends money and is
+disabled unless you enable it, because this repo is meant to be public and someone wiring the
+server into an agent has not agreed to let that agent spend their OpenRouter credit. To turn
+it on, create `config/agent-policy.local.mjs` (gitignored):
+
+```javascript
+import base from './agent-policy.default.mjs';
+export const policy = { ...base.policy, allowActions: ['run_analyst'] };
+export default { policy };
+```
+
+Spend is bounded by a rolling 24-hour USD ceiling read from the shared `llm_cost` table, so
+cron, CLI and agents all draw from one ledger and an agent cannot spend the budget the
+scheduled pipeline still needs. `npm run doctor` prints the active policy and what's left of
+the ceiling.
+
+---
+
 ## Troubleshooting
+
+**Start here: `npm run doctor`.** Signal degrades rather than failing — no LLM key means the
+keyword classifier runs, no hosted database means a local file — so a half-configured install
+looks identical to a working one until something quietly does less than you expected. `doctor`
+reports the roster and anchor mode, whether you're on a hosted or local database, collection
+freshness, which keys are set and what each missing one blocks, the agent policy and remaining
+budget, and it launches the MCP server from an unrelated directory to confirm it resolves the
+same store. It reports; it does not repair, and it exits non-zero only when something is
+genuinely broken.
+
+### The dashboard or MCP client shows no signals
+
+Run `npm run doctor` first. The usual cause is store resolution, not missing data: an MCP
+client spawned from its own working directory can resolve a different database than the CLI
+and see an empty store while the real one holds hundreds of signals. `doctor`'s MCP section
+checks that exact thing. If the store is right and genuinely empty, the freshness section will
+say when collection last ran.
 
 ### Corporate TLS / self-signed certificate errors
 
@@ -741,7 +1012,7 @@ npm run db:migrate
 
 ---
 
-### Turso "no such table: signals" error
+### "no such table: signals" error
 
 Schema wasn't applied to the database. Run:
 
@@ -750,11 +1021,13 @@ npm run db:migrate     # idempotent — applies sql/*.sql in order
 npm run db:test        # verifies the round-trip works end-to-end
 ```
 
-If `db:migrate` itself fails with a connection error, double-check
-`TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in `.env`. URL must start with
-`libsql://` (not `https://`). Token is a long JWT starting with `eyJ…`.
+On the default local-file store there is nothing else to check — `npm run doctor` will say
+which file it resolved.
 
-Re-issue a token if expired: `turso db tokens create signals`.
+**On a hosted deployment only:** if `db:migrate` fails with a connection error, double-check
+`TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in `.env`. The URL must start with `libsql://`
+(not `https://`). The token is a long JWT starting with `eyJ…`. Re-issue an expired one with
+`turso db tokens create signals`.
 
 ---
 
@@ -775,7 +1048,7 @@ Re-issue a token if expired: `turso db tokens create signals`.
 
 Your corporate proxy likely blocks `https://www.youtube.com/feeds/videos.xml`. Signal already handles this — `youtube-watch.mjs` scrapes the channel HTML page instead, which is not blocked.
 
-If you still see errors, check `companies.mjs` — the `youtubeChannelId` must be the 24-char `UCxxx…` form, not a `@handle`.
+If you still see errors, check your roster entry in `config/companies.local.mjs` — the `youtubeChannelId` must be the 24-char `UCxxx…` form, not a `@handle`.
 
 ---
 
@@ -796,11 +1069,14 @@ Don't ALTER from caller code — add a new migration file under `sql/` (e.g.
 `sql/003-add-column-x.sql`) and re-run `npm run db:migrate`. The migrator
 applies files in lexical order and is idempotent.
 
-Always go through `store.mjs` — never talk to the libSQL client directly from
-watchers. If `store.mjs` doesn't expose what you need, extend its public API
-(`appendSignal`, `loadAllSignals`, `alreadySeen`, `importBatch`,
-`updateSignal`, `deleteSignalsByType`, `totalCount`) rather than reaching
-around it.
+Always go through `core/store.mjs` — never talk to the libSQL client directly
+from watchers. (`npm test` section 1 checks the import graph for exactly this.)
+If it doesn't expose what you need, extend its public API rather than reaching
+around it: `appendSignal`, `loadAllSignals`, `loadIndex`, `alreadySeen`,
+`importBatch`, `updateSignal`, `deleteSignalsByType`, `deleteSignalsByHashIds`,
+`totalCount`, plus the watcher-state helpers the sitemap / cert / trends
+watchers depend on (`loadSitemapSnapshot`, `saveSitemapPaths`,
+`saveRobotsSnapshot`, `loadTrendBaseline`, `saveTrendBaseline`).
 
 ---
 
@@ -813,40 +1089,62 @@ OPENROUTER_API_KEY=sk-or-v1-real-value
 OPENROUTER_API_KEY=     # empty! this wins
 ```
 
-Signal ships a custom loader in `env.mjs` that uses **first-non-empty-wins**. It's auto-imported by `openrouter.mjs`, so your scripts work anyway. But clean up the duplicate when you can.
+Signal ships a custom loader in `runtime/env.mjs` that uses **first-non-empty-wins**. It's auto-imported by `pipeline/openrouter.mjs`, so your scripts work anyway. But clean up the duplicate when you can.
 
 ---
 
 ## Reference
 
-### All `npm run` commands
+### `npm run` commands
+
+A selection. `package.json` defines **60** scripts; `npm run help` prints an annotated
+cheat-sheet of the common ones with costs and when to use them.
 
 | Command | What it does |
 |---|---|
-| `help` | Print the full cheat sheet |
+| `help` | Print the annotated cheat sheet |
+| `doctor` | Roster + anchor mode, hosted vs local DB, collection freshness, which keys are set and what each missing one blocks, agent policy + remaining budget, MCP store-resolution check |
+| `test` | The verification gate — 15-section smoke run plus the fixture parsers |
+| `smoke` | Just the 15 smoke sections |
+| `companies` | Print the resolved roster |
+| `check:models` | Verify the configured model slugs exist on OpenRouter |
 | `fetch` | Pull RSS signals with LLM classification |
 | `fetch:nollm` | Same, keyword classifier only |
-| `watch:sites` | Sitemap + robots.txt diff |
-| `watch:sites:dry` | Preview diffs without writing signals |
+| `watch:sites` / `watch:sites:dry` | Sitemap + robots.txt diff |
+| `watch:certs` / `watch:certs:dry` | Certificate Transparency — new subdomains |
+| `watch:hn` / `watch:hn:dry` | Hacker News mentions via the Algolia API |
+| `watch:github` / `watch:github:dry` | GitHub releases + issue complaints for declared repos |
 | `watch:youtube` | YouTube uploads + captions + classify |
-| `watch:trends` | Google Trends spike detection (weekly) |
-| `watch:trends:dry` | Preview trend spikes without writing signals |
+| `watch:tavily` / `watch:tavily:dry` | Paid mention discovery, budget- and cooldown-gated |
+| `watch:trends` / `watch:trends:dry` | Google Trends spike detection (weekly) |
+| `watch:trends:full` | Trends without the query batching — all queries in one run |
+| `watch:aeo` / `watch:aeo:dry` | Answer-engine visibility — which brands an AI names |
 | `correlate` | Convergence engine — fire signals when patterns cross sources (nightly) |
 | `correlate:dry` | Preview convergence fires without writing |
-| `self-bootstrap` | Regenerate AUTO section of `<your-id>.md` |
+| `reclassify` / `reclassify:dry` | Re-run the classifier over signals already stored |
+| `clean:convergences` | Delete every `convergence` signal (re-derivable by `correlate`) |
+| `self-bootstrap` | Regenerate AUTO section of the self-card (only with an `isUs` company) |
 | `bootstrap -- --company=<id>` | Regenerate AUTO section of one competitor |
-| `refresh` | Run self-bootstrap, then all 3 competitors |
-| `view` | Localhost dashboard + API at `:5180` (Live Feed / Battle / Market / Weekly Report modes, Cmd+K palette, talk-track generator, 1-pager PDFs, capture API) |
-| `all` | fetch + watch:sites + watch:youtube + refresh |
+| `refresh` | Self-card (if any), then every roster competitor whose signals have moved |
+| `research -- --company=<id>` | Deep research via Opus — appends a timestamped AI-RESEARCH block inside HUMAN |
+| `research:dry` | Preview the research pass without spending |
+| `view` | Localhost dashboard + API at `:5180` (Feed / Battle / Compare / Market / Intel / Report / Briefs / Inbox modes, Cmd+K palette, talk-track generator, 1-pager PDFs, capture + clip API) |
+| `mcp` | The stdio MCP server — see [docs/mcp.md](./mcp.md) |
+| `all` | fetch + watch:hn + watch:sites + watch:certs + watch:youtube + watch:tavily + watch:trends + correlate + refresh |
+| `start` | The cron entrypoint — one scheduled pass, for a hosted deployment |
 | `transcripts` | List / search the transcript archive |
-| `backfill:transcripts` | Fetch transcripts for youtube signals already in Turso |
+| `backfill:transcripts` | Fetch transcripts for youtube signals already stored |
 | `notify:test` | Fire a test Windows toast |
-| `db:migrate` | Apply SQL migrations from `sql/*.sql` in lexical order (idempotent) |
-| `db:test` | Round-trip smoke test for `store.mjs` — append/exists/load/update/delete |
-| `research -- --company=<id>` | Deep research via Opus 4.7 — populates the HUMAN section of a battlecard |
+| `db:migrate` | Apply SQL migrations from `sql/*.sql` in lexical order (idempotent); seeds demo data on a first run |
+| `db:test` | Round-trip smoke test for `core/store.mjs` — append/exists/load/update/delete |
+| `demo:seed` / `demo:clear` / `demo:export` | Load, remove, or regenerate the shipped demo dataset |
+| `cost` / `cost:today` / `cost:7d` | LLM spend from the shared `llm_cost` ledger |
+| `report:weekly` / `report:weekly:dry` | Render the weekly report into the Briefs archive |
 | `analyst -- --mode=<scan\|deep\|gap\|outside\|brief>` | Persona-driven analyst CLI |
 | `brief` | Shorthand for `analyst -- --mode=brief` — 200-word morning brief |
 | `scan` | Shorthand for `analyst -- --mode=scan` — top-5 signals across last 14d |
+| `deep:all` / `deep:all:dry` | `/deep` across every competitor |
+| `chrome-data` | Pre-bake the Chrome extension's offline signal digest |
 | `shot` / `shot:all` | Playwright screenshot(s) of the viewer via system Edge |
 
 ---
@@ -855,21 +1153,29 @@ Signal ships a custom loader in `env.mjs` that uses **first-non-empty-wins**. It
 
 | Var | Required | Default | Purpose |
 |---|---|---|---|
-| `OPENROUTER_API_KEY` | ✅ | — | LLM API access |
-| `TURSO_DATABASE_URL` | ✅ | — | `libsql://…` URL for the hosted database |
-| `TURSO_AUTH_TOKEN` | ✅ | — | Long-lived JWT token for the database |
+| `OPENROUTER_API_KEY` | ✅ | — | LLM API access. Without it the keyword classifier runs and nothing tells you except `npm run doctor` |
+| `TURSO_DATABASE_URL` | ❌ | `file:./data/signals.db` | Hosted libSQL — only for a multi-machine deployment. The local file is the default |
+| `TURSO_AUTH_TOKEN` | ❌ | — | Long-lived JWT — only with a hosted `libsql://` URL |
 | `TAVILY_API_KEY` | ❌ | — | Enables `watch:tavily` mention discovery (free tier: 1000 cr/mo) |
+| `GITHUB_TOKEN` / `GH_TOKEN` | ❌ | — | Raises `watch:github` from 60 to 5,000 req/hr |
 | `CI_CLASSIFIER_MODEL` | ❌ | `anthropic/claude-haiku-4.5` | Classifier model |
 | `CI_SYNTHESIS_MODEL` | ❌ | `anthropic/claude-sonnet-4.5` | Battlecard synthesis model |
 | `CI_DEEP_MODEL` | ❌ | `anthropic/claude-opus-4.7` | Analyst `/deep`, `/gap`, `/outside` + `research` |
+| `CI_CLASSIFY_BATCH_SIZE` | ❌ | `10` | Signals per classifier call. `1` restores one call per signal |
+| `CI_RECLASSIFY_CONCURRENCY` | ❌ | `4` | Parallel calls during `npm run reclassify` |
+| `CI_RECLASSIFY_ABORT_AFTER` | ❌ | `3` | Consecutive keyword-fallback batches before `reclassify` gives up |
+| `CI_TAVILY_MONTHLY_BUDGET` | ❌ | `800` | Tavily credit ceiling per month; the watcher skips rather than overspend |
+| `CI_TAVILY_MIN_HOURS_BETWEEN_RUNS` | ❌ | `12` | Tavily cooldown — what stops a daily schedule from over-spending |
 | `CI_TOAST_THRESHOLD` | ❌ | `80` | Min impact score to fire a toast (0–100, 101 disables) |
 | `CI_TOAST_MAX_PER_RUN` | ❌ | `5` | Max toasts per process run |
 | `CI_VIEWER_URL` | ❌ | `http://localhost:5180` | Base URL clicked toasts open |
 | `SIGNALS_COMPANIES` | ❌ | `config/companies.local.mjs` → `.default.mjs` | Roster module path |
 | `SIGNALS_FEEDS` | ❌ | `config/feeds.local.mjs` → `.default.mjs` | Feed module path (feeds derive from the roster) |
-| `SIGNALS_DEAL_CONTEXT` | ❌ | `config/deal-context.local.mjs` → `.default.mjs` | Battle filter axes |
+| `SIGNALS_DEAL_CONTEXT` | ❌ | `config/deal-context.local.mjs` → `.default.mjs` | Battle relevance-ranking axes |
 | `SIGNALS_SUBDOMAIN_SIGNALS` | ❌ | `config/subdomain-signals.local.mjs` → `.default.mjs` | Subdomain + sitemap scoring patterns |
-| `SIGNALS_AGENT_POLICY` | ❌ | `config/agent-policy.local.mjs` → `.default.mjs` | What an MCP agent may trigger + spend ceiling |
+| `SIGNALS_AGENT_POLICY` | ❌ | `config/agent-policy.local.mjs` → `.default.mjs` | What an MCP agent may trigger + its rolling 24h spend ceiling |
+| `SIGNALS_AEO_PROMPTS` | ❌ | `config/aeo-prompts.local.mjs` → `.default.mjs` | Buying-intent prompts + engines for `watch:aeo` |
+| `SIGNALS_NO_DEMO_SEED` | ❌ | — | Set to skip the demo seed on a first `db:migrate` |
 | `CI_WHISPER_ENABLED` | ❌ | `false` | Enable local Whisper fallback when captions missing |
 | `CI_WHISPER_MODEL` | ❌ | `base.en` | Whisper model name |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | ⚠ | — | Set `"0"` ONLY for corporate-proxy unblock; prefer `NODE_EXTRA_CA_CERTS` |
@@ -880,75 +1186,77 @@ Signal ships a custom loader in `env.mjs` that uses **first-non-empty-wins**. It
 ### File layout
 
 ```
-Signal/
+signals/
 ├── .env                          secrets (gitignored)
 ├── .env.example                  template (committed)
 ├── .gitignore
 ├── README.md                     intro + quickstart
-├── HOWTO.md                      this file
-├── PLAN.md                       master roadmap
-├── package.json
-├── package-lock.json
+├── CLAUDE.md / AGENTS.md         instructions for coding agents working in the repo
+├── package.json                  60 scripts; no build step
+├── mcp-server.mjs                the ONLY .mjs left at the root — MCP clients launch it by path
 │
-├── companies.mjs                 company registry + youtubeChannelId
-├── feeds.mjs                     RSS feed URLs per competitor
-├── signal-taxonomy.mjs           signal types + source-tier weights
-├── scoring.mjs                   computeBusinessImpactScore
-├── rss.mjs                       zero-dep RSS/Atom parser
-├── openrouter.mjs                OpenRouter HTTP client
-├── classify.mjs                  LLM classifier (keyword fallback)
-├── env.mjs                       .env loader (first-non-empty-wins)
-├── store.mjs                     Turso libSQL client — upsert/list/exists
-├── notify.mjs                    Windows toast dispatcher (rate-limited)
-├── transcript.mjs                YouTube captions + Whisper fallback + save/load
-├── youtube-channel.mjs           scrape channel /videos page (bypasses RSS block)
+├── cli/                          every operator entry point
+│   ├── help.mjs  doctor.mjs  check-models.mjs  list-companies.mjs  demo.mjs
+│   ├── bootstrap-battlecard.mjs  bootstrap-self-card.mjs  bootstrap-research.mjs
+│   ├── refresh-battlecards.mjs   analyst.mjs   reclassify-signals.mjs
+│   ├── weekly-report.mjs         weekly-report-render.mjs   cost-report.mjs
+│   └── transcripts-cli.mjs       backfill-transcripts.mjs   chrome-data.mjs
 │
-├── fetch-signals.mjs             entry — RSS cron target
-├── bootstrap-battlecard.mjs      entry — one competitor synthesis
-├── bootstrap-self-card.mjs       entry — the home vendor self-card synthesis
-├── refresh-battlecards.mjs       entry — weekly refresh orchestrator
-├── sitemap-watch.mjs             entry — sitemap + robots diff
-├── youtube-watch.mjs             entry — YouTube uploads → captions → classify
-├── backfill-transcripts.mjs      entry — one-shot transcript archive backfill
-├── transcripts-cli.mjs           entry — list/search the transcript archive
-├── serve.mjs                     entry — localhost viewer server
-├── help.mjs                      entry — print command cheat-sheet
-├── notify-test.mjs               entry — fire a test toast
+├── config/                       everything a deployment changes; *.local.mjs is gitignored
+│   ├── companies.{mjs,default,local}      roster + anchor flags; the loader resolves the three
+│   ├── feeds.{mjs,default}                derived from the roster, not a parallel list
+│   ├── deal-context.{mjs,default}         Battle's relevance-ranking axes
+│   ├── subdomain-signals.{mjs,default}    cert + sitemap scoring, read by watchers AND the dashboard
+│   ├── agent-policy.{mjs,default}         what an MCP agent may do + spend ceiling
+│   ├── aeo-prompts.{mjs,default}          buying-intent prompts + engines
+│   └── correlation-rules.mjs              convergence rules
 │
-├── sql/
-│   ├── 001-init.sql              signals table + indexes (hashId PK, by_company_time, by_impact_time)
-│   └── 002-add-signaltype-index.sql
+├── core/                         shared logic, no side effects
+│   ├── store.mjs                 libSQL client — the only sanctioned database path
+│   ├── artifacts.mjs             generated documents: DB canonical, disk mirrored
+│   ├── registry.mjs              roster → matcher; scoring.mjs, signal-taxonomy.mjs
+│   ├── home-brand.mjs            framing() — generation voice per anchor mode
+│   └── coverage.mjs  features.mjs  feed-urls.mjs  robots.mjs  events.mjs  agent-budget.mjs
 │
-├── analyst/
-│   └── persona.md                senior CI analyst persona prompt, versioned
+├── pipeline/                     classify.mjs  correlate.mjs  notify.mjs  openrouter.mjs  transcript.mjs
+├── runtime/                      env.mjs (first-non-empty-wins loader), paths.mjs
+├── ops/                          db-migrate.mjs  cron-entry.mjs  notify-test.mjs
 │
-├── battlecards/
-│   ├── _template.md              blank template
-│   ├── <your-id>.md               OUR self-card (HUMAN + AUTO)
-│   ├── lovable.md              competitor battlecard (HUMAN + AUTO)
-│   ├── cursor.md
-│   └── claudecode.md
+├── watchers/                     one file per source
+│   ├── fetch-signals.mjs  hn-watch.mjs  github-watch.mjs  sitemap-watch.mjs
+│   ├── cert-watch.mjs  youtube-watch.mjs  tavily-watch.mjs  trends-watch.mjs  aeo-watch.mjs
+│   └── adapters/                 rss.mjs  reddit.mjs  tavily.mjs  youtube-channel.mjs
 │
-├── viewer/
-│   ├── index.html
-│   ├── viewer.css
-│   └── viewer.js                 static UI; reads Turso via serve.mjs API
+├── dashboard/
+│   ├── serve.mjs                 localhost viewer server + API
+│   └── viewer/                   index.html  viewer.css  viewer.js
 │
-├── plans/
-│   ├── README.md                 plan index + recommended ordering
-│   ├── 01-quick-wins.md          Tier QUICK — 1-day items, $0
-│   ├── 02-good-builds.md         Tier GOOD — 1-week items
-│   ├── 03-thinkable-bets.md      Tier THINKABLE — design-heavy
-│   ├── 04-exec-travel.md         Tier HARD — exec jet tracking
-│   ├── 05-investor-network.md    Tier HARD — investor jet + yacht tracking
-│   └── 06-crazy-ideas.md         Tier CRAZY — experimental
+├── sql/                          nine migrations, applied in lexical order
+│   ├── 001-init.sql              signals table + indexes
+│   ├── 002-add-signaltype-index.sql   003-watcher-state.sql   004-briefs.sql
+│   ├── 005-cron-runs.sql              006-firstseen-index.sql 007-cron-signal-count.sql
+│   └── 008-llm-cost.sql               009-artifacts.sql
+│
+├── test/                         smoke.mjs (the 15-section gate), store-roundtrip.mjs, fixtures/
+├── demo/                         seed-signals.jsonl — loaded on a first db:migrate
+├── tools/                        shot.mjs (Playwright screenshots), inspect.mjs
+├── chrome-extension/             sidepanel + Intel Check
+├── analyst/persona.md            senior CI analyst persona prompt, versioned
+│
+├── battlecards/                  one .md per roster company (gitignored; _template.md tracked)
+├── briefs/                       analyst + weekly output (gitignored; the DB row is canonical)
+│
+├── docs/
+│   ├── howto.md                  this file
+│   ├── roadmap.md  start.md  why.md  cost.md  mcp.md  blindspots.md  nextsteps.md
+│   ├── plans/                    01, 02, 03, 06–14, REORG.md — tiered plan files
+│   └── decisions/                data-layer, roster, agent-surface, demo-data, answer-engine-visibility
 │
 ├── data/                         gitignored
-│   ├── snapshots/                sitemap + robots baselines per competitor
-│   └── transcripts/              YouTube transcript archive (JSON)
+│   └── transcripts/  talk-tracks/  signals.db   (snapshots + trend baselines live in the DB)
 │
 └── reference/
-    └── README.md                 pointer to ../news-into-intelligence macro-stack
+    └── README.md                 pointer to the originating news-into-intelligence macro-stack
 ```
 
 ---
@@ -1007,15 +1315,18 @@ Writes go through `INSERT OR IGNORE` on `hashId PRIMARY KEY` — safe to re-run 
 
 ### How briefs are named and committed
 
-Analyst + weekly-report output lands in three places:
+Analyst + weekly-report output lands in two places:
 
-1. **Turso `briefs` table** — canonical, shared across machines, durable
+1. **The `briefs` table** — canonical, shared across machines, durable
 2. **Local `briefs/` folder** — markdown files, editor-friendly
-3. **Git history** — committed when you `git add briefs/ && git commit`
 
-Since 2026-04-19 the `briefs/` folder is git-tracked (not in `.gitignore`).
-Rationale: each fork of this repo (one per tracked-client setup) keeps its
-own brief archive in its own repo history, independently of Turso access.
+Both `briefs/*.md` and `battlecards/*.md` are **gitignored** (`battlecards/_template.md` is
+force-added as the shape reference). Durability comes from the database — the `briefs` table
+and the `artifacts` table added by `sql/009-artifacts.sql`. The markdown on disk is an
+editable local mirror, not the source of truth.
+
+They are kept out of git deliberately: a public repo should carry the engine and the demo
+config, never a deployment's competitive analysis, kill shots or customer names.
 
 #### Filename pattern
 
@@ -1046,28 +1357,24 @@ base command without `--force`:
 npm run analyst -- --mode=brief          # no --force; gets time-suffix if file exists
 ```
 
-Both the disk write AND the Turso row are governed by the same briefId,
-so `--force` UPSERTs the Turso row too.
+Both the disk write AND the database row are governed by the same briefId,
+so `--force` UPSERTs the row too.
 
 #### Recommended daily workflow
 
 ```
 # morning
-git pull                              # grab yesterday's briefs + any config changes
+git pull                              # config changes + engine updates
 npm run brief                         # cron-style --force behaviour built in
 
 # ad-hoc research
 npm run analyst -- --mode=deep --company=cursor   # no --force; time-suffixed
-
-# end of day
-git add briefs/ battlecards/
-git commit -m "brief + research 2026-04-19"
-git push
 ```
 
-The git commit at day-end is optional if you're only operating locally; the
-Turso copy is the live record regardless. Commit when you want the archive
-attached to your git history.
+There is no commit step: `briefs/` and `battlecards/` are gitignored and the database rows
+are the durable copy. A deployment that genuinely wants a git archive has to remove those two
+`.gitignore` lines first — which is a deliberate decision about publishing competitive
+analysis, kill shots and customer names, not a convenience.
 
 ---
 

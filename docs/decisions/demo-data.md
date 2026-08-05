@@ -5,8 +5,14 @@
 ## The decision
 
 `git clone && npm install && npm run db:migrate` gives you a **populated dashboard**,
-not an empty one. The repo ships a dated snapshot of real public signals about the eight
-demo companies, and the first migration loads it automatically.
+not an empty one. The repo ships a dated snapshot of real public signals about the
+thirteen demo companies (plus a `category` pseudo-company for market-level rows), and
+`db:migrate` loads it automatically.
+
+Note this is not a recorded migration: it is a post-migration step that re-runs on every
+`db:migrate` and fires whenever the signals table is empty — so `demo:clear` followed by
+`db:migrate` on a demo-only store will re-seed. Set `SIGNALS_NO_DEMO_SEED=1` if you want
+the removal to stick.
 
 ## Why
 
@@ -20,7 +26,9 @@ are legible to them on sight.
 
 ## What ships, and in what form
 
-`demo/seed-signals.jsonl` — plain text, one JSON object per line, ~160 KB.
+`demo/seed-signals.jsonl` — plain text, one JSON object per line, 351 rows, ~514 KB.
+`demo:export` caps output at `MAX_ROWS = 400` and balances per company so no tracked name
+shows up blank.
 
 **Not a `.db` file, and that is the whole reason this is safe.** A committed database
 binary would live at the same path as the user's own store, could not be reviewed in a
@@ -28,24 +36,35 @@ pull request, would grow on every commit, and would silently blend demo rows int
 ones with no way to separate them again. JSONL is diffable, reviewable, and — because
 `demo:clear` deletes exactly the hashIds listed in the file — perfectly reversible.
 
-Each row carries title, link, publication date, company, classification and score. It
-does **not** carry article bodies: a seed is a demonstration, not a content archive, and
-headlines plus URLs are what any feed reader stores.
+Each row carries title, company, classification, score, a truncated `summary` (240
+characters, 900 for convergences) and — where the signal came from a feed — link and
+publication date. It does **not** carry full article bodies: a seed is a demonstration,
+not a content archive. Synthesized rows (convergences) have no link or pubDate at all.
+
+The seed includes correlation output, not just feed items: 56 of the 351 rows are
+convergences. Those carry their `evidence` citation graph, and it is not optional — a
+convergence exported without evidence is a pattern claim with no support, which is
+precisely the failure the convergence rebuild exists to prevent. Trim rows if the file
+gets large; never trim `evidence`.
 
 ## Does this get in the way of a user's own roster?
 
 No, because auto-seeding is narrow. All four conditions must hold or nothing happens:
 
 1. **The signals table is empty.** An existing database is never touched.
-2. **The roster is the shipped default.** If `config/companies.local.mjs` exists, the user
-   is tracking their own market and demo rows would be orphans — attributed to companies
-   that do not exist, which is exactly the drift this project guards against elsewhere.
-   Migration says so and skips.
+2. **The roster is the shipped default.** If the roster resolves to anything other than
+   `config/companies.default.mjs` — a `config/companies.local.mjs`, or `$SIGNALS_COMPANIES`
+   pointed at some other file — the user is tracking their own market and demo rows would
+   be orphans, attributed to companies that do not exist, which is exactly the drift this
+   project guards against elsewhere. Migration says so and skips.
 3. The seed file exists.
 4. `SIGNALS_NO_DEMO_SEED` is unset.
 
-`npm run demo:seed` run by hand applies the same roster check and refuses unless you pass
-`--force`.
+`npm run demo:seed` run by hand applies a *different*, looser check: it refuses only if
+the seed references a companyId your roster does not have (the `category` pseudo-id is
+exempt), and `--force` overrides. A local roster that still contains the demo companies
+will seed without complaint; the migration's check is stricter and keys off the roster
+file itself.
 
 ## The three commands
 
@@ -60,13 +79,18 @@ No, because auto-seeding is narrow. All four conditions must hold or nothing hap
 ```
 git clone … && npm install
 npm run db:migrate     # schema + demo data, no account, no API key
+npm run doctor         # confirm what actually loaded
 npm run view           # a populated dashboard immediately
 npm run fetch          # THEIR first real collection, into their own database
 ```
 
+`npm run doctor` reports the roster in force, whether the database is the local
+`data/signals.db` or a hosted Turso, and how fresh the signals are — which is how a new
+user tells demo data from their own collection.
+
 The demo data and their data coexist; `demo:clear` separates them at any point. To track
 a different market, copy `config/companies.default.mjs` to `config/companies.local.mjs`
-and edit that — the demo seed then declines to load at all.
+and edit that — the auto-seed then declines to load at all.
 
 ## Known cost
 

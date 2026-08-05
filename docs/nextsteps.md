@@ -28,11 +28,12 @@ Approved 2026-04-16 — Turso canonical + Obsidian workspace hybrid for Layer 3:
 ┌───────────────────────────────────────────────────────────────────┐
 │ 4. SYNTHESIS   battlecards · talk-tracks · reports · kill-shots    │
 │                reads: Turso structured brief + vault HUMAN notes    │
+│                consumers: dashboard + MCP agent surface             │
 │                         ▲                                            │
 ├─────────────────────────┼──────────────────────────────────────────┤
 │ 3. KNOWLEDGE — TWO TIERS                                           │
 │                         │                                            │
-│   ┌── Tier 1: TURSO (libSQL) — 100% canonical, system-of-record ┐ │
+│   ┌── Tier 1: libSQL (local file or hosted Turso) — canonical ────┐ │
 │   │ entities · relationships · facts · verification_log           │ │
 │   │ fast indexed SQL queries, audit trail, contested-fact detection│ │
 │   └───────────────────────────────────────────────────────────────┘ │
@@ -47,18 +48,21 @@ Approved 2026-04-16 — Turso canonical + Obsidian workspace hybrid for Layer 3:
 │ 2. TRIAGE   classify + extract entities + verify (dashboard OR vault)│
 │                         ▲                                            │
 ├─────────────────────────┼──────────────────────────────────────────┤
-│ 1. COLLECT  RSS · transcripts · sitemaps · trends · youtube         │
+│ 1. COLLECT  RSS · transcripts · sitemaps · certs · HN · GitHub ·    │
+│             Tavily · trends · AEO                                   │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
 **Why hybrid (Turso + Obsidian):** Turso stays canonical (fast SQL queries, audit trail, machine-readable). Obsidian provides the human-friendly layer for free — native editing, graph view, mobile, offline, git versioning. Duplication of structured fields is the acceptable price; sync is explicit and opt-in via whitelisted fields.
 
+**The dashboard is not the only consumer.** The MCP server already publishes `signal://battlecard/{companyId}` and `signal://brief/{briefId}`, and attaches a `coverage` block (fresh / slowing / stale / never, plus `trustEmptyResult`) to every signal-reporting tool so an agent can tell "nothing happened" from "we stopped looking". A knowledge layer needs the same treatment — a `signal://entity/{id}` resource and a coverage answer for *is this graph still being fed?* — or an agent will read a stale graph as ground truth.
+
 | Layer | Status today | What it answers |
 |---|---|---|
-| 1. Collect | ✅ solid (296+ signals, 87 transcripts) | *What appeared in the world lately?* |
+| 1. Collect | ✅ solid (1,100+ signals across 9 watchers) | *What appeared in the world lately?* |
 | 2. Triage | 🟡 partial (signalType yes, entity extraction no) | *Is this noise, rumor, or fact? What entities does it name?* |
 | 3. Knowledge | ❌ missing | *What do I actually know — with receipts — about this competitor?* |
-| 4. Synthesis | ✅ solid (battlecards, talk-tracks, Battle mode) | *Help me win the call I'm about to join.* |
+| 4. Synthesis | ✅ solid (battlecards, talk-tracks, Battle mode for call-prep, Compare mode for side-by-side) | *Help me win the call I'm about to join.* |
 
 ---
 
@@ -70,7 +74,7 @@ Real intelligence shops run: **Collection → Processing → Analysis → Dissem
 
 ### Closes documented blind spots
 
-From [BLINDSPOTS.md](./BLINDSPOTS.md):
+From [blindspots.md](./blindspots.md):
 
 - *"No feedback loop — classifier doesn't learn from 'this landed' captures"* → triage layer creates the loop (verify/reject reveals prompt quality)
 - *"No calibration tracking — convergence fires never re-scored against reality"* → facts get verified/contested/superseded over time
@@ -97,7 +101,7 @@ Every row in every table tracks **sources[]** — references into signal hashIds
 
 ### New dashboard mode: 🧠 Knowledge
 
-Fifth tab next to Feed / Battle / Market / Report. Queue-based triage UI:
+Ninth tab, after Feed / Battle / Compare / Market / Intel / Report / Briefs / Inbox. Adding it means one row in `SIDEBAR_MODES` (dashboard/viewer/viewer.js) — that list is the only mode registry, and it hands out the sidebar entry, the number-key binding (9) and the `g`-leader letter together. Queue-based triage UI:
 
 ```
 🧠 Knowledge Graph — Claude Code
@@ -120,7 +124,7 @@ Facts
 
 ### Synthesis rewrite (later)
 
-Battlecard AUTO section gains a **"Verified facts"** header above the current LLM-generated content. Sonnet prompt becomes:
+The **"Verified facts"** header already exists — `npm run research` writes it into the AI-RESEARCH block inside HUMAN, and Compare mode renders it as a side-by-side table. What changes is where it comes from: today an Opus pass re-derives it from raw signals each run (hence the `[inferred]`/`[unverified]` tags); after Phase 3 it is read from the `facts` table, and the synthesis prompt becomes:
 
 > *Ground every claim in the verified entities + facts below. For anything not in this brief, say "unverified" explicitly. Never invent.*
 
@@ -131,13 +135,13 @@ Result: `[unverified]` tags become rare instead of ubiquitous. Every kill shot h
 ## Incremental phasing
 
 **Phase 1 — foundation (2 days)**
-Turso schema migrations (new `sql/NNN-*.sql` files adding `entities`, `relationships`, `facts`, `verification_log` tables) + extraction pipeline + `sync:vault` writer + `sync:vault:ingest` reader + basic Knowledge tab. Produces an extraction pass across existing content. Immediate value: see all 14 Claude Code customers extracted from their own videos AND rendered as browsable .md files in `knowledge/`.
+Turso schema migrations (new `sql/NNN-*.sql` files adding `entities`, `relationships`, `facts`, `verification_log` tables) + extraction pipeline + `sync:vault` writer + `sync:vault:ingest` reader + basic Knowledge tab (one row in `SIDEBAR_MODES`, as above — the gate rejects a mode list defined anywhere else). Produces an extraction pass across existing content. Immediate value: see all 14 Claude Code customers extracted from their own videos AND rendered as browsable .md files in `knowledge/`.
 
 **Phase 2 — triage UX + sync polish (1 day)**
 Dashboard: 1-click verify/reject/edit/merge, bulk operations, provenance drill-down, contested-claim arbitration. Vault: templates, folder organization, ingest edge cases.
 
 **Phase 3 — wire synthesis (1–2 days)**
-Rewrite battlecard/talk-track prompts to read from Turso structured brief + vault HUMAN notes. `[unverified]` tags drop ≥70%.
+Rewrite battlecard/talk-track prompts to read from Turso structured brief + vault HUMAN notes. Voice must still come from `framing()` in core/home-brand.mjs, never from prompt literals — the shipped default is anchored (`isMain`), where cards are third-person; only `isUs` is partisan. Model stays whatever `synthesisModel()` returns. `[unverified]` tags drop ≥70%.
 
 **Total: 4–5 days of focused work.** Detailed breakdown in [plans/08-knowledge-graph.md](./plans/08-knowledge-graph.md).
 
@@ -173,7 +177,10 @@ Rewrite battlecard/talk-track prompts to read from Turso structured brief + vaul
 Think of this as Signal v2. The work ahead:
 
 ```
-Now:  v1.5  →  ingest works, battlecards work, sales workflow shipped
+Now:  v1.5  →  ingest works, battlecards + deep research work, Battle/Compare
+               shipped, MCP agent surface live (resources + coverage +
+               policy-gated run_analyst), npm run doctor, config layer for
+               roster / feeds / deal-context / subdomain-signals / agent-policy
                 ↓
 +1wk: v1.6  →  Phase 1 knowledge graph — extraction + basic Knowledge mode
                 ↓
@@ -193,10 +200,10 @@ Everything that works today keeps working through all phases. No rewrite.
 **Is not:** the implementation spec. For that, see [plans/08-knowledge-graph.md](./plans/08-knowledge-graph.md).
 
 Related docs:
-- [README.md](./README.md) — intro + current state
-- [PLAN.md](./PLAN.md) — all roadmap items
-- [BLINDSPOTS.md](./BLINDSPOTS.md) — what Signal doesn't see; knowledge graph closes several
-- [HOWTO.md](./HOWTO.md) — task-oriented usage
+- [../README.md](../README.md) — intro + current state
+- [roadmap.md](./roadmap.md) — all roadmap items
+- [blindspots.md](./blindspots.md) — what Signal doesn't see; knowledge graph closes several
+- [howto.md](./howto.md) — task-oriented usage
 - [plans/](./plans/) — detailed executable plans per feature tier
 
 ---

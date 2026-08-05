@@ -16,16 +16,16 @@ npm run doctor         # confirm it worked, and see what each missing key unlock
 npm run view           # a populated dashboard at 127.0.0.1:5180
 ```
 
-That works offline on a fresh clone. There is no build step, no framework, and seven
+That works offline on a fresh clone. There is no build step, no framework, and six
 dependencies.
 
 ## Who consumes it
 
 | Consumer | Surface |
 |---|---|
-| **Agents** | Skills under `.claude/skills/`, JSON endpoints, `npm run <cmd> -- --json` |
+| **Agents** | An MCP server (`npm run mcp`) — tools, `signal://` resources and a `coverage` block on every result; skills under `.claude/skills/`; the dashboard's JSON endpoints; `npm run companies -- --json` |
 | **Humans** | A localhost dashboard, markdown battlecards, analyst briefs |
-| **Cron** | `cron-entry.mjs` — one scheduled pass over every watcher |
+| **Cron** | `npm run start` (`ops/cron-entry.mjs`) — one scheduled pass over every watcher |
 
 The dashboard is one client, not the product. See
 [docs/plans/14-agent-native-refactor.md](./docs/plans/14-agent-native-refactor.md) for
@@ -34,16 +34,21 @@ where that is going.
 ## Make it yours
 
 ```bash
-cp config/companies.default.mjs config/companies.local.mjs   # edit this, nothing else
+cp config/companies.default.mjs config/companies.local.mjs   # the roster — the only file most deployments edit
 npm run companies                                            # confirm what is live
-npm run smoke                                                # gate: 15 offline checks
+npm test                                                     # gate: 15 smoke sections + 5 fixture suites, all offline
 ```
 
 `companies.local.mjs` is gitignored and overrides the shipped roster, so you can pull
 upstream forever without a merge conflict in the one file you customised. Feeds, GitHub
 repo mappings, HN queries and classifier collision-warnings all derive from it
-automatically — **no brand name is hardcoded anywhere outside `config/`**, and
-`npm run smoke` fails if one leaks.
+automatically — **no brand name or market vocabulary is hardcoded anywhere outside
+`config/`** — `npm test` fails if a brand leaks into a watcher, prompt or classifier, or
+if the dashboard's category labels and deal-context axes drift from the roster.
+
+Five more layers follow the same `.local.mjs` overrides `.default.mjs` pattern when you
+need them: `deal-context` (Battle's filter axes), `subdomain-signals` (cert/sitemap
+scoring), `agent-policy` (what an MCP agent may do), `aeo-prompts`, and `feeds`.
 
 ## Docs
 
@@ -51,8 +56,9 @@ automatically — **no brand name is hardcoded anywhere outside `config/`**, and
 |---|---|
 | [docs/start.md](./docs/start.md) | Install guide assuming no prior git/Node knowledge |
 | [docs/howto.md](./docs/howto.md) | Task-oriented "how do I…" |
-| [docs/why.md](./docs/why.md) | Why this architecture — zero build step, 7 deps |
+| [docs/why.md](./docs/why.md) | Why this architecture — zero build step, 6 deps |
 | [docs/cost.md](./docs/cost.md) | LLM spend, model ladder, budget guardrails |
+| [docs/mcp.md](./docs/mcp.md) | The MCP server — tools, resources, agent policy |
 | [docs/blindspots.md](./docs/blindspots.md) | What Signal cannot see. Honest audit |
 | [docs/decisions/demo-data.md](./docs/decisions/demo-data.md) | Why the repo ships with data |
 
@@ -92,15 +98,39 @@ runs instead, and with no hosted database the local file is used.
 
 ## What it does
 
-1. **Ingests** ~50 RSS feeds (Google News, HN, Reddit, blogs) across the tracked roster + category-wide feeds, plus Tavily search, YouTube transcripts, cert-transparency, sitemap/robots diffs, and Google Trends.
+1. **Ingests** ~60 RSS feeds (Google News, Reddit, vendor blogs, GitHub releases) across the tracked roster + category-wide feeds, plus HN via Algolia, Tavily search, GitHub releases/issues, YouTube transcripts, cert-transparency, sitemap/robots diffs, Google Trends, and answer-engine visibility checks.
 2. **Classifies** each signal via Claude Haiku 4.5 (over OpenRouter): `product_launch`, `pricing_change`, `funding`, `customer_win`, `review_complaint`, etc.
 3. **Scores** business impact on a 0–100 scale (re-weighted for CI — product launches > generic press).
-4. **Stores** in a hosted Turso (libSQL) database, keyed by content hash (`hashId PRIMARY KEY`) for idempotent dedup.
+4. **Stores** in libSQL — a local file by default, a hosted Turso database when `TURSO_DATABASE_URL` points at one — keyed by content hash (`hashId PRIMARY KEY`) for idempotent dedup.
 5. **Correlates** signals into convergences — cross-axis patterns (e.g. a product launch + a hiring push + a cert change all pointing at healthcare) with a structured `evidence` citation graph.
-6. **Generates battlecards** — Claude Sonnet 4.5 synthesizes a v0 battlecard per competitor, grounded in the home vendor's real self-card facts (no hallucination), with a human-editable section that survives refreshes. Claude Opus 4.7 via `npm run research` for the deepest, fact-checked populations.
+6. **Generates battlecards** — Claude Sonnet 4.5 synthesizes a v0 battlecard per competitor, grounded against the anchor company's card (`MAIN_COMPANY_ID`), with a human-editable section that survives refreshes. Voice comes from `core/home-brand.mjs`: partisan only when a company is marked `isUs`, third-person otherwise. Claude Opus 4.7 via `npm run research` for the deepest, fact-checked populations.
 7. **Analyst CLI** — `npm run analyst -- --mode=<scan|deep|gap|outside|brief>` produces Obsidian-ready markdown briefs from the persona in `analyst/persona.md`.
-8. **Serves a viewer** at `http://localhost:5180` — sidebar navigation across Feed / Battle / Market / Intel / Report / Inbox modes, Linear-style dense UI, keyboard shortcuts (`g` leader).
+8. **Serves a viewer** at `http://localhost:5180` — sidebar navigation across Feed / Battle / Compare / Market / Intel / Report / Briefs / Inbox modes, Linear-style dense UI, number keys `1`-`8` plus a `g` leader for mode switching. Compare is N-way: an anchor plus up to three rivals, shareable as `#vs=a,b,c`.
 9. **Chrome extension** — side-panel UI for browsing signals, Intel Check (compare any webpage against your intel using on-device Gemini Nano), clip signals to Turso, and desktop notifications. See [`chrome-extension/README.md`](./chrome-extension/README.md).
+
+---
+
+## Agent surface (MCP)
+
+`npm run mcp` starts `mcp-server.mjs` over stdio. It is the surface this repo is built
+for; the dashboard is a second client. Full detail in [docs/mcp.md](./docs/mcp.md).
+
+**Tools:** `list_companies`, `search_signals`, `get_convergences`, `get_battlecard`,
+`list_briefs`, `get_brief`, `run_analyst`, `market_summary`.
+
+**Resources:** `signal://battlecard/{companyId}` and `signal://brief/{briefId}`.
+
+**Every signal-reporting tool returns a `coverage` block** — a collection-recency status
+(`fresh` / `slowing` / `stale` / `never`), a `trustEmptyResult` flag and any warnings —
+so an agent can tell "nothing happened" from "we stopped looking". Without it, a watcher
+that quietly stopped running reads to an agent as a calm market.
+
+**Read-only by default, not read-only.** `run_analyst` spends money, so it ships disabled:
+`config/agent-policy.default.mjs` has an empty `allowActions`. Opt in per deployment by
+creating `config/agent-policy.local.mjs` (gitignored, or point `SIGNALS_AGENT_POLICY` at
+your own module) with `allowActions: ['run_analyst']`. Spend is bounded by a rolling 24h
+USD ceiling read from the shared `llm_cost` table, so cron, the CLI and any agent draw
+down the same ledger.
 
 ---
 
@@ -128,15 +158,22 @@ Rule of thumb: anything under `npm run <x>` here is safe to run as-is.
 | Command | What it does |
 |---|---|
 | `npm install` | Install Node deps into `node_modules/` (~72 MB) |
-| `npm run db:migrate` | Apply every file in `sql/*.sql` to Turso in lexical order. Idempotent |
+| `npm run db:migrate` | Apply every file in `sql/*.sql` in lexical order — to the local file by default, to Turso when `TURSO_DATABASE_URL` is hosted. Idempotent, and seeds the demo set on a first run |
+| `npm run doctor` | Reports rather than repairs: roster + anchor mode, hosted-vs-local database, collection freshness, which keys are set and what each missing one blocks, and the agent policy (plus remaining budget once a paid action is enabled). Also launches the MCP server from an unrelated directory to confirm it resolves the same store — the failure where an agent reads an empty database while the CLI sees a full one |
+| `npm test` | The gate: 15 smoke sections + 5 fixture suites. Fully offline |
+| `npm run smoke` | The 15 smoke sections alone, without the fixture suites |
 | `npm run db:test` | Round-trip smoke test — append / alreadySeen / load / update / delete |
 | `npm run check:models` | Sanity-check OpenRouter — lists default classifier / synthesis / deep models and probes one request each |
+| `npm run companies` | Print the live roster and which config file it came from. `-- --json` for the machine-readable form |
+| `npm run demo:seed` | Load `demo/seed-signals.jsonl` into whatever database is configured. Refuses when a local roster is active unless you pass `--force` — demo rows carry the demo roster's company ids. `db:migrate` already does this on a first run; set `SIGNALS_NO_DEMO_SEED` to suppress it |
+| `npm run demo:export` | Snapshot the current database back into `demo/seed-signals.jsonl` |
+| `npm run demo:clear` | Delete exactly the hashIds in the seed file. Nothing you collected yourself |
 
 ### Daily pipeline — ingest
 
 | Command | What it does | Typical cadence |
 |---|---|---|
-| `npm run fetch` | Walk ~50 RSS feeds (Google News, HN, Reddit, blogs) across the tracked roster, classify with Haiku, write signals to Turso | every 30 min – 2 h |
+| `npm run fetch` | Walk ~60 RSS feeds (Google News, Reddit, vendor blogs, GitHub releases) across the tracked roster, classify with Haiku, write signals to the store | every 30 min – 2 h |
 | `npm run fetch:nollm` | Same, keyword-only classifier. Free, lower precision | — |
 | `npm run fetch -- --company=lovable` | Only one competitor this run | — |
 | `npm run watch:sites` | Fetch sitemap.xml + robots.txt per domain, diff against last snapshot under `data/snapshots/`, emit signals for new / removed paths and rule changes | every 6 h |
@@ -147,10 +184,14 @@ Rule of thumb: anything under `npm run <x>` here is safe to run as-is.
 | `npm run watch:youtube -- --company=claudecode` | One competitor only | — |
 | `npm run watch:youtube -- --limit=3` | Only 3 most-recent per channel (cheap test) | — |
 | `npm run watch:youtube -- --force-reclassify` | Re-classify videos even if hashId already seen | — |
-| `npm run watch:hn` | Query Algolia HN Search API per competitor + category, filter by points/recency, classify + store signals. Replaces the old hnrss.org RSS feeds (kept commented in `feeds.mjs` for fallback) | daily |
+| `npm run watch:hn` | Query Algolia HN Search API per competitor + category, filter by points/recency, classify + store signals. Replaces the hnrss.org RSS feeds that previously sat in the feed list | daily |
 | `npm run watch:hn:dry` | Preview hits, classify, write nothing | — |
 | `npm run watch:hn -- --company=replit` | One competitor only | — |
 | `npm run watch:hn -- --no-llm` | Skip LLM classifier, use keyword only (free) | — |
+| `npm run watch:github` | Walk a hardcoded `companyId → owner/repo` map for releases, breaking-change tags and issue complaints. 60 req/hr unauthenticated, 5,000/hr with `GITHUB_TOKEN` | daily |
+| `npm run watch:github:dry` | Preview, write nothing | — |
+| `npm run watch:aeo` | Answer-engine visibility — ask the prompts in `config/aeo-prompts.*.mjs` and record which brands each engine names when a buyer forms a shortlist. Detection is a deterministic word-boundary match, not a model judging model output. One LLM call per prompt per engine, which is why `ops/cron-entry.mjs` only runs it on the weekly pass | weekly |
+| `npm run watch:aeo:dry` | Preview, write nothing | — |
 | `npm run watch:tavily` | Tavily Search API queries for each competitor — mention discovery beyond RSS. Budget-guarded (~72% of free 1000/mo tier at the tracked roster daily, 2 queries each) | daily |
 | `npm run watch:tavily:dry` | Preview, no API spend, no DB writes | — |
 | `npm run watch:trends` | Google Trends spike detection — brand + "<competitor> alternative" queries. **Batched**: hits only the 8 stalest queries per run (rotates through all ~32 over 4 runs). Google's unofficial API rate-limits hard at 32-queries-in-a-row | weekly, scheduled 4× |
@@ -158,7 +199,7 @@ Rule of thumb: anything under `npm run <x>` here is safe to run as-is.
 | `npm run watch:trends:full` | Override the batch — hit all ~32 queries in one run. Only when you know Google's rate-limiter is calm | manual |
 | `npm run watch:trends -- --geo=GB` | Regional scoping (default US) | — |
 | `npm run watch:trends -- --batch-size=16` | Override batch size (default 8) | — |
-| `npm run all` | Convenience wrapper: fetch + all watchers + correlate + refresh, in sequence. Use for end-of-day catch-up runs | manual |
+| `npm run all` | Convenience wrapper: fetch + hn/sites/certs/youtube/tavily/trends + correlate + refresh, in sequence. Use for end-of-day catch-up runs. Note it does NOT run `watch:github` or `watch:aeo` — `ops/cron-entry.mjs` covers both, this wrapper does not | manual |
 
 ### Convergence / pattern detection
 
@@ -172,11 +213,11 @@ Rule of thumb: anything under `npm run <x>` here is safe to run as-is.
 
 | Command | What it does |
 |---|---|
-| `npm run self-bootstrap` | Generate / refresh `battlecards/<your-id>.md` — the home vendor's own positioning, features matrix, USPs. Every competitor battlecard grounds in this |
-| `npm run bootstrap -- --company=<id>` | Generate one competitor battlecard from the signal set + self-card. Sonnet 4.5, ~8-12k tokens, ~$0.08 |
-| `npm run refresh` | Re-generate AUTO section of the self-card and all 12 competitor battlecards in sequence. Weekly cadence. HUMAN sections never touched |
+| `npm run self-bootstrap` | Generate / refresh `battlecards/<your-id>.md` — the home vendor's own positioning, features matrix, USPs. Only meaningful when a company is marked `isUs`; in market-watch mode there is no self-card |
+| `npm run bootstrap -- --company=<id>` | Generate one competitor battlecard from the signal set, grounded against the anchor's card (`MAIN_COMPANY_ID`). Sonnet 4.5, ~8-12k tokens, ~$0.08 |
+| `npm run refresh` | Re-generate the AUTO section of all 13 battlecards in sequence (plus the self-card, if a company is marked `isUs`). Weekly cadence. Operator-written HUMAN text is never overwritten — an all-placeholder scaffold is rewritten to match the anchor mode, and `npm run research` appends its own block inside HUMAN |
 | `npm run research -- --company=<id>` | **Deep research via Opus 4.7** — populates the HUMAN section with fact-checked overview, verified facts, objections to expect, deep weaknesses, recent moves, rumor watch, operator todos. 180-day signal window. ~$0.50 per run |
-| `npm run research:dry` | Preview Opus input without calling the model |
+| `npm run research:dry -- --company=<id>` | Preview Opus input without calling the model. `--company=` is required — without it the script exits 2 with a usage error |
 
 ### Analyst persona (briefs)
 
@@ -187,9 +228,12 @@ Obsidian-ready markdown in `briefs/YYYY-MM-DD-<mode>.md` (gitignored).
 |---|---|
 | `npm run report:weekly` | **Weekly Report snapshot** — deterministic compute (no LLM), captures convergences + top-10 signals + per-competitor synopsis for the ISO week. Persists to Turso + `briefs/weekly-<week>.md`. Idempotent per week. Schedule Mondays 07:00 |
 | `npm run report:weekly -- --week=2026-W15` | Regenerate a specific week (useful for backfill) | — |
+| `npm run report:weekly:dry` | Compute the snapshot and print a preview of it, write nothing |
 | `npm run brief` | `/brief` mode — 5-minute morning brief. Max 200 words. Last 24h critical signals. ~$0.03 |
 | `npm run scan` | `/scan` mode — routine sweep over last 14d high-impact + convergences, capped at 80 signals. Top 5 ranked. ~$0.08 |
 | `npm run analyst -- --mode=deep --company=lovable` | `/deep` — 90-day deep dive on one competitor. Cites convergences by hashId via the structured `evidence` graph |
+| `npm run deep:all` | `/deep` across every tracked competitor in one pass. ~$0.20 and ~30s each, so cost scales with the roster — `ops/cron-entry.mjs` only fires it on the Monday pass, and the MCP surface never exposes it |
+| `npm run deep:all:dry` | Same sweep, prints the assembled input, sends nothing |
 | `npm run analyst -- --mode=outside --topic=<string>` | `/outside` — analogies from adjacent markets, second-order effects, one defended contrarian take |
 | `npm run analyst -- --mode=gap` | `/gap` — red-teams Signal *itself*: feeds list, correlation rules, feature registry, tracked-company bias. Different target from the other modes. Monthly cadence |
 | `npm run analyst -- --mode=scan --dry-run` | Print digest + persona size without calling the model. Confirms the Turso query + digest assembly path works |
@@ -204,7 +248,7 @@ Obsidian-ready markdown in `briefs/YYYY-MM-DD-<mode>.md` (gitignored).
 | `npm run transcripts -- "SOC 2" --company=claudecode` | Scope search to one competitor |
 | `npm run transcripts -- --id=<videoId>` | Print one full transcript |
 | `npm run transcripts -- "enterprise" --context=100` | Wider snippet window |
-| `npm run backfill:transcripts` | Walk every `sourceKind='youtube'` signal in Turso; fetch + save any missing transcripts. Safe to re-run. This is where local Whisper runs (if `CI_WHISPER_ENABLED=true`) |
+| `npm run backfill:transcripts` | Walk every `sourceKind='youtube'` signal in Turso; fetch + save any missing transcripts. Safe to re-run. This is where local Whisper runs (if `CI_WHISPER_ENABLED=true`). Whisper additionally requires `yt-dlp` and `ffmpeg` on PATH (`pipx install yt-dlp`) — audio is downloaded with yt-dlp, not an npm package |
 | `npm run backfill:transcripts -- --dry-run` | Preview what would be fetched |
 
 **YouTube pipeline in one breath:** `watch:youtube` fetches captions via HTTP (no audio download, no transcription — free for ~80% of videos), saves transcript to `data/transcripts/<co>/<id>.json`, classifies the first 6000 chars via Haiku, writes one signal row to Turso. Whisper is opt-in, only fires for caption-less videos when you explicitly enable it — otherwise the video still gets a `noise` signal noting that captions weren't available.
@@ -223,26 +267,31 @@ Obsidian-ready markdown in `briefs/YYYY-MM-DD-<mode>.md` (gitignored).
 
 | Command | What it does |
 |---|---|
-| `npm run view` | Start `serve.mjs` on `http://localhost:5180`. Linear-style sidebar nav across Feed / Battle / Market / Intel / Report / Inbox modes. Keyboard shortcuts: `g` leader + `f`/`b`/`m`/`i`/`r`/`x` for mode, `j`/`k` for list nav, `Cmd+K` for the command palette |
+| `npm run view` | Start `dashboard/serve.mjs` on `http://localhost:5180`. Linear-style sidebar nav across Feed / Battle / Compare / Market / Intel / Report / Briefs / Inbox. Keyboard: `1`-`8` or `g` + `f`/`b`/`c`/`m`/`i`/`r`/`s`/`x` for mode, `j`/`k` for list nav, `Cmd+K` for the command palette |
 | `Ctrl+C` | Stop the viewer |
 
-### LLM cost tracking (local)
+### LLM cost tracking
 
 Every OpenRouter call appends one JSONL row to `data/llm-cost.jsonl` with
 timestamp, script, model, tokens, USD cost (passthrough + upstream),
 duration, and caller-supplied tags (company, mode). A per-process footer
 prints after any run that crosses $0.001 of spend.
 
+Every call also mirrors into the Turso `llm_cost` table (fire-and-forget) so history
+survives a redeploy — the JSONL is wiped on every Railway deploy — and so the MCP agent
+budget in `core/agent-budget.mjs` can draw down the same ledger as cron and the CLI.
+`npm run cost` reports from the local JSONL, so the two can diverge.
+
 | Command | What it does |
 |---|---|
 | `npm run cost` | Last 30 days, grouped by day + script + model |
 | `npm run cost:today` | Just today |
 | `npm run cost:7d` | Last 7 days |
-| `node cost-report.mjs --by=script` | Group by script name |
-| `node cost-report.mjs --by=model` | Group by model slug |
-| `node cost-report.mjs --by=company` | Group by `meta.company` tag (only rows with one) |
-| `node cost-report.mjs --raw` | Dump every line as JSON for piping into jq / spreadsheet |
-| `node cost-report.mjs --all` | All time, no window |
+| `npm run cost -- --by=script` | Group by script name |
+| `npm run cost -- --by=model` | Group by model slug |
+| `npm run cost -- --by=company` | Group by `meta.company` tag (only rows with one) |
+| `npm run cost -- --raw` | Dump every line as JSON for piping into jq / spreadsheet |
+| `npm run cost -- --all` | All time, no window |
 
 ### Visual tooling (Playwright via system Edge)
 
@@ -252,11 +301,11 @@ Chromium download to avoid corporate-proxy TLS issues.
 
 | Command | What it does |
 |---|---|
-| `npm run shot` | Take a screenshot of the Feed mode in dark theme. Output lands in `screenshots/` (gitignored) |
-| `npm run shot -- --mode=battle --company=lovable` | Battle mode for one competitor |
+| `npm run shot` | Screenshot each mode `tools/shot.mjs` knows about, in the dark theme — `--mode=all` is the default. Output lands in `screenshots/` (gitignored) |
+| `npm run shot -- --mode=battle --competitor=lovable` | Battle mode for one competitor |
 | `npm run shot -- --mode=intel` | Intel mode (convergence list) |
 | `npm run shot -- --mode=market` | Market mode |
-| `npm run shot:all` | Snap every mode in dark + light themes (8 files) |
+| `npm run shot:all` | The same sweep, stated explicitly — one file per mode, in the dark theme. Add `-- --theme=light` for the light set |
 
 ### Notifications
 
@@ -269,7 +318,7 @@ Chromium download to avoid corporate-proxy TLS issues.
 | Command | What it does |
 |---|---|
 | `npm run chrome-data` | Generate `chrome-extension/data/companies.json` — pre-baked signal digest (last 7 days) for instant Intel Check |
-| `npm run chrome-data -- --days=14` | Same, but last 14 days |
+| `npm run chrome-data -- --days=14` (or `npm run chrome-data:14d`) | Same, but last 14 days |
 | `npm run chrome-data -- --dry-run` | Preview output without writing file |
 
 The extension itself loads as an unpacked Chrome extension — see [`chrome-extension/README.md`](./chrome-extension/README.md) for install instructions.
@@ -278,31 +327,33 @@ The extension itself loads as an unpacked Chrome extension — see [`chrome-exte
 
 | Doc | When to read |
 |---|---|
-| [START.md](./START.md) | First-time setup — zero prior knowledge of git / Node / terminals. ~15 min |
-| [COST.md](./COST.md) | Per-command cost ranges, model tiering (cheap → premium), BYOK, budget guardrails |
-| [HOWTO.md](./HOWTO.md) | Task-oriented ("how do I…"). The manual |
-| [NEXTSTEPS.md](./NEXTSTEPS.md) | Where Signal is heading architecturally — the knowledge-graph direction |
-| [BLINDSPOTS.md](./BLINDSPOTS.md) | What Signal can't see. Honest audit + quarterly review checklist |
-| [PLAN.md](./PLAN.md) | Master roadmap; index of tiered plans |
-| [plans/](./plans/) | Individual plan files (quick wins → crazy ideas, plus approved 08 knowledge graph and 09 document ingest) |
+| [docs/start.md](./docs/start.md) | First-time setup — zero prior knowledge of git / Node / terminals. ~15 min |
+| [docs/cost.md](./docs/cost.md) | Per-command cost ranges, model tiering (cheap → premium), BYOK, budget guardrails |
+| [docs/howto.md](./docs/howto.md) | Task-oriented ("how do I…"). The manual |
+| [docs/mcp.md](./docs/mcp.md) | The MCP server — tools, `signal://` resources, coverage block, agent policy |
+| [docs/nextsteps.md](./docs/nextsteps.md) | Where Signal is heading architecturally — the knowledge-graph direction |
+| [docs/blindspots.md](./docs/blindspots.md) | What Signal can't see. Honest audit + quarterly review checklist |
+| [docs/roadmap.md](./docs/roadmap.md) | Master roadmap; index of tiered plans |
+| [docs/plans/](./docs/plans/) | Individual plan files (quick wins → crazy ideas, plus approved 08 knowledge graph and 09 document ingest) |
 | [analyst/persona.md](./analyst/persona.md) | The senior CI analyst prompt that drives `npm run analyst` — five modes, output contract, hard rules, banned words |
 | [chrome-extension/README.md](./chrome-extension/README.md) | Chrome side-panel extension — install, features, architecture, data flow |
 
 ### Environment variables (summary)
 
-Full list + defaults in [.env.example](./.env.example). The three that
-matter:
+Model and notification defaults live in [.env.example](./.env.example); the config-layer
+overrides are listed here. Nothing in this table is needed for the quickstart:
 
 | Var | Required | Purpose |
 |---|---|---|
-| `OPENROUTER_API_KEY` | ✅ | LLM API access |
-| `TURSO_DATABASE_URL` | ✅ | `libsql://…` URL for the hosted DB |
-| `TURSO_AUTH_TOKEN` | ✅ | Long-lived JWT for the DB |
+| `OPENROUTER_API_KEY` | for LLM features | Classification, battlecards, briefs. Without it the keyword classifier runs instead |
+| `TURSO_DATABASE_URL` | hosted only | `libsql://…` URL for a hosted DB. Defaults to the local file `data/signals.db` |
+| `TURSO_AUTH_TOKEN` | hosted only | Long-lived JWT for a hosted DB |
 | `TAVILY_API_KEY` | optional | Enables `watch:tavily` (free tier: 1000 cr/mo) |
+| `GITHUB_TOKEN` | optional | Raises the GitHub API limit for `watch:github` from 60/hr to 5,000/hr. `GH_TOKEN` is accepted too |
 | `CI_CLASSIFIER_MODEL` | optional | Per-signal triage (high volume). Default `anthropic/claude-haiku-4.5`. Qwen / Kimi alternatives in `.env.example`. **Never Opus — a single fetch is 200+ calls.** |
 | `CI_SYNTHESIS_MODEL` | optional | Battlecard synthesis (medium volume). Default `anthropic/claude-sonnet-4.5` |
 | `CI_DEEP_MODEL` | optional | Analyst `/deep`, `/gap`, `/outside`, `research` (low volume, max reasoning). Default `anthropic/claude-opus-4.7` |
-| `CI_WHISPER_ENABLED` | optional | Set `true` to enable local Whisper fallback for caption-less YouTube videos. Disabled by default |
+| `CI_WHISPER_ENABLED` | optional | Set `true` to enable local Whisper fallback for caption-less YouTube videos. Disabled by default. Also requires `yt-dlp` and `ffmpeg` on PATH (`pipx install yt-dlp`) — audio is downloaded with yt-dlp, not an npm package |
 | `CI_WHISPER_MODEL` | optional | Whisper model name, default `base.en` |
 | `CI_TOAST_THRESHOLD` | optional | Min impact score for Windows toasts (0-100, 101 disables). Default 80 |
 | `CI_TOAST_MAX_PER_RUN` | optional | Hard cap on toasts per process run. Default 5 |
@@ -314,6 +365,7 @@ matter:
 | `SIGNALS_DEAL_CONTEXT` | optional | Path to a deal-context module — the Battle filter axes. See `config/deal-context.default.mjs` |
 | `SIGNALS_SUBDOMAIN_SIGNALS` | optional | Path to a subdomain/sitemap scoring module. See `config/subdomain-signals.default.mjs` |
 | `SIGNALS_AGENT_POLICY` | optional | Path to an agent-policy module — what an MCP agent may trigger and its spend ceiling. Ships read-only |
+| `SIGNALS_AEO_PROMPTS` | optional | Path to an answer-engine prompt module. See `config/aeo-prompts.default.mjs` |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | ⚠ | Set to `0` ONLY for corporate-proxy unblock; prefer `NODE_EXTRA_CA_CERTS` |
 | `NODE_EXTRA_CA_CERTS` | optional | Path to corporate root CA PEM — proper TLS fix |
 
@@ -340,9 +392,10 @@ via env vars; full alternatives live commented in [.env.example](./.env.example)
 
 ### Disaster recovery
 
-Turso is hosted, which means when Turso has an outage you can't read or
-write signals. The system is designed around "retry when it's back," but
-here's the fallback ladder if you ever hit sustained downtime:
+This applies to a hosted deployment. The default is a local libSQL file, which has no
+outage to survive — but once `TURSO_DATABASE_URL` points at Turso, a Turso outage means
+you can't read or write signals. The system is designed around "retry when it's back,"
+but here's the fallback ladder if you ever hit sustained downtime:
 
 1. **Transient outage (<1 hour)** — Do nothing. `INSERT OR IGNORE` on every
    watcher makes re-runs idempotent; the next scheduled cron catches up.
@@ -355,10 +408,11 @@ here's the fallback ladder if you ever hit sustained downtime:
    sqlite3 data/signals-local.db ".dump signals" > local-signals.sql
    turso db shell signals < local-signals.sql
    ```
-3. **Account loss / credential leak** — Re-provision a database and restore
-   implementation: the archived pre-Turso implementation, provision fresh
-   legacy JSONL baseline. You lose whatever accumulated between the JSONL
-   snapshot and the credential issue, but the system continues.
+3. **Account loss / credential leak** — Provision a fresh database, point
+   `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` at it and run `npm run db:migrate`.
+   There is no JSONL archive to restore from: signals regenerate by re-running
+   the watchers, and battlecards / briefs / talk-tracks re-hydrate from their
+   on-disk mirrors (`core/artifacts.mjs` reads database-first, disk-fallback).
 
 **What's NEVER lost:**
 
@@ -382,7 +436,8 @@ last-write-wins). But concurrent runs have different cost profiles:
 
 | Command | Concurrent behavior |
 |---|---|
-| `view`, `analyst`, `brief`, `scan`, `cost`, `transcripts` | ✅ Fully safe. Read-only or local-file-only |
+| `view`, `cost`, `transcripts` | ✅ Fully safe. Read-only or local-file-only |
+| `analyst`, `brief`, `scan` | ⚠ Safe — each writes a brief row to Turso keyed per mode+date, plus `llm_cost` rows. Two concurrent runs of the same mode last-write-wins on the brief; you pay 2× LLM cost |
 | `bootstrap`, `research`, `refresh` | ✅ Safe — each writes its own local `battlecards/*.md` file. If both commit, normal git merge conflict |
 | `fetch`, `watch:hn`, `watch:youtube` | ⚠ Safe but **wasteful** — both run the full external-API sweep + LLM classifier. You pay 2× API cost, dedup catches the duplicates on write |
 | `correlate` | ⚠ Safe — convergence dedup by hashId; wall time is the only cost |
@@ -399,48 +454,58 @@ last-write-wins). But concurrent runs have different cost profiles:
 
 ## Architecture
 
+Grouped by role, not by feature — `config/` holds what a deployment retargets, `core/`
+the domain logic, and the entry points a human or a cron actually invokes live in `cli/`,
+`watchers/` and `ops/`.
+
 ```
 Signal/
-├── .env                      OpenRouter + Turso credentials + Tavily
-├── package.json              Deps: @libsql/client, google-trends, etc.
+├── .env                  OpenRouter + Turso credentials + Tavily
+├── package.json          Deps: @libsql/client, google-trends-api, node-notifier,
+│                         nodejs-whisper, youtube-transcript (+ playwright, dev)
+├── mcp-server.mjs        The agent surface — tools, signal:// resources, coverage
 │
-├── companies.mjs             Company registry (edit to add/tune competitors)
-├── feeds.mjs                 RSS feeds per competitor (edit to add/tune)
-├── features.mjs              25-feature canonical registry for the Battle matrix
-├── signal-taxonomy.mjs       Signal types + impact weights
-├── correlation-rules.mjs     Convergence detection axes
-├── scoring.mjs               computeBusinessImpactScore
-├── rss.mjs                   Zero-dep RSS/Atom parser
-├── openrouter.mjs            HTTP client with retry/timeout/truncation guards
-├── classify.mjs              LLM classifier + keyword fallback
-├── env.mjs                   Robust .env loader
-├── store.mjs                 Turso libSQL client — upsert, list, exists
-├── fetch-signals.mjs         Entry — cron target
-├── correlate.mjs             Entry — convergence builder
-├── bootstrap-battlecard.mjs  Entry — one-shot competitor synthesis (Sonnet)
-├── bootstrap-self-card.mjs   Entry — the home vendor self-card synthesis
-├── bootstrap-research.mjs    Entry — deep research via Opus 4.7 → HUMAN section
-├── refresh-battlecards.mjs   Entry — weekly refresh (self first, then all competitors)
-├── analyst.mjs               Entry — 5-mode persona-driven brief writer
-├── serve.mjs                 Zero-dep localhost server
-├── help.mjs                  CLI cheat-sheet
-├── db-migrate.mjs            Applies sql/*.sql in order
-├── test-store.mjs            store.mjs round-trip smoke test
+├── config/               Everything a deployment retargets. Each layer resolves
+│                         $SIGNALS_* → *.local.mjs → *.default.mjs:
+│                         companies, feeds, deal-context, subdomain-signals,
+│                         agent-policy, aeo-prompts. Plus correlation-rules.mjs
 │
-├── sql/
-│   ├── 001-init.sql          signals table + primary indexes
-│   └── 002-add-signaltype-index.sql
+├── core/                 Domain logic, no I/O entry points:
+│                         store (libSQL client), artifacts (the one safe way to
+│                         read/write a generated document), features, scoring,
+│                         signal-taxonomy, home-brand (anchor mode + voice),
+│                         coverage, agent-budget, registry, events, robots, feed-urls
 │
-├── analyst/
-│   └── persona.md            Senior CI analyst persona (loaded at runtime)
+├── runtime/              env.mjs (.env loader) + paths.mjs (the one path resolver)
 │
-├── battlecards/              MD files (HUMAN + AUTO sections)
-├── briefs/                   Analyst CLI output (gitignored)
-├── viewer/                   index.html + viewer.js + viewer.css (static)
-├── tools/                    shot.mjs + inspect.mjs — Playwright visual tooling
-├── plans/                    Tiered plans for future work (quick / good / thinkable / hard / crazy)
-├── data/                     gitignored runtime cache
-└── reference/                Pointer to the originating news-into-intelligence repo
+├── pipeline/             classify, openrouter, correlate, transcript, notify
+│
+├── watchers/             fetch-signals, hn, sites, certs, youtube, github, tavily,
+│   └── adapters/         trends, aeo — and the rss / reddit / tavily / youtube-channel
+│                         source adapters they share
+│
+├── cli/                  Every `npm run` entry a human types: analyst, help, doctor,
+│                         bootstrap-*, refresh-battlecards, cost-report, reclassify,
+│                         weekly-report, transcripts, chrome-data, demo, list-companies
+│
+├── ops/                  cron-entry.mjs, db-migrate.mjs, notify-test.mjs
+│
+├── dashboard/
+│   ├── serve.mjs         Zero-dep localhost server + JSON endpoints
+│   └── viewer/           index.html + viewer.js + viewer.css (static, no build)
+│
+├── sql/                  001-init … 009-artifacts — nine migrations, applied in order
+├── test/                 smoke.mjs (the gate) + store-roundtrip + fixtures/
+├── tools/                shot.mjs + inspect.mjs — Playwright visual tooling
+│
+├── analyst/persona.md    Senior CI analyst persona (loaded at runtime)
+├── battlecards/          MD files (HUMAN + AUTO sections)
+├── briefs/               Analyst CLI output (gitignored)
+├── demo/                 seed-signals.jsonl — the shipped demo dataset
+├── chrome-extension/     Side-panel extension (unpacked)
+├── docs/                 start / howto / why / cost / mcp / blindspots / roadmap / plans
+├── data/                 gitignored runtime cache
+└── reference/            Pointer to the originating news-into-intelligence repo
 ```
 
 ---
@@ -469,6 +534,6 @@ Signal/
 
 ## See also
 
-- [PLAN.md](./PLAN.md) — master roadmap
-- [plans/](./plans/) — tiered plans (quick wins → crazy ideas)
+- [docs/roadmap.md](./docs/roadmap.md) — master roadmap
+- [docs/plans/](./docs/plans/) — tiered plans (quick wins → crazy ideas)
 - [reference/README.md](./reference/README.md) — pointer to the original news-into-intelligence repo for modules worth porting later
