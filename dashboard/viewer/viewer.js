@@ -369,7 +369,6 @@ const COMPANY_CLICK_HINT = {
   feed:    'click to filter the feed',
   battle:  'click to pick the rival',
   compare: 'click to pick the other side',
-  intel:   'click to scope the intel',
 };
 const COMPANY_CLICK_HINT_DEFAULT = 'click opens Battle';
 
@@ -525,7 +524,7 @@ function renderSidebarCompanyRow(c) {
   // interaction. A selection indicator that marks something the current view is
   // not scoped to is worse than none.
   const activeId = (state.mode === 'battle' || state.mode === 'compare') ? state.battleCompetitor
-    : (state.mode === 'feed' || state.mode === 'intel') ? state.currentCompany
+    : state.mode === 'feed' ? state.currentCompany
     : null;
   const isActive = activeId != null && activeId === c.id;
 
@@ -576,13 +575,7 @@ function selectCompanyFromSidebar(id) {
   const co = state.companies.find((c) => c.id === id);
   if (!co) return;
 
-  if (state.mode === 'intel') {
-    // Scoped in place — Intel's infrastructure panel follows this selection.
-    state.currentCompany = id;
-    renderIntelInfrastructure();
-    renderSidebar();
-    writeUrlState();
-  } else if (state.mode === 'feed') {
+  if (state.mode === 'feed') {
     state.currentCompany = id;
     renderKPI(); renderCompetitorCard();
     renderBattlecard();
@@ -720,8 +713,6 @@ function renderAll() {
     renderBattle();
   } else if (state.mode === 'compare') {
     renderCompare();
-  } else if (state.mode === 'intel') {
-    renderIntelInfrastructure();
   } else if (state.mode === 'market') {
     renderMarket();
   } else if (state.mode === 'briefs') {
@@ -3037,6 +3028,9 @@ async function renderBattle() {
     : `<h3>${icon('award')} Where we win vs ${esc(them.name)}</h3><p class="empty">No win-themes section in battlecard.</p>`;
 
   // ── Saved call preps for this competitor
+  // Infrastructure (cert + sitemap + robots snapshots) for the competitor.
+  await renderInfrastructure(them.id, them.name);
+
   await renderSavedPreps(them.id);
 }
 
@@ -3193,26 +3187,8 @@ function renderFeatureMatrixPanel(ourMd, theirMd, us, them, targetId = 'compare-
   onlyLead?.addEventListener('change', applyToggles);
 }
 
-/**
- * Intel's infrastructure panel, scoped to the company selected in the sidebar.
- *
- * Infrastructure is intel about ONE company — subdomains, sitemap paths, robots
- * rules — so it needed an owner when it moved out of Battle, where the
- * competitor was implied. It follows `currentCompany`, which makes Intel the
- * third company-scoped mode alongside Feed and Battle, and means a sidebar
- * click here refines the view in place instead of teleporting to Battle.
- */
-async function renderIntelInfrastructure() {
-  const el = document.getElementById('intel-infrastructure');
-  if (!el) return;
-  const co = state.companies.find((c) => c.id === state.currentCompany)
-    || state.companies.find((c) => c.id === battleAnchorId());
-  if (!co) { el.innerHTML = ''; return; }
-  await renderInfrastructure(co.id, co.name);
-}
-
 async function renderInfrastructure(companyId, companyName) {
-  const el = document.getElementById('intel-infrastructure');
+  const el = document.getElementById('battle-infrastructure');
   if (!el) return;
   el.innerHTML = `<h3>${icon('radio')} Infrastructure observed <span class="saved-loading">loading…</span></h3>`;
   try {
