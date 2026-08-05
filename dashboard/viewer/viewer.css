@@ -2863,3 +2863,29 @@ table.verified-facts ul { margin: 4px 0 0; padding-left: 16px; }
 .company-top li { display: flex; align-items: baseline; gap: 9px; padding: 6px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
 .company-top-meta { color: var(--muted); font-size: 11px; margin-left: auto; white-space: nowrap; }
 .sb-section-caption.first { border-top: none; margin-top: 0; padding-top: 4px; }
+
+/* ─── Battlecard sections ─────────────────────────────────────────────────
+   17 sections plus a deep-research block is not a document a person reads
+   top to bottom. Collapsed per section it becomes a table of contents that
+   happens to contain the document. */
+.card-section { border-bottom: 1px solid var(--border-soft); }
+.card-section > summary {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 9px 2px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.card-section > summary::-webkit-details-marker { display: none; }
+.card-section > summary::before {
+  content: '▸';
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform 0.12s;
+}
+.card-section[open] > summary::before { transform: rotate(90deg); }
+.card-section > summary:hover { background: var(--panel-hover); }
+.card-section-title { font-weight: 600; font-size: 13px; }
+.card-section-hint { margin-left: auto; font-size: 11px; color: var(--muted); }
+.card-section-body { padding: 2px 0 14px 20px; }
+.card-section-body > h4 { margin: 14px 0 6px; font-size: 12px; }

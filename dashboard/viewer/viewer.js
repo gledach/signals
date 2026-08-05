@@ -1948,7 +1948,7 @@ async function renderBattlecard() {
     const res = await fetch(`/api/battlecard/${id}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const md = await res.text();
-    target.innerHTML = renderMarkdown(md);
+    target.innerHTML = renderMarkdown(md, { collapsible: true });
     describeBattlecard(md);
   } catch {
     target.innerHTML = `<p class="empty">No battlecard for <code>${id}</code>. Run:<br><code>npm run bootstrap -- --company=${id}</code></p>`;
@@ -2117,7 +2117,7 @@ async function renderCompanyBattlecard(co) {
   try {
     const md = await getBattlecard(co.id);
     el.innerHTML = md
-      ? renderMarkdown(md)
+      ? renderMarkdown(md, { collapsible: true })
       : `<p class="empty">No battlecard for <code>${esc(co.id)}</code> yet. Run:<br><code>npm run bootstrap -- --company=${esc(co.id)}</code></p>`;
   } catch (err) {
     el.innerHTML = `<p class="empty">Could not load: ${esc(err.message)}</p>`;
@@ -4366,7 +4366,21 @@ function tableCells(line) {
   return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
 }
 
-function renderMarkdown(md) {
+// Sections a reader wants open on arrival: one that orients them, and the one
+// that cost real money to produce. Everything else is reference, opened when
+// looked for. Prefix-matched, because the deep-research heading carries a
+// timestamp.
+const CARD_OPEN_BY_DEFAULT = ['Positioning', 'Deep research', 'Company overview'];
+
+/**
+ * @param opts.collapsible  wrap each `###` section in a <details>.
+ *
+ * A generated battlecard is 17 sections and, with a deep-research block, over a
+ * thousand lines. As one scroll it is not read, it is skimmed past. Collapsed
+ * per section it becomes a table of contents that happens to contain the
+ * document.
+ */
+function renderMarkdown(md, opts = {}) {
   const lines = md.split('\n');
   const out = [];
   let inList = false;
@@ -4410,9 +4424,39 @@ function renderMarkdown(md) {
     out.push(`<p>${inlineFmt(line)}</p>`);
   }
   closeList();
-  return out.join('\n');
+  const rendered = out.join('\n');
+  return opts.collapsible ? collapseSections(rendered) : rendered;
   function openList() { if (!inList) { out.push('<ul>'); inList = true; } }
   function closeList() { if (inList) { out.push('</ul>'); inList = false; } }
+}
+
+/**
+ * Turn every <h3> and the content following it into a <details>.
+ *
+ * Operates on rendered HTML rather than on markdown so it cannot disagree with
+ * the renderer about where a section starts — the headings it splits on are
+ * exactly the ones renderMarkdown just emitted.
+ */
+function collapseSections(html) {
+  const parts = html.split(/(?=<h3>)/);
+  if (parts.length < 2) return html;
+  return parts.map((part) => {
+    const m = part.match(/^<h3>([\s\S]*?)<\/h3>/);
+    if (!m) return part;                        // preamble before the first h3
+    const heading = m[1];
+    const body = part.slice(m[0].length);
+    const plain = heading.replace(/<[^>]+>/g, '');
+    const open = CARD_OPEN_BY_DEFAULT.some((h) => plain.startsWith(h));
+    // A closed section still has to say what is inside it, or collapsing just
+    // hides the document instead of indexing it.
+    const bullets = (body.match(/<li>/g) || []).length;
+    const rows = (body.match(/<tbody>[\s\S]*?<\/tbody>/)?.[0].match(/<tr>/g) || []).length;
+    const hint = rows ? `${rows} rows` : bullets ? `${bullets} items` : '';
+    return `<details class="card-section"${open ? ' open' : ''}>`
+      + `<summary><span class="card-section-title">${heading}</span>`
+      + (hint ? `<span class="card-section-hint">${hint}</span>` : '')
+      + `</summary><div class="card-section-body">${body}</div></details>`;
+  }).join('');
 }
 
 function inlineFmt(s) {
