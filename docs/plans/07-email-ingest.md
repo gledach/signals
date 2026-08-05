@@ -375,7 +375,7 @@ Once Phase 1 is shipped, the pattern for adding each: write parser, add to regis
 - [Plan 03 T1 Correlation Engine](./03-thinkable-bets.md) — already built; ingested email signals participate in convergence detection automatically
 - [Plan 08 Knowledge Graph](./08-knowledge-graph.md) — complementary; email signals feed the same extraction pipeline
 - [plans/02-good-builds.md](./02-good-builds.md) G4 (Weekly digest email) — parallel feature: emails LEAVING Signal; uses different library (Resend)
-- [BLINDSPOTS.md](../BLINDSPOTS.md) — blind-spot catalog; email ingest partially closes "email-only intel sources" gap
+- [blindspots.md](../blindspots.md) — blind-spot catalog; email ingest partially closes "email-only intel sources" gap
 
 ---
 

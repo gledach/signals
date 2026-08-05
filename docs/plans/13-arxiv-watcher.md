@@ -6,7 +6,7 @@
 Ingest arXiv preprints authored by researchers at tracked competitors. Two distinct value streams from one watcher:
 
 1. **Capability research signal** — papers leak product direction 6–18 months before launch.
-2. **Author-affiliation tracking** — closes [BLINDSPOTS](../BLINDSPOTS.md) #3 (employment / team) at $0 instead of $49/mo Proxycurl.
+2. **Author-affiliation tracking** — closes [BLINDSPOTS](../blindspots.md) #3 (employment / team) at $0 instead of $49/mo Proxycurl.
 
 ---
 
@@ -175,7 +175,7 @@ Either order works. The watcher itself is independent of both.
 
 ## See also
 
-- [BLINDSPOTS.md](../BLINDSPOTS.md) — #3 employment + open-source pressure axis
+- [blindspots.md](../blindspots.md) — #3 employment + open-source pressure axis
 - [plans/02-good-builds.md](./02-good-builds.md) — G3 LinkedIn (the paid equivalent)
 - [plans/08-knowledge-graph.md](./08-knowledge-graph.md) — where `team_move` signals eventually want to live
-- [analyst/persona.md](../analyst/persona.md) — DOMAIN AXES this watcher feeds
+- [analyst/persona.md](../../analyst/persona.md) — DOMAIN AXES this watcher feeds

@@ -4,7 +4,7 @@
 
 Turn Signal from a news dashboard into an **intelligence system**. Add a persistent knowledge layer between raw signals and synthesis so every claim in every battlecard has a receipt.
 
-Read [NEXTSTEPS.md](../NEXTSTEPS.md) first for the architectural context.
+Read [nextsteps.md](../nextsteps.md) first for the architectural context.
 
 **Status:** Architecture approved 2026-04-16. Ready to execute.
 
@@ -756,8 +756,8 @@ open http://localhost:5180/#mode=knowledge
 
 ## See also
 
-- [NEXTSTEPS.md](../NEXTSTEPS.md) — architectural vision + why
-- [BLINDSPOTS.md](../BLINDSPOTS.md) — the meta gaps this closes
-- [PLAN.md](../PLAN.md) — where this slots into the full roadmap
+- [nextsteps.md](../nextsteps.md) — architectural vision + why
+- [blindspots.md](../blindspots.md) — the meta gaps this closes
+- [roadmap.md](../roadmap.md) — where this slots into the full roadmap
 - [plans/03-thinkable-bets.md](./03-thinkable-bets.md) — T1 correlation engine (built); thinking layer that feeds this one
 - [plans/07-email-ingest.md](./07-email-ingest.md) — complementary: more sources feeding the graph

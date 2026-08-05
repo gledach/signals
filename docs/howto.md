@@ -132,10 +132,35 @@ npm run view
 ```
 Then open <http://localhost:5180>. Pin the tab — it auto-refreshes every 2 minutes.
 
-**Eight modes** (left sidebar): Live Feed (1) · Battle (2) · Compare (3) · Market (4) ·
-Intel (5) · Report (6) · Briefs (7) · Inbox (8). The mode list lives in one place —
-`SIDEBAR_MODES` in `dashboard/viewer/viewer.js` — and the sidebar, the number keys, the
-`g`-leader letters and the URL `mode=` parameter all derive from it.
+The sidebar has **two axes, labelled as such**:
+
+- **VIEWS** — the whole market: Live Feed (1) · Battle (2) · Compare (3) · Market (4) ·
+  Intel (5) · Report (6) · Briefs (7) · Inbox (8)
+- **COMPANIES** — click any one to open **its page**
+
+That split is the point. A sidebar company click used to mean four different things
+depending on the mode, and clicking the *anchor* meant nothing at all — which is also why
+the anchor's own infrastructure was unreachable. Now one click always opens that company,
+from anywhere.
+
+The mode list lives in one place — `SIDEBAR_MODES` in `dashboard/viewer/viewer.js` — and
+the sidebar, the number keys, the `g`-leader letters and the URL `mode=` parameter all
+derive from it. `company` is a route without a nav entry, declared in `EXTRA_ROUTES`.
+
+#### Company page (click any company)
+
+Everything about one company, tabs across the top:
+
+| Tab | What it holds |
+|---|---|
+| **Overview** | signal counts, convergences, criticals, customer wins, last-collected date, top 5 by impact |
+| **Signals** | that company's feed |
+| **Infrastructure** | subdomains, sitemap paths, robots rules — for **any** company, the anchor included |
+| **Battlecard** | the full card, HUMAN and AUTO |
+
+Two actions on a non-anchor page: **Prep against** (jumps to Battle) and **Compare** (jumps
+to Compare with that company selected). Deep-linkable:
+`#mode=company&company=cursor&tab=infrastructure`.
 
 #### Live Feed (default)
 - **Sidebar company list** — pick whose feed / battlecard to view, grouped by roster category
@@ -150,7 +175,9 @@ Intel (5) · Report (6) · Briefs (7) · Inbox (8). The mode list lives in one p
 - Battle compares the configured **anchor** (`isUs` if a company is marked as yours, else
   `isMain`, else the first roster entry) against one rival. The anchor is locked to
   `config/companies.local.mjs` and is only editable in pure market-watch mode — the subject
-  is a setting, not a per-view choice. The rival comes from the "against" dropdown or the sidebar.
+  is a setting, not a per-view choice. The rival comes from the "against" dropdown, or from
+  **Prep against** on a company page — the sidebar no longer picks it, because a sidebar
+  click opens a company rather than changing what you are comparing.
 - Comparison content is **not** here — it moved to [Compare](#compare-n-way). Battle is prep.
 - Below the deal-context filters, four dedicated panels:
   - **🎯 Kill Shots vs `<competitor>`** — the rehearsed counter-pitches for when the prospect is leaning toward this competitor
