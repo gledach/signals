@@ -90,19 +90,10 @@
         </div>
       </header>
       <div class="page-content">
-        <!-- Compact per-competitor card — replaces the full-width #battlecard-section.
-             Data-populated by renderCompetitorCard(). -->
-        <section id="feed-competitor-card" class="competitor-card" aria-label="Current competitor at a glance"></section>
+        <!-- Per-company card and battlecard used to live here, duplicating what
+             the company page now does properly. Feed is the market stream. -->
 
-        <!-- Collapsible full battlecard. The summary is filled by
-             renderBattlecard() so it says what is actually inside — a bare
-             "View full battlecard" gave no clue that a card held a fresh
-             deep-research brief, so an expensive research pass looked like it
-             had done nothing at all. -->
-        <details class="battlecard-details" id="feed-battlecard-details">
-          <summary id="feed-battlecard-summary">View full battlecard</summary>
-          <article id="battlecard"></article>
-        </details>
+
 
         <!-- Legacy containers kept hidden so existing JS references stay no-op safe.
              #competitor-nav and #kpi-strip both replaced by the competitor card above. -->
@@ -259,7 +250,7 @@
     <!-- ─── INTEL mode (dedicated home for convergences + cross-signal synthesis) ─── -->
     <main id="intel-mode" class="mode">
       <header class="page-header">
-        <h1>Intel <span class="page-subtitle" id="intel-subtitle">Cross-signal patterns · this week</span></h1>
+        <h1>Convergences <span class="page-subtitle" id="intel-subtitle">Cross-signal patterns · this week</span></h1>
         <div class="page-actions"></div>
       </header>
       <div class="page-content intel-content">

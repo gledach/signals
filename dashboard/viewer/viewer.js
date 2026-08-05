@@ -27,6 +27,9 @@ const state = {
   // Empty means "just the current Battle competitor", so arriving from Battle
   // shows the pair you were already looking at.
   compareIds: [],
+  // Optional Feed filter, set from the chip in the Feed header — NOT from the
+  // sidebar, which opens a company page instead.
+  feedCompany: null,
   // Whose infrastructure the Battle panel shows: 'them' (default) or 'us'.
   // The anchor's snapshots were collected and served but unreachable — the
   // panel only ever received the competitor, and the anchor is excluded from
@@ -340,7 +343,7 @@ const SIDEBAR_MODES = [
   { id: 'battle',  label: 'Battle',    icon: ICONS.battle, kbd: '2', key: 'b' },
   { id: 'compare', label: 'Compare',   icon: ICONS.market, kbd: '3', key: 'c' },
   { id: 'market',  label: 'Market',    icon: ICONS.market, kbd: '4', key: 'm' },
-  { id: 'intel',   label: 'Intel',     icon: ICONS.intel,  kbd: '5', key: 'i' },
+  { id: 'intel',   label: 'Convergences', icon: ICONS.intel, kbd: '5', key: 'i' },
   { id: 'report',  label: 'Report',    icon: ICONS.report, kbd: '6', key: 'r' },
   { id: 'briefs',  label: 'Briefs',    icon: ICONS.briefs, kbd: '7', key: 's' },
   { id: 'inbox',   label: 'Inbox',     icon: ICONS.inbox,  kbd: '8', key: 'x' },
@@ -541,7 +544,7 @@ function renderSidebarCompanyRow(c) {
   // interaction. A selection indicator that marks something the current view is
   // not scoped to is worse than none.
   const activeId = (state.mode === 'battle' || state.mode === 'compare') ? state.battleCompetitor
-    : (state.mode === 'company' || state.mode === 'feed') ? state.currentCompany
+    : state.mode === 'company' ? state.currentCompany
     : null;
   const isActive = activeId != null && activeId === c.id;
 
@@ -683,9 +686,9 @@ function renderAll() {
   renderInbox();
   populateTypeFilter();
   if (state.mode === 'feed') {
-    renderCompetitorNav();
-    renderKPI(); renderCompetitorCard();
-    renderBattlecard();
+    // Feed is the whole market. It used to be scoped to one company — the same
+    // job the company page now does, and does better — so two routes answered
+    // "what is happening at X" and neither was clearly the place to go.
     renderSignals();
   } else if (state.mode === 'battle') {
     renderBattle();
@@ -714,7 +717,8 @@ function renderFromAutoRefresh() {
   renderSidebar(); // refresh 24h counts + active state every auto-tick
   if (state.mode === 'inbox') renderInbox(); // keep tab counts live while user is here
   if (state.mode === 'feed') {
-    renderKPI(); renderCompetitorCard();
+    // Feed is the market stream now — no per-company card or battlecard to
+    // refresh, and refreshing them would write into markup that is gone.
     renderSignals();
   }
   // Battle + Market + Report: no-op on auto-refresh; user interaction drives those.
@@ -2130,7 +2134,8 @@ function renderSignals() {
   const ul = document.getElementById('signals');
   ul.innerHTML = '';
   const filtered = state.signals.filter((s) => {
-    if (state.currentCompany && s.companyId !== state.currentCompany) return false;
+    // No company scoping here any more; that is the company page's Signals tab.
+    if (state.feedCompany && s.companyId !== state.feedCompany) return false;
     if (!state.filters.showNoise && s.signalType === 'noise') return false;
     if (state.filters.minImpact && s.impactScore < state.filters.minImpact) return false;
     if (state.filters.type && s.signalType !== state.filters.type) return false;
@@ -2160,12 +2165,11 @@ function renderSignals() {
 function renderSignalsContextLabel(visibleCount) {
   const el = document.getElementById('signals-context');
   if (!el) return;
-  const company = state.currentCompany
-    ? state.companies.find((c) => c.id === state.currentCompany)
+  const company = state.feedCompany
+    ? state.companies.find((c) => c.id === state.feedCompany)
     : null;
-  const companyLabel = company ? company.name : 'All competitors';
-  const totalForCompany = state.currentCompany
-    ? state.signals.filter((s) => s.companyId === state.currentCompany).length
+  const totalForCompany = state.feedCompany
+    ? state.signals.filter((s) => s.companyId === state.feedCompany).length
     : state.signals.length;
   const filtersActive =
     state.filters.minImpact > 0 ||
@@ -2175,7 +2179,9 @@ function renderSignalsContextLabel(visibleCount) {
     ? `${visibleCount} of ${totalForCompany}`
     : `${visibleCount}`;
   el.innerHTML = `
-    <span class="scope-chip"><span class="scope-label">Competitor:</span> <strong>${esc(companyLabel)}</strong></span>
+    <span class="scope-chip">${company
+      ? `<span class="scope-label">Filtered to</span> <strong>${esc(company.name)}</strong>`
+      : '<strong>Whole market</strong>'}</span>
     <span class="scope-count">${countLabel} signal${visibleCount === 1 ? '' : 's'}</span>
     ${filtersActive ? '<span class="scope-filters-hint" title="Min-impact, type, or noise filters are active — click to clear">· filters active <button type="button" class="scope-clear-btn" id="scope-clear-btn">clear</button></span>' : ''}`;
   const clearBtn = el.querySelector('#scope-clear-btn');
@@ -4467,6 +4473,14 @@ function inlineFmt(s) {
 }
 
 init().catch((err) => {
-  document.getElementById('battlecard').innerHTML = `<p class="empty">Init error: ${err?.message || err}</p>`;
+  // Write somewhere that ALWAYS exists. This used to target #battlecard, which
+  // lived in the Feed layout — so removing that element would have made an init
+  // failure throw here and render a blank page with no message at all. An error
+  // handler that depends on optional markup fails precisely when it is needed.
+  const banner = document.createElement('p');
+  banner.className = 'empty';
+  banner.style.cssText = 'margin:24px;font-size:14px';
+  banner.textContent = `Signal failed to start: ${err?.message || err}`;
+  document.body.prepend(banner);
   console.error(err);
 });
