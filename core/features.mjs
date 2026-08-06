@@ -76,6 +76,27 @@ export function featureRegistryForPrompt() {
   return lines.join('\n');
 }
 
+// A capability cell's note is the ONLY justification that cell has — the feature
+// schema carries no citation field — so truncating it mid-word destroys the only
+// reason a reader has to believe the status. The renderer used to apply a bare
+// `.slice(0, 120)`, which produced cells ending "...raises questions about data
+// handlin": a sentence that looks finished and is not.
+//
+// Two constraints on the fix. A markdown table cell cannot contain a newline —
+// the viewer's parser requires each row to start with `|`, so a stray newline
+// silently drops the entire row — and `|` must stay escaped. So: collapse all
+// whitespace, escape pipes, then cut on a word boundary and mark the cut.
+export const NOTE_MAX = 400;
+
+export function cellNote(raw) {
+  const flat = String(raw || '').replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim();
+  if (flat.length <= NOTE_MAX) return flat;
+  const cut = flat.slice(0, NOTE_MAX);
+  const lastSpace = cut.lastIndexOf(' ');
+  const body = lastSpace > NOTE_MAX * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return `${body.replace(/[,;:.\s]+$/, '')}…`;
+}
+
 export function featuresById() {
   const m = new Map();
   for (const f of FEATURES) m.set(f.id, f);

@@ -1292,6 +1292,81 @@ section('15. Agent surface reports its own blind spots');
   } else ok('collection health derives from signal recency, not the cron log');
 }
 
+// ──── 16. corroboration excludes the subject's own voice ─────────────────────
+
+section('16. First-party evidence is not corroboration');
+{
+  // A convergence asserts that several INDEPENDENT publishers reported the same
+  // thing. Before this gate existed, a vendor posting one announcement to its blog
+  // and its changelog cleared a two-publisher bar, and the claim shipped with a
+  // score and a summary calling those two "independent publishers". The worst case
+  // in the store was ten pieces of evidence resolving to two outlets, both owned by
+  // the subject, under a title asserting corroboration across multiple channels.
+  const { makeFirstPartyPredicate } = await import('../core/first-party.mjs');
+  const { FIRST_PARTY } = await import('../config/first-party.mjs');
+  const { clusterIntoEvents, distinctPublishers, distinctIndependentPublishers } =
+    await import('../core/events.mjs');
+
+  // Two outlets owned by one subject, reached through an aggregator — the shape
+  // that used to pass. Uses a synthetic roster so the check never names a brand.
+  const isFP = makeFirstPartyPredicate({
+    aliases: { acme: ['The Acme Blog', 'Acme Changelog', 'acme.example'] },
+    wires: ['Business Wire'],
+    domains: { acme: 'acme.example' },
+  });
+
+  const own = [
+    { hashId: 'a', title: 'Acme ships an agent - The Acme Blog', link: 'https://news.google.com/1', firstSeen: new Date().toISOString() },
+    { hashId: 'b', title: 'Agent is live now - Acme Changelog', link: 'https://news.google.com/2', firstSeen: new Date().toISOString() },
+  ];
+  const evOwn = clusterIntoEvents(own, { isFirstParty: (s) => isFP(s, 'acme') });
+  if (distinctPublishers(evOwn) < 2) {
+    bad('fixture is wrong: the two owned outlets should still count as two publishers');
+  } else if (distinctIndependentPublishers(evOwn) !== 0) {
+    bad(`a subject's own blog and changelog still count as ${distinctIndependentPublishers(evOwn)} independent publisher(s)`);
+  } else ok("a subject's own outlets are evidence but not corroboration");
+
+  // The same outlet is NOT first-party to a different subject.
+  const evOther = clusterIntoEvents(own, { isFirstParty: (s) => isFP(s, 'other') });
+  if (distinctIndependentPublishers(evOther) !== distinctPublishers(evOther)) {
+    bad('first-party suppression leaked across subjects — it must be scoped to the company the claim is about');
+  } else ok('first-party is scoped to the subject, not global');
+
+  // Omitting the predicate must not change existing behaviour.
+  const evNone = clusterIntoEvents(own);
+  if (distinctIndependentPublishers(evNone) !== distinctPublishers(evNone)) {
+    bad('clusterIntoEvents changed behaviour when no isFirstParty predicate is supplied');
+  } else ok('no predicate supplied → previous behaviour preserved');
+
+  // The gate must actually be applied, and the summary must not call the raw
+  // outlet count "independent" — that wording is what made this invisible.
+  const corr = fs.readFileSync(path.join(ROOT, 'pipeline', 'correlate.mjs'), 'utf8');
+  if (!/independent\s*<\s*FIRST_PARTY\.minIndependent/.test(corr)) {
+    bad('correlate.mjs computes independence but never gates on it');
+  } else ok('correlate gates on independent publishers');
+  if (/\$\{plural\(nPub, 'independent publisher'\)\}/.test(corr)) {
+    bad("correlate still labels the raw publisher count as 'independent publisher'");
+  } else ok('convergence prose reports the independent count, not the raw one');
+
+  // A capability note is the only justification a cell has, and the table row it
+  // lives in breaks if the note contains a newline.
+  const bc = fs.readFileSync(path.join(ROOT, 'cli', 'bootstrap-battlecard.mjs'), 'utf8');
+  if (/\.replace\(\/\\\|\/g, '\\\\\|'\)\.slice\(0, 120\)/.test(bc)) {
+    bad('battlecard notes are still hard-truncated at 120 chars mid-word');
+  } else ok('battlecard notes are not cut mid-word at 120 chars');
+  const { cellNote } = await import('../core/features.mjs');
+  if (typeof cellNote !== 'function') {
+    ok('cellNote not importable (module has side effects) — static check above still applies');
+  } else if (/\n/.test(cellNote('a\nb'))) {
+    bad('cellNote lets a newline through — it would silently drop the whole table row');
+  } else if (!cellNote('x '.repeat(400)).endsWith('…')) {
+    bad('cellNote truncates without marking the cut');
+  } else ok('cellNote collapses newlines and marks truncation');
+
+  if (!Number.isFinite(FIRST_PARTY.minIndependent)) bad('FIRST_PARTY.minIndependent is not a number');
+  else ok(`independence floor configured (minIndependent=${FIRST_PARTY.minIndependent})`);
+}
+
 // ────────────────────────────────── verdict ─────────────────────────────────
 
 console.log(FAIL ? '\nRED — smoke failed\n' : '\nGREEN — smoke passed\n');

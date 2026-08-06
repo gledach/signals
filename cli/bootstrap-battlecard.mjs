@@ -10,7 +10,7 @@ import { getCompany, COMPANIES } from '../config/companies.mjs';
 import { framing, renderHumanScaffold, migrateHumanScaffold } from '../core/home-brand.mjs';
 import { loadIndex } from '../core/store.mjs';
 import { chatJson, chat, synthesisModel, hasApiKey } from '../pipeline/openrouter.mjs';
-import { FEATURES, FEATURE_STATUS_VALUES, featureRegistryForPrompt, featuresById } from '../core/features.mjs';
+import { FEATURES, FEATURE_STATUS_VALUES, featureRegistryForPrompt, featuresById, cellNote } from '../core/features.mjs';
 import { BATTLECARDS_DIR } from '../runtime/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -126,7 +126,7 @@ You will produce STRICT JSON with this shape (no extra keys, no preamble):
     {"date": "<YYYY-MM-DD or best guess>", "headline": "<short>", "impact": "<why it matters>"}
   ],
   "featureMatrix": [
-    {"id": "<feature-id from the provided registry>", "status": "yes|partial|no|unknown", "note": "<≤80 chars — evidence or caveat; empty string if none>"}
+    {"id": "<feature-id from the provided registry>", "status": "yes|partial|no|unknown", "note": "<one complete sentence, ≤240 chars — the evidence or caveat this status rests on; a bare status with no note is unusable, but an empty string is better than an invented reason. Single line only: no newlines.>"}
   ],
   "confidenceNotes": "<1-2 sentences — what's weakly-supported and needs human verification>"
 }
@@ -223,7 +223,7 @@ function renderFeatureMatrixTable(matrix) {
   for (const f of FEATURES) {
     const r = byId.get(f.id) || {};
     const status = FEATURE_STATUS_VALUES.includes(r.status) ? r.status : 'unknown';
-    const note = (r.note || '').replace(/\|/g, '\\|').slice(0, 120);
+    const note = cellNote(r.note);
     lines.push(`| ${f.id} | ${f.label} | ${f.category} | ${status} | ${note} |`);
   }
   // Touch `registry` to keep a live reference (enables future `why` fallback).

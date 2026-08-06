@@ -13,7 +13,17 @@ import { loadAllSignals, appendSignal, alreadySeen } from '../core/store.mjs';
 import { THEME_RULES, COUNT_RULES } from '../config/correlation-rules.mjs';
 import { impactBand } from '../core/scoring.mjs';
 import { notifySignal, getToastStats } from './notify.mjs';
-import { clusterIntoEvents, distinctPublishers, scoreFromEvidence } from '../core/events.mjs';
+import { clusterIntoEvents, distinctPublishers, distinctIndependentPublishers, scoreFromEvidence } from '../core/events.mjs';
+import { makeFirstPartyPredicate } from '../core/first-party.mjs';
+import { FIRST_PARTY } from '../config/first-party.mjs';
+
+// A vendor's own blog is evidence, not agreement. Built once: this runs against
+// every signal of every rule of every company.
+const isFirstPartyFor = makeFirstPartyPredicate({
+  aliases: FIRST_PARTY.aliases,
+  wires: FIRST_PARTY.wires,
+  domains: Object.fromEntries(Object.values(COMPANIES).map((c) => [c.id, c.domain])),
+});
 
 const argv = process.argv.slice(2);
 const COMPANY_FILTER = argv.find((a) => a.startsWith('--company='))?.split('=')[1];
@@ -73,7 +83,7 @@ async function main() {
     console.log(`\n── ${companyName} — ${companySignals.length} signals ──`);
 
     for (const rule of THEME_RULES) {
-      const match = evalThemeRule(rule, companySignals);
+      const match = evalThemeRule(rule, companySignals, companyId);
       if (!match) continue;
       const { emitted, skipped } = await handleFire({ kind: 'theme', rule, match, companyId, companyName });
       if (emitted) firedCount++;
@@ -81,7 +91,7 @@ async function main() {
     }
 
     for (const rule of COUNT_RULES) {
-      const match = evalCountRule(rule, companySignals);
+      const match = evalCountRule(rule, companySignals, companyId);
       if (!match) continue;
       const { emitted, skipped } = await handleFire({ kind: 'count', rule, match, companyId, companyName });
       if (emitted) firedCount++;
@@ -95,7 +105,7 @@ async function main() {
 
 // ─────────────────────────────── rule evaluators ────────────────────────────
 
-function evalThemeRule(rule, signals) {
+function evalThemeRule(rule, signals, companyId) {
   const cutoff = Date.now() - rule.windowDays * 86400_000;
   const inWindow = signals.filter(
     (s) => new Date(s.firstSeen).getTime() >= cutoff && isEligibleForCorrelation(s),
@@ -114,24 +124,29 @@ function evalThemeRule(rule, signals) {
   // `sourceKind` is the ingestion route: the same press release found via RSS and via web
   // search used to count as two independent sources. Clustering collapses syndication to
   // one event, so six outlets running one wire story can no longer masquerade as a pattern.
-  const events = clusterIntoEvents(matches);
+  const events = clusterIntoEvents(matches, { isFirstParty: (s) => isFirstPartyFor(s, companyId) });
   const publishers = distinctPublishers(events);
+  const independent = distinctIndependentPublishers(events);
 
   const minEvents = rule.minEvents || rule.minSignals || 2;
   const minPublishers = rule.minPublishers || rule.minDistinctSourceKinds || 2;
   if (events.length < minEvents) return null;
   if (publishers < minPublishers) return null;
+  // The gate that matters. Without it a vendor posting to its own blog and its own
+  // changelog clears a two-publisher bar and the claim is scored as corroborated.
+  if (independent < FIRST_PARTY.minIndependent) return null;
 
   return {
     matches,
     events,
     publishers,
+    independent,
     distinctSources: [...new Set(matches.map((m) => m.sourceKind))],
     windowDays: rule.windowDays,
   };
 }
 
-function evalCountRule(rule, signals) {
+function evalCountRule(rule, signals, companyId) {
   const cutoff = Date.now() - rule.windowDays * 86400_000;
   const types = Array.isArray(rule.signalTypes) ? rule.signalTypes : [rule.signalTypes];
   const matches = signals.filter((s) =>
@@ -144,19 +159,22 @@ function evalCountRule(rule, signals) {
   // Count rules previously required no diversity at all by default, so N copies of one
   // announcement — or N classifier mistakes from a single feed — read as a trend. Count
   // distinct events instead, and apply the publisher gate when the rule asks for one.
-  const events = clusterIntoEvents(matches);
+  const events = clusterIntoEvents(matches, { isFirstParty: (s) => isFirstPartyFor(s, companyId) });
   const publishers = distinctPublishers(events);
+  const independent = distinctIndependentPublishers(events);
 
   const minEvents = rule.minEvents || rule.threshold;
   if (events.length < minEvents) return null;
 
   const minPublishers = rule.minPublishers || rule.minDistinctSourceKinds;
   if (minPublishers && publishers < minPublishers) return null;
+  if (independent < FIRST_PARTY.minIndependent) return null;
 
   return {
     matches,
     events,
     publishers,
+    independent,
     distinctSources: [...new Set(matches.map((m) => m.sourceKind))],
     windowDays: rule.windowDays,
   };
@@ -185,7 +203,9 @@ async function handleFire({ kind, rule, match, companyId, companyName }) {
   const newest = Math.max(...match.matches.map((m) => Date.parse(m.pubDate || m.firstSeen) || 0));
   const score = scoreFromEvidence({
     eventCount: match.events.length,
-    publisherCount: match.publishers,
+    // Score on the independent count: a vendor must not be able to raise its own
+    // impact score by posting the same announcement to a second channel it owns.
+    publisherCount: match.independent ?? match.publishers,
     avgConfidence: confidences.length ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0.6,
     recencyDays: newest ? (Date.now() - newest) / 86400_000 : 30,
     baseWeight: rule.weight ?? 0.5,
@@ -219,12 +239,20 @@ async function handleFire({ kind, rule, match, companyId, companyName }) {
 
   const nEvents = match.events.length;
   const nPub = match.publishers;
+  // `publishers` counts every outlet that carried it, the subject's own included.
+  // Only this number is a second opinion, so only this number may be called
+  // independent — the previous wording labelled the raw count "independent
+  // publishers", which is how a vendor's own changelog read as corroboration.
+  const nInd = match.independent ?? nPub;
   const plural = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
+  const selfNote = nInd < nPub
+    ? ` A further ${plural(nPub - nInd, 'outlet')} here are the subject's own or a paid wire.`
+    : '';
 
   const title = `🔥 CONVERGENCE — ${companyName}: ${rule.interpretation}`;
   const summary =
-    `${plural(nEvents, 'distinct event')} reported by ${plural(nPub, 'independent publisher')} `
-    + `in ${rule.windowDays}d (from ${plural(match.matches.length, 'raw signal')}):\n${matchTitles}`;
+    `${plural(nEvents, 'distinct event')} reported by ${plural(nInd, 'independent publisher')} `
+    + `in ${rule.windowDays}d (from ${plural(match.matches.length, 'raw signal')}).${selfNote}\n${matchTitles}`;
 
   const signal = {
     hashId,
@@ -236,7 +264,7 @@ async function handleFire({ kind, rule, match, companyId, companyName }) {
     confidence: 0.8,
     rationale:
       `Rule '${rule.id}' fired — ${plural(nEvents, 'distinct event')} across `
-      + `${plural(nPub, 'independent publisher')} in ${rule.windowDays}d. `
+      + `${plural(nInd, 'independent publisher')} of ${plural(nPub, 'total outlet')} in ${rule.windowDays}d. `
       + `Score is derived from evidence (events, publisher independence, classifier `
       + `confidence, recency), not a fixed floor.`,
     companyRelevance: 'direct',

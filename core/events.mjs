@@ -127,13 +127,16 @@ export const SAME_STORY_THRESHOLD = 0.6;
  *
  * @returns {Array<{id,signals,publishers,independence,canonicalUrls,earliest,latest,titles}>}
  */
-export function clusterIntoEvents(signals, { threshold = SAME_STORY_THRESHOLD } = {}) {
+export function clusterIntoEvents(signals, { threshold = SAME_STORY_THRESHOLD, isFirstParty } = {}) {
   const items = (signals || []).map((s, i) => ({
     i,
     signal: s,
     url: canonicalUrl(s.link) || canonicalUrl(s.sourceUrl),
     tokens: titleTokens(s.title),
     publisher: publisherOf(s),
+    // Injected by the caller — `core/` does not know which outlets a vendor owns.
+    // Absent predicate means nothing is first-party, i.e. the previous behaviour.
+    firstParty: typeof isFirstParty === 'function' ? !!isFirstParty(s) : false,
   }));
 
   const clusters = [];
@@ -165,6 +168,14 @@ export function clusterIntoEvents(signals, { threshold = SAME_STORY_THRESHOLD } 
 
   return clusters.map((members) => {
     const publishers = [...new Set(members.map((m) => m.publisher).filter(Boolean))];
+    // The subject's own outlets are still evidence — they are just not a second
+    // opinion. Kept as a separate list so nothing is discarded and the viewer can
+    // show "10 items, 1 independent" rather than silently dropping nine.
+    const firstPartyPublishers = [...new Set(
+      members.filter((m) => m.firstParty).map((m) => m.publisher).filter(Boolean),
+    )];
+    const fpSet = new Set(firstPartyPublishers);
+    const independentPublishers = publishers.filter((p) => !fpSet.has(p));
     const dates = members
       .map((m) => Date.parse(m.signal.pubDate || m.signal.firstSeen))
       .filter((n) => Number.isFinite(n))
@@ -175,6 +186,8 @@ export function clusterIntoEvents(signals, { threshold = SAME_STORY_THRESHOLD } 
       id: members.map((m) => m.signal.hashId).sort()[0],
       signals: members.map((m) => m.signal),
       publishers,
+      independentPublishers,
+      firstPartyPublishers,
       // Signals with an unknown publisher each count as their own weak source rather
       // than collapsing together or being discarded.
       independence: publishers.length + members.filter((m) => !m.publisher).length,
@@ -193,6 +206,20 @@ export function clusterIntoEvents(signals, { threshold = SAME_STORY_THRESHOLD } 
 export function distinctPublishers(events) {
   const all = new Set();
   for (const e of events) for (const p of e.publishers) all.add(p);
+  return all.size;
+}
+
+/**
+ * How many publishers reported it that are NOT the subject itself.
+ *
+ * This is the number a corroboration claim should be gated on. `distinctPublishers`
+ * answers "how many outlets carried this", which a vendor can raise on its own by
+ * posting to its blog and its changelog; this answers "how many parties other than
+ * the subject said so", which it cannot.
+ */
+export function distinctIndependentPublishers(events) {
+  const all = new Set();
+  for (const e of events) for (const p of (e.independentPublishers || e.publishers)) all.add(p);
   return all.size;
 }
 

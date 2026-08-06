@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMPANIES, COMPETITOR_IDS } from '../config/companies.mjs';
+import { COMPANIES, COMPETITOR_IDS, matchAllCompaniesInText } from '../config/companies.mjs';
 import { loadAllSignals, loadIndex, totalCount, saveBrief } from '../core/store.mjs';
 import { chat, synthesisModel, deepThinkingModel, hasApiKey } from '../pipeline/openrouter.mjs';
 import { ANALYST_DIR, BRIEFS_DIR, fromRoot } from '../runtime/paths.mjs';
@@ -142,6 +142,57 @@ async function signalsForDeep() {
 
 // ── /gap user-message builder (system red-team, not signal analysis) ────────
 
+/**
+ * Corporate-event signals whose subject is a company OTHER than the one they were
+ * filed under.
+ *
+ * A signal inherits `companyId` from the feed it arrived on. That is right for a
+ * product launch and wrong for an acquisition, where the subject is the company
+ * being bought and the feed belongs to the buyer. Observed in this store: an
+ * acquired vendor carried zero `mna`-typed signals of its own while being named as
+ * acquired inside the acquirer's evidence, so a question like "who might not be
+ * independent in twelve months" scores that vendor at zero.
+ *
+ * This REPORTS the gap rather than repairing it, deliberately. Re-attributing would
+ * create near-duplicate rows that then feed `correlate` and double-count, and a
+ * `mentions` column would be schema without callers — a mistake this repo has made
+ * before. Deciding what to do about it is the operator's call; making it visible is
+ * this function's job.
+ */
+function attributionGaps(signals) {
+  const CORPORATE = new Set(['mna', 'funding']);
+  const misfiled = [];
+  const namedElsewhere = new Map(); // companyId → how often it is the subject of someone else's row
+
+  for (const s of signals) {
+    if (!CORPORATE.has(s.signalType)) continue;
+    const others = matchAllCompaniesInText(`${s.title || ''} ${s.summary || ''}`)
+      .map((h) => h.id)
+      .filter((id) => id !== s.companyId && COMPANIES[id]);
+    if (!others.length) continue;
+    misfiled.push({
+      filedUnder: s.companyId,
+      alsoNames: others,
+      type: s.signalType,
+      title: String(s.title || '').slice(0, 120),
+    });
+    for (const id of others) namedElsewhere.set(id, (namedElsewhere.get(id) || 0) + 1);
+  }
+
+  // The sharp case: a company that is never the subject of its own corporate event,
+  // yet is repeatedly named inside someone else's.
+  const ownCorporate = new Map();
+  for (const s of signals) {
+    if (CORPORATE.has(s.signalType)) ownCorporate.set(s.companyId, (ownCorporate.get(s.companyId) || 0) + 1);
+  }
+  const invisible = [...namedElsewhere.entries()]
+    .filter(([id]) => !ownCorporate.get(id))
+    .map(([id, n]) => ({ id, name: COMPANIES[id]?.name || id, namedInOthers: n }))
+    .sort((a, b) => b.namedInOthers - a.namedInOthers);
+
+  return { misfiled: misfiled.slice(0, 25), misfiledTotal: misfiled.length, invisible };
+}
+
 async function gapSystemSnapshot() {
   const read = (rel) => {
     try { return fs.readFileSync(fromRoot(rel), 'utf8'); } catch { return '(file not found)'; }
@@ -164,6 +215,7 @@ async function gapSystemSnapshot() {
       byCompany: countBy('companyId'),
       byImpactBand: countBy('impactBand'),
     },
+    attribution: attributionGaps(all),
   };
 }
 
@@ -191,7 +243,14 @@ async function buildUserMessage() {
   }
   if (MODE === 'gap') {
     const snap = await gapSystemSnapshot();
-    return `/gap\n\nRed-team my CI system itself. Here is its current shape:\n\n=== companies.mjs ===\n${snap.companiesSource}\n\n=== feeds.mjs ===\n${snap.feedsSource}\n\n=== correlation-rules.mjs ===\n${snap.rulesSource}\n\n=== features.mjs ===\n${snap.featuresSource}\n\n=== Signal distribution (last 30 days, ${snap.distribution.last30d} of ${snap.distribution.totalRows} total rows) ===\nby sourceKind: ${JSON.stringify(snap.distribution.bySourceKind)}\nby signalType: ${JSON.stringify(snap.distribution.bySignalType)}\nby companyId:  ${JSON.stringify(snap.distribution.byCompany)}\nby impactBand: ${JSON.stringify(snap.distribution.byImpactBand)}\n\nWhat's missing from this pipeline? What rule categories would never fire? What companies should I be watching that I'm not? What biases does this feed list bake in?`;
+    return `/gap\n\nRed-team my CI system itself. Here is its current shape:\n\n=== companies.mjs ===\n${snap.companiesSource}\n\n=== feeds.mjs ===\n${snap.feedsSource}\n\n=== correlation-rules.mjs ===\n${snap.rulesSource}\n\n=== features.mjs ===\n${snap.featuresSource}\n\n=== Signal distribution (last 30 days, ${snap.distribution.last30d} of ${snap.distribution.totalRows} total rows) ===\nby sourceKind: ${JSON.stringify(snap.distribution.bySourceKind)}\nby signalType: ${JSON.stringify(snap.distribution.bySignalType)}\nby companyId:  ${JSON.stringify(snap.distribution.byCompany)}\nby impactBand: ${JSON.stringify(snap.distribution.byImpactBand)}\n\n=== Attribution blind spots (computed, not inferred) ===
+A signal inherits companyId from the feed it arrived on. For corporate events (mna, funding) the subject is often a DIFFERENT company than the feed owner, so those rows are filed under the wrong party.
+${snap.attribution.misfiledTotal} corporate-event signals name a company other than the one they are filed under${snap.attribution.misfiledTotal > snap.attribution.misfiled.length ? ` (showing ${snap.attribution.misfiled.length})` : ''}:
+${snap.attribution.misfiled.map((m) => `- filed under ${m.filedUnder} [${m.type}] but also names ${m.alsoNames.join(', ')} — "${m.title}"`).join('\n') || '- (none)'}
+Companies that are NEVER the subject of their own corporate event, yet are named inside someone else's:
+${snap.attribution.invisible.map((c) => `- ${c.name} (${c.id}) — named in ${c.namedInOthers} other companies' corporate-event rows, 0 of its own`).join('\n') || '- (none)'}
+
+What's missing from this pipeline? What rule categories would never fire? What companies should I be watching that I'm not? What biases does this feed list bake in? Given the attribution blind spots above, which questions is this system structurally unable to answer correctly, and is per-feed attribution the right model for corporate events at all?`;
   }
   throw new Error(`unhandled mode: ${MODE}`);
 }
