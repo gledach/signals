@@ -11,7 +11,7 @@
 
 import { COMPANIES, COMPETITOR_IDS } from '../config/companies.mjs';
 import { hashItem } from './adapters/rss.mjs';
-import { classifySignal } from '../pipeline/classify.mjs';
+import { classifySignal, isDegraded, exitOnLlmUnavailable } from '../pipeline/classify.mjs';
 import { computeBusinessImpactScore, impactBand } from '../core/scoring.mjs';
 import {
   appendSignal, alreadySeen, totalCount,
@@ -178,6 +178,9 @@ async function main() {
           { forceKeyword: NO_LLM },
         );
 
+        // Not a verdict the model produced — do not store it. See isDegraded().
+        if (isDegraded(classification)) { skippedNoise++; continue; }
+
         if (classification.companyRelevance === 'noise' && classification.signalType === 'noise') {
           skippedNoise++;
           localSeen.add(id);
@@ -242,6 +245,8 @@ async function main() {
 }
 
 main().catch((err) => {
+  // A dead LLM is not a crash. Exit 2 means "we refused to write".
+  exitOnLlmUnavailable(err, 'tavily');
   console.error('[tavily] fatal:', err);
   process.exit(1);
 });

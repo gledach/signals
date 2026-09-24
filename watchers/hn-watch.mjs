@@ -24,7 +24,7 @@
 // (intentionally) — we keep the earliest attribution.
 
 import { COMPANIES, COMPETITOR_IDS, matchCompanyInText, OUR_COMPANY_ID } from '../config/companies.mjs';
-import { classifySignal } from '../pipeline/classify.mjs';
+import { classifySignal, isDegraded, exitOnLlmUnavailable } from '../pipeline/classify.mjs';
 import { computeBusinessImpactScore, impactBand } from '../core/scoring.mjs';
 import { appendSignal, alreadySeen, totalCount } from '../core/store.mjs';
 import { hasApiKey } from '../pipeline/openrouter.mjs';
@@ -126,6 +126,9 @@ async function processQuery(query, defaultCompanyId) {
       { forceKeyword: NO_LLM },
     );
 
+    // Not a verdict the model produced — do not store it. See isDegraded().
+    if (isDegraded(classification)) continue;
+
     if (classification.companyRelevance === 'noise' && classification.signalType === 'noise') {
       continue;
     }
@@ -194,6 +197,8 @@ async function main() {
 }
 
 main().catch((err) => {
+  // A dead LLM is not a crash. Exit 2 means "we refused to write".
+  exitOnLlmUnavailable(err, 'hn-watch');
   console.error('[hn-watch] fatal:', err);
   process.exit(1);
 });

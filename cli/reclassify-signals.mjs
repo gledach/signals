@@ -15,7 +15,10 @@
 
 import { COMPANIES } from '../config/companies.mjs';
 import { loadAllSignals, updateSignal } from '../core/store.mjs';
-import { classifySignal, classifySignalBatch, getClassifyBatchSize } from '../pipeline/classify.mjs';
+import {
+  classifySignal, classifySignalBatch, getClassifyBatchSize,
+  LlmUnavailableError, exitOnLlmUnavailable,
+} from '../pipeline/classify.mjs';
 import { computeBusinessImpactScore, impactBand } from '../core/scoring.mjs';
 
 const argv = process.argv.slice(2);
@@ -79,6 +82,7 @@ async function main() {
   const ABORT_AFTER_KEYWORD_BATCHES = Number(process.env.CI_RECLASSIFY_ABORT_AFTER || 3);
   let keywordBatches = 0;
   let aborted = false;
+  let llmError = null;
   const chunks = [];
   for (let start = 0; start < candidates.length; start += BATCH) {
     chunks.push({ start, slice: candidates.slice(start, start + BATCH) });
@@ -100,7 +104,17 @@ async function main() {
           companyId: s.companyId,
           companyName: COMPANIES[s.companyId]?.name || s.companyId,
         })));
-      } catch {
+      } catch (err) {
+        // The provider is gone, not merely slow. This used to be a bare `catch` that
+        // turned every throw into nulls and carried on to the write phase — the exact
+        // shape of the 2026-08-01 incident. Abort before anything is written.
+        if (err instanceof LlmUnavailableError) {
+          aborted = true;
+          llmError = err;
+          console.error(`
+[reclassify] ABORT: ${err.message}`);
+          return;
+        }
         out = slice.map(() => null);
       }
       for (let j = 0; j < slice.length; j++) fresh_all[start + j] = out[j];
@@ -110,7 +124,13 @@ async function main() {
       // makes the data worse, not better. On 2026-08-01 that happened: credits
       // ran out mid-run and ~1,900 rows were rewritten from the fallback
       // before it was caught. Abort instead.
-      if (out.some((r) => r && (r.method === 'keyword' || r.method === 'keyword-fallback'))) {
+      // Count a strike only when the WHOLE batch is degraded. A single dropped id in an
+      // otherwise healthy `llm` batch is a model hiccup for one item, not evidence the
+      // provider is failing — counting it burned strikes on healthy backfills.
+      const graded = out.filter(Boolean);
+      const allDegraded = graded.length > 0
+        && graded.every((r) => r.method === 'keyword' || r.method === 'keyword-fallback');
+      if (allDegraded) {
         keywordBatches++;
         if (keywordBatches >= ABORT_AFTER_KEYWORD_BATCHES) {
           aborted = true;
@@ -196,6 +216,8 @@ async function main() {
 }
 
 main().catch((err) => {
+  // Exit 2 = "we refused to write", the code this script already used for an abort.
+  exitOnLlmUnavailable(err, 'reclassify');
   console.error('[reclassify] fatal:', err);
   process.exit(1);
 });

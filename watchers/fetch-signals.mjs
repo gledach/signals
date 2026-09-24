@@ -6,7 +6,7 @@
 import { FEEDS, feedsForCompany } from '../config/feeds.mjs';
 import { COMPANIES, matchCompanyInText } from '../config/companies.mjs';
 import { fetchRss, hashItem } from './adapters/rss.mjs';
-import { classifySignalBatch, getClassifyBatchSize } from '../pipeline/classify.mjs';
+import { classifySignalBatch, getClassifyBatchSize, isDegraded, exitOnLlmUnavailable } from '../pipeline/classify.mjs';
 import { computeBusinessImpactScore, impactBand } from '../core/scoring.mjs';
 import { appendSignal, alreadySeen, totalCount } from '../core/store.mjs';
 import { hasApiKey } from '../pipeline/openrouter.mjs';
@@ -127,6 +127,14 @@ async function main() {
         // live corpus: 4,364 of 8,922 stored rows (49%) carry exactly this
         // rationale. Half the database is unclassified data wearing a noise
         // label, slowing every read and polluting correlation.
+        // A degraded verdict is one the model did not produce — the batch failed softly
+        // and the keyword classifier stood in. Storing it is permanent and invisible:
+        // hashId is the primary key, so this item is never offered again. Skip it and
+        // let the next run classify it properly.
+        if (isDegraded(classification)) {
+          skippedNoise++;
+          continue;
+        }
         const failedClassification =
           classification.signalType === 'noise' && classification.rationale === 'no-keyword-match';
         if (failedClassification ||
@@ -187,6 +195,9 @@ async function main() {
 }
 
 main().catch((err) => {
+  // A dead LLM is not a crash. Exit 2 means "we refused to write", so a cron wrapper can
+  // tell it apart from a genuine fault (1) and from a clean no-op (0).
+  exitOnLlmUnavailable(err, 'fetch');
   console.error('[fetch] fatal:', err);
   process.exit(1);
 });

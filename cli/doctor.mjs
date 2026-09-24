@@ -34,6 +34,9 @@ const WARN = ' warn ';
 const BAD = ' FAIL ';
 let broken = 0;
 let warned = 0;
+// Hours since the last SUCCESSFUL LLM call before doctor calls it stale. The cron runs
+// every 6h; 36 allows for a weekend of quiet plus slack without hiding a dead key.
+const LLM_STALE_HOURS = Number(process.env.CI_LLM_STALE_HOURS || 36);
 
 const ok = (msg, detail) => console.log(`${OK} ${msg}${detail ? `\n        ${detail}` : ''}`);
 const warn = (msg, detail) => { warned++; console.log(`${WARN} ${msg}${detail ? `\n        ${detail}` : ''}`); };
@@ -121,8 +124,40 @@ try {
 section('What is unlocked');
 {
   const has = (k) => !!process.env[k]?.trim();
-  if (has('OPENROUTER_API_KEY')) ok('OPENROUTER_API_KEY set', 'LLM classification, battlecards, analyst briefs.');
-  else warn('OPENROUTER_API_KEY not set', 'BLOCKED: battlecards, analyst briefs, LLM classification. `npm run fetch` still works with the keyword classifier.');
+  if (has('OPENROUTER_API_KEY')) {
+    ok('OPENROUTER_API_KEY set', 'LLM classification, battlecards, analyst briefs.');
+    // Presence is not liveness. A deleted key reports `ok` here and then fails every
+    // run with a 401 — which is how this pipeline sat 50 days (2026-08-05 → 09-24) with
+    // no LLM call and nothing saying so.
+    //
+    // The spend ledger is the honest witness: it only gets a row when a call SUCCEEDS.
+    // The freshness check further down uses `newestFirstSeen` on signals, which keyword
+    // and heuristic writers keep moving, so a dead key can look like a healthy pipeline
+    // there. This needs no live LLM call and costs one indexed read.
+    try {
+      const { loadLlmCost } = await import('../core/store.mjs');
+      const rows = await loadLlmCost({ limit: 1 });
+      const newest = rows?.[0]?.ts || null;
+      if (!newest) {
+        warn('no successful LLM call on record', 'The key is set but nothing has ever billed. Verify with: npm run check:models');
+      } else {
+        const ageH = Math.floor((Date.now() - new Date(newest).getTime()) / 3_600_000);
+        if (ageH > LLM_STALE_HOURS) {
+          warn(
+            `last successful LLM call was ${ageH}h ago (${String(newest).slice(0, 10)})`,
+            'The cron runs every 6h, so this should be hours not days. A deleted or revoked '
+            + 'key fails with 401 and leaves no ledger row. Check: npm run check:models',
+          );
+        } else {
+          ok(`LLM reachable — last successful call ${ageH}h ago`);
+        }
+      }
+    } catch (err) {
+      console.log(`${WARN.replace('warn', ' -- ')} could not read the spend ledger (${err.message}) — LLM liveness unknown`);
+    }
+  } else {
+    warn('OPENROUTER_API_KEY not set', 'BLOCKED: battlecards, analyst briefs, LLM classification. `npm run fetch` still works with the keyword classifier.');
+  }
 
   if (has('TAVILY_API_KEY')) ok('TAVILY_API_KEY set', 'Broader discovery search via `npm run watch:tavily`.');
   else console.log(`${WARN.replace('warn', ' -- ')} TAVILY_API_KEY not set — optional; only disables \`npm run watch:tavily\``);

@@ -29,6 +29,9 @@ import { resolve } from 'node:path';
 // Static import: the registry is pure config with no side effects, and GITHUB_REPOS
 // below is derived from it at module load. The lazy import further down predates this.
 import { COMPANIES } from '../config/companies.mjs';
+// Imported directly rather than injected: these are the write-refusal policy, and a
+// test that stubs them out would be testing a pipeline that stores degraded rows.
+import { isDegraded, exitOnLlmUnavailable } from '../pipeline/classify.mjs';
 
 // Heavy deps (store → @libsql, notify → node-notifier, classify → openrouter)
 // load only when executed as CLI so offline fixture parsers stay network- and
@@ -468,6 +471,9 @@ async function processCandidates(candidates, deps) {
 
   for (let i = 0; i < fresh.length; i++) {
     const c = fresh[i];
+    // The default below is itself a degraded verdict — invented here, not produced by
+    // the model. It must never be stored, so it is skipped rather than persisted with a
+    // plausible-looking `other` type and 0.3 confidence.
     const classification = classifications[i] || {
       signalType: 'other',
       confidence: 0.3,
@@ -475,6 +481,7 @@ async function processCandidates(candidates, deps) {
       method: 'keyword-fallback',
       rationale: 'missing classification',
     };
+    if (isDegraded(classification)) continue;
     const company = COMPANIES[c.companyId];
     const companyName = company?.name || c.companyId;
 
@@ -653,6 +660,8 @@ function isExecutedAsMain() {
 
 if (isExecutedAsMain()) {
   main().catch((err) => {
+    // A dead LLM is not a crash. Exit 2 means "we refused to write".
+    exitOnLlmUnavailable(err, 'github-watch');
     console.error('[github-watch] fatal:', err);
     process.exit(1);
   });

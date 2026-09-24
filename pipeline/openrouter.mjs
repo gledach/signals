@@ -155,10 +155,49 @@ function registerCostFooter() {
 //
 // Checked once per process, against the same rolling 24h `llm_cost` ledger the agent
 // budget uses — so an agent and the cron draw down one number, not two.
-const DAILY_CEILING_USD = Number(process.env.CI_LLM_DAILY_CEILING_USD || 0);
+// Parsed once, strictly. `Number('abc')` is NaN and `!(NaN > 0)` is true, so a typo in
+// this variable silently DISARMED the ceiling — the failure mode a safety limit can
+// least afford, because it looks identical to not having configured one.
+function parseCeiling(raw) {
+  if (raw === undefined || raw === '') return 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error(
+      `CI_LLM_DAILY_CEILING_USD must be a non-negative number, got "${raw}". `
+      + 'Unset it or use 0 to disable the ceiling — a value this process cannot parse '
+      + 'would disable it silently, which is worse than either.',
+    );
+  }
+  return n;
+}
+const DAILY_CEILING_USD = parseCeiling(process.env.CI_LLM_DAILY_CEILING_USD);
 let _ceilingCheck = null;
 
-class BudgetCeilingError extends Error {}
+export class BudgetCeilingError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'BudgetCeilingError';
+    this.persistent = true;   // never retry, never degrade — see markPersistent()
+  }
+}
+
+/**
+ * Mark an error as PERSISTENT: it will fail identically for every remaining item, so
+ * there is nothing to gain by calling again and real harm in continuing.
+ *
+ * This replaces `classify.mjs`'s `isBudgetError()`, which tested the provider's PROSE
+ * (`/\b40[23]\b/` plus a word list). That predicate failed twice, in production, for the
+ * same structural reason: it can only recognise the phrasings someone already thought
+ * of. 2026-08-01 it missed 402 and 1,010 rows were keyword-written. 2026-09-23 it missed
+ * `401 "User not found."` and the same path was live again.
+ *
+ * The status code is known HERE and nowhere else. Deciding here means classify never has
+ * to guess from a string.
+ */
+function markPersistent(err) {
+  err.persistent = true;
+  return err;
+}
 
 /**
  * The decision, separated from the I/O so it can be tested without a ledger, a network
@@ -192,19 +231,29 @@ async function assertDailyCeiling() {
     await _ceilingCheck;
   } catch (err) {
     if (err instanceof BudgetCeilingError) throw err;
-    // The ledger is telemetry and it lives in Turso. A read failure must not halt a
-    // pipeline that is otherwise healthy — that would turn a database hiccup into an
-    // outage. Warn, proceed, and leave the reactive tripwire and OpenRouter's own limits
-    // as the backstop. Note this is the OPPOSITE choice to checkBudget(), which fails
-    // closed: there, refusing one agent action is cheap.
-    console.warn(`[openrouter] spend ledger unreadable (${err.message}) — ceiling NOT enforced this run`);
-    _ceilingCheck = Promise.resolve();
+    // FAIL CLOSED, matching core/agent-budget.mjs `checkBudget()`.
+    //
+    // This used to warn and proceed unbounded, and additionally replaced _ceilingCheck
+    // with Promise.resolve() — so a single Turso blip disarmed an armed ceiling for
+    // every later call in the process. Two independent reviews (runs/2026-09-24-…) both
+    // called that indefensible, and they are right: an armed ceiling whose ledger cannot
+    // be read is an UNENFORCEABLE ceiling on a paid path, and the caller that will spend
+    // again in six hours is an unattended cron.
+    //
+    // Note the asymmetry with the success path: if the ledger reads fine we memoise it,
+    // deliberately, so one read covers the process. Failure is not memoised as success.
+    throw new BudgetCeilingError(
+      `Refusing to call the LLM: the spend ledger could not be read (${err.message}), so the `
+      + `$${DAILY_CEILING_USD.toFixed(2)} ceiling cannot be enforced. `
+      + 'Unset CI_LLM_DAILY_CEILING_USD to run without a ceiling, or fix the store.',
+    );
   }
 }
 
 export async function chat({ model, messages, temperature = 0.2, maxTokens = 1024, responseFormat, meta, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
   const key = process.env.OPENROUTER_API_KEY;
-  if (!key) throw new Error('OPENROUTER_API_KEY not set in env');
+  // Persistent by definition — a key that is absent now is absent for the whole run.
+  if (!key) throw markPersistent(new Error('OPENROUTER_API_KEY not set in env'));
   await assertDailyCeiling();
 
   const chosenModel = model || DEFAULT_CLASSIFIER_MODEL;
@@ -245,6 +294,7 @@ export async function chat({ model, messages, temperature = 0.2, maxTokens = 102
         const errText = await res.text().catch(() => '');
         const retriable = res.status === 429 || res.status >= 500;
         const err = new Error(`OpenRouter ${res.status}: ${errText.slice(0, 500)}`);
+        err.status = res.status;
         if (retriable && attempt < MAX_ATTEMPTS) {
           lastErr = err;
           const delay = BASE_DELAY_MS * 2 ** (attempt - 1);
@@ -252,7 +302,10 @@ export async function chat({ model, messages, temperature = 0.2, maxTokens = 102
           await sleep(delay);
           continue;
         }
-        throw err;
+        // Any non-OK status that reaches here is persistent: a 4xx will not fix itself,
+        // and a 429/5xx has already exhausted MAX_ATTEMPTS. Both will fail identically
+        // for every remaining item in the run.
+        throw markPersistent(err);
       }
       // A truncated HTTP BODY is a transport failure, not a bad model response.
       // res.json() throws a bare SyntaxError for it, which isTransient() did not
@@ -337,6 +390,9 @@ export async function chat({ model, messages, temperature = 0.2, maxTokens = 102
         await sleep(delay);
         continue;
       }
+      // A transient fault that survived every retry is, for this run, persistent. A
+      // genuinely one-off network blip does not reach here.
+      if (isTransient(err)) markPersistent(err);
       throw err;
     } finally {
       clearTimeout(timer);

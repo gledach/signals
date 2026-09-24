@@ -1504,6 +1504,102 @@ section('18. Self-measurement loop');
   } else bad('recorded verdicts are hidden behind :hover');
 }
 
+// ───────── 19. A dead LLM must not write verdicts it did not compute ────────
+// Twice in production a failing provider produced STORED classifications: 2026-08-01
+// (402 missed → 1,010 keyword rows, 70 with a changed signalType) and 2026-09-23 (401
+// missed, same path). Both because classify.mjs sniffed the provider's prose for a
+// status code. Two independent reviews (runs/2026-09-24-llm-failure-policy-…) agreed the
+// predicate had to go. These assertions keep it gone.
+
+section('19. LLM failure never fabricates a stored verdict');
+{
+  const classify = await import('../pipeline/classify.mjs');
+  const or = await import('../pipeline/openrouter.mjs');
+  const cSrc = fs.readFileSync(path.join(ROOT, 'pipeline', 'classify.mjs'), 'utf8');
+  const oSrc = fs.readFileSync(path.join(ROOT, 'pipeline', 'openrouter.mjs'), 'utf8');
+
+  // The prose predicate is the bug. It must not come back.
+  if (/function isBudgetError/.test(cSrc)) {
+    bad('isBudgetError() is back — matching provider prose failed twice in production');
+  } else ok('no prose-matching predicate: persistence is decided by HTTP status, not by regex');
+
+  if (/err\?\.persistent|err\.persistent/.test(cSrc)) ok('classify trips on err.persistent from openrouter');
+  else bad('classify no longer reads err.persistent — the tripwire cannot fire');
+
+  if (/markPersistent\(/.test(oSrc) && /err\.status = res\.status/.test(oSrc)) {
+    ok('openrouter marks failures persistent where the status code is known');
+  } else bad('openrouter does not mark persistent errors');
+
+  // A refusal must be a throw the caller cannot mistake for a verdict.
+  if (typeof classify.LlmUnavailableError === 'function') {
+    const e = new classify.LlmUnavailableError(new Error('401 nope'));
+    if (e.exitCode === 2) ok('LlmUnavailableError exits 2 — "we refused to write"');
+    else bad(`LlmUnavailableError.exitCode is ${e.exitCode}, expected 2`);
+  } else bad('LlmUnavailableError not exported');
+
+  // The ceiling refusal must itself be persistent, or it gets caught and degraded —
+  // which is exactly what the 2026-09-22 ceiling did before this change.
+  if (typeof or.BudgetCeilingError === 'function') {
+    if (new or.BudgetCeilingError('x').persistent === true) {
+      ok('BudgetCeilingError is persistent — it halts instead of becoming a keyword row');
+    } else bad('BudgetCeilingError is not persistent — the ceiling would degrade, not refuse');
+  } else bad('BudgetCeilingError not exported');
+
+  // Degraded vs deliberate. Storing the first is the incident; storing the second is
+  // the operator's explicit choice.
+  if (classify.isDegraded({ method: 'keyword-fallback' }) === true
+      && classify.isDegraded({ method: 'keyword' }) === false
+      && classify.isDegraded({ method: 'llm' }) === false) {
+    ok('isDegraded separates a stand-in verdict from deliberate --no-llm keyword mode');
+  } else bad('isDegraded does not distinguish keyword-fallback from keyword');
+
+  // A typo must not silently disarm an armed ceiling.
+  {
+    const saved = process.env.CI_LLM_DAILY_CEILING_USD;
+    process.env.CI_LLM_DAILY_CEILING_USD = 'abc';
+    let threw = false;
+    try { await import(`../pipeline/openrouter.mjs?bad=${Date.now()}`); } catch { threw = true; }
+    if (threw) ok('an unparseable CI_LLM_DAILY_CEILING_USD throws instead of disarming the ceiling');
+    else bad('CI_LLM_DAILY_CEILING_USD=abc silently disables the ceiling (NaN > 0 is false)');
+    if (saved === undefined) delete process.env.CI_LLM_DAILY_CEILING_USD;
+    else process.env.CI_LLM_DAILY_CEILING_USD = saved;
+  }
+
+  // Fail CLOSED, matching checkBudget(). The old code warned, proceeded unbounded, and
+  // replaced the memoised check with Promise.resolve() — disarming it for the process.
+  if (/_ceilingCheck = Promise\.resolve\(\)/.test(oSrc)) {
+    bad('a ledger read error still disarms the ceiling for the rest of the process');
+  } else ok('a ledger read error fails CLOSED — an unenforceable ceiling refuses');
+
+  // Every writer that persists must refuse degraded rows, or the policy is decorative.
+  for (const rel of [
+    ['watchers', 'fetch-signals.mjs'], ['watchers', 'hn-watch.mjs'],
+    ['watchers', 'github-watch.mjs'], ['watchers', 'tavily-watch.mjs'],
+    ['pipeline', 'email-promote.mjs'],
+  ]) {
+    const src = fs.readFileSync(path.join(ROOT, ...rel), 'utf8');
+    if (/isDegraded\(/.test(src)) ok(`${rel[1]} refuses to persist a degraded verdict`);
+    else bad(`${rel[1]} can still store a keyword-fallback row`);
+    if (/exitOnLlmUnavailable\(/.test(src)) ok(`${rel[1]} exits 2 when the LLM is gone`);
+    else bad(`${rel[1]} reports a dead provider as an ordinary crash`);
+  }
+
+  // reclassify is where 2026-08-01 actually happened.
+  const rSrc = fs.readFileSync(path.join(ROOT, 'cli', 'reclassify-signals.mjs'), 'utf8');
+  if (/catch \(err\)[\s\S]{0,400}LlmUnavailableError/.test(rSrc)) {
+    ok('reclassify aborts before the write phase instead of swallowing the error');
+  } else bad('reclassify still turns any throw into nulls and writes anyway');
+  if (/every\(\(r\) => r\.method === 'keyword'/.test(rSrc)) {
+    ok('reclassify counts a strike only when the WHOLE batch is degraded');
+  } else bad('one dropped id in a healthy batch still burns a reclassify strike');
+
+  // doctor must witness liveness from the spend ledger, not from signal freshness.
+  const dSrc = fs.readFileSync(path.join(ROOT, 'cli', 'doctor.mjs'), 'utf8');
+  if (/loadLlmCost\(\{ limit: 1 \}\)/.test(dSrc)) {
+    ok('doctor reads the spend ledger — a dead key no longer looks like a healthy pipeline');
+  } else bad('doctor cannot detect a dead OPENROUTER_API_KEY');
+}
+
 // ────────────────────────────────── verdict ─────────────────────────────────
 
 console.log(FAIL ? '\nRED — smoke failed\n' : '\nGREEN — smoke passed\n');

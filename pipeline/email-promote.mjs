@@ -17,6 +17,8 @@ import {
   looksLikeWrongEntity,
   classifySignalBatch,
   getClassifyBatchSize,
+  isDegraded,
+  exitOnLlmUnavailable,
 } from './classify.mjs';
 import { computeBusinessImpactScore, impactBand } from '../core/scoring.mjs';
 import { appendSignal, alreadySeen } from '../core/store.mjs';
@@ -181,6 +183,13 @@ async function main() {
       companyRelevance: 'noise',
     };
 
+    // A verdict the model did not produce. Do not promote it — the hit stays pending
+    // so a healthy run can classify it properly rather than being buried as 'skipped'.
+    if (isDegraded(classification)) {
+      skippedClassNoise++;
+      continue;
+    }
+
     const failedClassification =
       classification.signalType === 'noise' && classification.rationale === 'no-keyword-match';
     if (
@@ -260,6 +269,8 @@ async function main() {
 }
 
 main().catch((err) => {
+  // Exit 2 = "we refused to write". Pending hits are untouched and retryable.
+  exitOnLlmUnavailable(err, 'email-promote');
   console.error('[email-promote] fatal:', err);
   process.exit(1);
 });

@@ -84,10 +84,14 @@ export function looksLikeWrongEntity(companyId, title, summary) {
 // last among the positives, because "launches/announces X" is the most generic
 // phrasing here and should only win when nothing more specific fits.
 //
-// This path is not a rare fallback: it runs on --no-llm, with no API key, and —
-// most importantly — for every remaining item once the `_llmBudgetExhausted`
-// tripwire fires. A weak rule set there means a whole run's worth of signals is
-// misclassified and stored permanently.
+// This path runs on --no-llm and when no API key is configured — both DELIBERATE
+// operator choices, stored as method: 'keyword'.
+//
+// It no longer runs when the LLM dies mid-run. It used to: the old tripwire routed every
+// remaining item here and the caller stored the results, which is how one dead provider
+// became ~1,010 keyword rows on 2026-08-01, 70 of them with a changed signalType that
+// correlate then treated as evidence. A failed run now throws LlmUnavailableError and
+// writes nothing. See tripLlm().
 const KEYWORD_RULES = [
   // Pricing — both orders. "pricing ... cut" AND "cuts ... pricing" (the second
   // form previously fell through to noise entirely).
@@ -539,28 +543,87 @@ function clamp01(n) {
 // any classify call, we flip this flag and route every subsequent call straight
 // to the keyword classifier — no more pointless HTTP round-trips + no wall of
 // identical 403 log lines. Resets when the process exits.
-let _llmBudgetExhausted = false;
-// OpenRouter uses BOTH statuses for out-of-money conditions: 403 for a key /
-// monthly limit, and **402 for insufficient credits**. This only matched 403,
-// so a 402 never tripped the wire — during a bulk reclassify on 2026-08-01
-// that meant all 266 batches independently called the API, failed, and fell
-// back to the keyword classifier one at a time, writing bad classifications
-// into ~1,900 production rows before it was caught. Tripping once is the whole
-// point of this flag.
-function isBudgetError(err) {
-  const msg = String(err?.message || '');
-  return /\b40[23]\b/.test(msg) && /(key limit|monthly limit|credits?|quota|afford)/i.test(msg);
+let _llmUnavailable = null;   // the Error that tripped it, or null
+
+/**
+ * The LLM is gone for this run and we must not invent verdicts in its place.
+ *
+ * Callers MUST NOT persist anything after seeing this. Exit code 2 by convention —
+ * the same code `cli/reclassify-signals.mjs` already uses for "do not write".
+ */
+export class LlmUnavailableError extends Error {
+  constructor(cause) {
+    super(
+      `LLM classification unavailable: ${String(cause?.message || cause).slice(0, 300)}\n`
+      + '  Refusing to keyword-classify in its place — a keyword verdict written to the store '
+      + 'is permanent and correlate treats it as evidence.\n'
+      + '  Re-run when the provider is healthy, or classify deliberately with --no-llm.',
+    );
+    this.name = 'LlmUnavailableError';
+    this.cause = cause;
+    this.exitCode = 2;
+  }
 }
 
-function tripBudget(err) {
-  // Log the full reason once, then silently keyword-fallback for the rest
-  // of the run. Next process invocation re-probes OpenRouter, so the
-  // tripwire auto-resets when the operator tops up or the month rolls over.
-  if (!_llmBudgetExhausted) {
-    console.warn(`[classify] OpenRouter budget exhausted — ${err.message.slice(0, 200)}`);
-    console.warn('[classify] switching to keyword classifier for the rest of this run. Fix at https://openrouter.ai/settings/keys');
+// How many CONSECUTIVE non-persistent batch failures before we treat the provider as
+// gone. A single malformed batch response is a formatting slip; three in a row is not.
+const CONSECUTIVE_SOFT_FAILURE_LIMIT = 3;
+let _consecutiveSoftFailures = 0;
+
+/**
+ * Trip the run.
+ *
+ * This replaces `isBudgetError()`, which sniffed the provider's PROSE for `40[23]` plus
+ * a word list. That predicate failed twice in production for the same structural reason
+ * — it only recognises phrasings someone already anticipated:
+ *
+ *   - 2026-08-01: missed 402 "insufficient credits". 266 batches each called, failed,
+ *     and keyword-fell-back → 1,010 keyword rows, 70 with a changed signalType.
+ *   - 2026-09-23: missed 401 "User not found." Same path, live again.
+ *
+ * Persistence is now decided in `openrouter.mjs`, where the HTTP status is actually
+ * known, and arrives here as `err.persistent`. Nothing in this file parses a message.
+ */
+function tripLlm(err) {
+  if (!_llmUnavailable) {
+    console.error(`[classify] LLM unavailable — ${String(err?.message || err).slice(0, 200)}`);
+    console.error('[classify] HALTING. Nothing further will be classified or stored this run.');
   }
-  _llmBudgetExhausted = true;
+  _llmUnavailable = err;
+  return new LlmUnavailableError(err);
+}
+
+/** Test seam — the tripwire is process-wide by design. */
+export function _resetLlmTripwireForTests() {
+  _llmUnavailable = null;
+  _consecutiveSoftFailures = 0;
+}
+
+/**
+ * True when this verdict was NOT produced by the model — the batch failed softly and the
+ * keyword classifier stood in for it.
+ *
+ * Callers that persist must skip these. A `keyword-fallback` row is indistinguishable
+ * from a real verdict once it is in `signals`: `hashId` is the primary key, so
+ * `alreadySeen()` will never offer the item again, and `correlate.mjs` will treat a
+ * false `partnership` or `funding` as evidence. Deliberate keyword mode (`--no-llm`, no
+ * key) produces `method: 'keyword'` and IS persisted — that is an operator choice.
+ */
+export function isDegraded(classification) {
+  return classification?.method === 'keyword-fallback';
+}
+
+/**
+ * Standard exit for a script whose LLM died. Prints the reason and exits 2 ("we refused
+ * to write"), so a cron wrapper can tell "nothing happened because the provider is down"
+ * from "nothing happened because there was nothing to do" (exit 0) and from a crash (1).
+ */
+export function exitOnLlmUnavailable(err, label) {
+  if (err instanceof LlmUnavailableError) {
+    console.error(`[${label}] ${err.message}`);
+    process.exit(err.exitCode);
+  }
+  return false;
 }
 
 /**
@@ -593,17 +656,24 @@ export async function classifySignal(item, { forceKeyword = false } = {}) {
     return wrongEntityResult();
   }
 
-  // Layer 2 or 3: LLM or keyword fallback.
-  if (forceKeyword || !hasApiKey() || _llmBudgetExhausted) return classifyByKeyword(item);
+  // Layer 2 or 3. DELIBERATE keyword mode only — an explicit --no-llm or no key at all.
+  // That is an operator choice and keeps method: 'keyword'.
+  if (forceKeyword || !hasApiKey()) return classifyByKeyword(item);
+  // Already tripped: do not call, do not invent a verdict.
+  if (_llmUnavailable) throw new LlmUnavailableError(_llmUnavailable);
   try {
-    return await classifyByLlm(item);
+    const out = await classifyByLlm(item);
+    _consecutiveSoftFailures = 0;
+    return out;
   } catch (err) {
-    if (isBudgetError(err)) {
-      tripBudget(err);
-      return { ...classifyByKeyword(item), method: 'keyword-fallback' };
-    }
-    console.warn(`[classify] LLM failed (${err?.message || err}), falling back to keyword`);
-    return { ...classifyByKeyword(item), method: 'keyword-fallback' };
+    // Persistent (auth, credit, ceiling, exhausted retries) → halt the run.
+    if (err?.persistent) throw tripLlm(err);
+    // Soft failure on a single item: count it, and halt if they are stacking up. We
+    // still do not keyword-write this item — the whole point is that a verdict we did
+    // not actually compute must not reach the store.
+    _consecutiveSoftFailures += 1;
+    if (_consecutiveSoftFailures >= CONSECUTIVE_SOFT_FAILURE_LIMIT) throw tripLlm(err);
+    throw err;
   }
 }
 
@@ -640,8 +710,10 @@ export async function classifySignalBatch(items, { forceKeyword = false } = {}) 
       out[i] = wrongEntityResult();
       continue;
     }
-    // Layer 3 short-circuit before any network call.
-    if (forceKeyword || !hasApiKey() || _llmBudgetExhausted) {
+    // Layer 3 short-circuit before any network call. DELIBERATE keyword mode only —
+    // an explicit --no-llm or no key configured at all. A tripped run does not land
+    // here; it throws LlmUnavailableError from the batch loop below.
+    if (forceKeyword || !hasApiKey()) {
       out[i] = classifyByKeyword(item);
       continue;
     }
@@ -653,14 +725,11 @@ export async function classifySignalBatch(items, { forceKeyword = false } = {}) 
   const batchSize = getClassifyBatchSize();
 
   for (let start = 0; start < pending.length; start += batchSize) {
-    // If the tripwire flipped mid-run, dump the rest to keyword without HTTP.
-    if (_llmBudgetExhausted) {
-      for (let k = start; k < pending.length; k++) {
-        const idx = pending[k];
-        out[idx] = { ...classifyByKeyword(items[idx]), method: 'keyword-fallback' };
-      }
-      break;
-    }
+    // Tripped mid-run: stop. Previously this filled every remaining slot with a keyword
+    // verdict and returned success, which is how one dead provider became ~1,010 stored
+    // rows. The caller must write nothing from here on, and the only way to guarantee
+    // that is to not hand it anything.
+    if (_llmUnavailable) throw new LlmUnavailableError(_llmUnavailable);
 
     const slice = pending.slice(start, start + batchSize);
     const withIds = slice.map((idx, j) => ({
@@ -674,6 +743,7 @@ export async function classifySignalBatch(items, { forceKeyword = false } = {}) 
       const byId = await classifyByLlmBatch(
         withIds.map(({ id, item }) => ({ id, item })),
       );
+      _consecutiveSoftFailures = 0;   // a clean batch clears the streak
       for (const { id, idx, item } of withIds) {
         const hit = byId.get(id);
         if (hit) {
@@ -685,19 +755,20 @@ export async function classifySignalBatch(items, { forceKeyword = false } = {}) 
         }
       }
     } catch (err) {
-      if (isBudgetError(err)) {
-        tripBudget(err);
-        for (const { idx, item } of withIds) {
-          out[idx] = { ...classifyByKeyword(item), method: 'keyword-fallback' };
-        }
-        // Remaining pending indices also keyword (tripwire now set).
-        for (let k = start + batchSize; k < pending.length; k++) {
-          const idx = pending[k];
-          out[idx] = { ...classifyByKeyword(items[idx]), method: 'keyword-fallback' };
-        }
-        break;
-      }
-      console.warn(`[classify] batch LLM failed (${err?.message || err}), keyword fallback for ${withIds.length} item(s)`);
+      // Persistent — auth, credits, the spend ceiling, or retries exhausted. Every
+      // remaining batch would fail identically. Halt; store nothing.
+      if (err?.persistent) throw tripLlm(err);
+
+      // Soft failure: this batch came back unusable (e.g. malformed JSON after
+      // chatJson's own retry) but the provider is alive. Keyword-fall back THIS batch
+      // only, and mark it so callers can refuse to persist it. Three in a row means the
+      // provider is not actually alive, whatever the status codes say.
+      _consecutiveSoftFailures += 1;
+      if (_consecutiveSoftFailures >= CONSECUTIVE_SOFT_FAILURE_LIMIT) throw tripLlm(err);
+      console.warn(
+        `[classify] batch LLM failed (${err?.message || err}) — keyword fallback for `
+        + `${withIds.length} item(s), soft failure ${_consecutiveSoftFailures}/${CONSECUTIVE_SOFT_FAILURE_LIMIT}`,
+      );
       for (const { idx, item } of withIds) {
         out[idx] = { ...classifyByKeyword(item), method: 'keyword-fallback' };
       }
