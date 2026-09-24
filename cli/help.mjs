@@ -77,6 +77,20 @@ const SECTIONS = [
         ],
       },
       {
+        cmd: 'npm run watch:gmail',
+        desc: 'Zone 1 Gmail ingest — Gmail API gmail.readonly → local data/email/inbox.db only (never Railway). Label CI_GMAIL_LABEL (default Signal/Alerts).',
+        when: 'Local Task Scheduler every 15–30 min after OAuth. Not on cron-entry yet.',
+        cost: '$0 API (Google free tier); no LLM in this process',
+        examples: [
+          'npm run gmail:oauth                         # one-time desktop OAuth → CredMan/DPAPI',
+          'npm run watch:gmail:dry -- --fixture=test/fixtures/email/google-alert-sample.html',
+          'npm run watch:gmail                         # live poll label → local email DB',
+          'npm run email:promote:dry                   # Zone 2 preview → signals',
+          'npm run email:promote:nollm                 # promote with keyword classify only',
+          'npm run email:requeue                       # move hits parked in error back to pending',
+        ],
+      },
+      {
         cmd: 'npm run correlate',
         desc: 'Convergence detection — finds multi-source patterns across existing signals (Plan 03 T1).',
         when: 'Nightly. Dedups by ISO week; same pattern re-emits weekly max.',

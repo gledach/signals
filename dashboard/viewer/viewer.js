@@ -39,7 +39,7 @@ const state = {
   // company's infrastructure is a link, not an instruction.
   companyTab: 'overview',
   battlecards: {},               // cached MD by companyId
-  filters: { minImpact: 0, type: '', showNoise: false },
+  filters: { minImpact: 0, type: '', sourceKind: '', showNoise: false },
   highlightSignal: null,         // hashId to scroll-to + flash on next Feed render
   features: [],                  // canonical feature registry (from /api/features)
   featureCategories: [],
@@ -251,6 +251,12 @@ async function fetchSignalsAndRender({ firstLoad = false } = {}) {
       const newOnes = nextSignals.filter((s) => !previousIds.has(s.hashId));
       if (newOnes.length) flashNewSignals(newOnes);
     }
+
+    // Verdicts must be loaded BEFORE the render that draws the buttons, or they paint
+    // in the unanswered state and then jump. Awaited on first load only: on a 30s
+    // auto-refresh tick the answers are already in state, and re-fetching them would
+    // race an optimistic click that has not yet been persisted.
+    if (firstLoad) await loadFeedbackState();
 
     // First load does a full render; auto-refresh ticks use the lightweight
     // renderer that skips mode-specific panel re-renders (Battle / Market).
@@ -652,6 +658,13 @@ function wireFilters() {
     state.filters.type = e.target.value;
     renderSignals();
   });
+  const sourceSel = document.getElementById('source-filter');
+  if (sourceSel) {
+    sourceSel.addEventListener('change', (e) => {
+      state.filters.sourceKind = e.target.value;
+      renderSignals();
+    });
+  }
   document.getElementById('show-noise').addEventListener('change', (e) => {
     state.filters.showNoise = e.target.checked;
     renderSignals();
@@ -661,6 +674,7 @@ function wireFilters() {
 function populateTypeFilter() {
   const types = new Set(state.signals.map((s) => s.signalType));
   const sel = document.getElementById('type-filter');
+  if (!sel) return;
   const current = sel.value;
   sel.innerHTML = '<option value="">any type</option>';
   for (const t of [...types].sort()) {
@@ -669,6 +683,31 @@ function populateTypeFilter() {
     o.textContent = t;
     if (t === current) o.selected = true;
     sel.appendChild(o);
+  }
+}
+
+/** Live Feed: filter by sourceKind (hn, news, email-google-alert, …). */
+function populateSourceFilter() {
+  const kinds = new Set(
+    state.signals.map((s) => s.sourceKind).filter((k) => k != null && String(k).trim() !== ''),
+  );
+  const sel = document.getElementById('source-filter');
+  if (!sel) return;
+  const current = state.filters.sourceKind || sel.value || '';
+  sel.innerHTML = '<option value="">any source</option>';
+  for (const k of [...kinds].sort()) {
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = k;
+    if (k === current) o.selected = true;
+    sel.appendChild(o);
+  }
+  // Keep state in sync if the previous selection vanished after a refresh.
+  if (current && !kinds.has(current)) {
+    state.filters.sourceKind = '';
+    sel.value = '';
+  } else {
+    state.filters.sourceKind = current;
   }
 }
 
@@ -685,6 +724,7 @@ function renderAll() {
   renderSidebar();
   renderInbox();
   populateTypeFilter();
+  populateSourceFilter();
   if (state.mode === 'feed') {
     // Feed is the whole market. It used to be scoped to one company — the same
     // job the company page now does, and does better — so two routes answered
@@ -1513,6 +1553,11 @@ function jumpToSignal(hashId) {
     const typeSel = document.getElementById('type-filter');
     if (typeSel) typeSel.value = '';
   }
+  if (state.filters.sourceKind && state.filters.sourceKind !== s.sourceKind) {
+    state.filters.sourceKind = '';
+    const sourceSel = document.getElementById('source-filter');
+    if (sourceSel) sourceSel.value = '';
+  }
   if (!state.filters.showNoise && s.signalType === 'noise') {
     state.filters.showNoise = true;
     const noiseBox = document.getElementById('show-noise');
@@ -1699,6 +1744,7 @@ function renderConvergencePanel() {
       <div class="conv-actions">
         ${evidenceAction}
         <button class="conv-jump-btn" data-jump="${esc(c.companyId)}">Jump to ${esc(company?.name || c.companyId)} feed</button>
+        ${renderVerdictControl(c.hashId)}
       </div>`;
     const jumpBtn = card.querySelector('[data-jump]');
     jumpBtn.addEventListener('click', () => {
@@ -1712,7 +1758,90 @@ function renderConvergencePanel() {
     });
     const evBtn = card.querySelector('[data-evidence-for]');
     if (evBtn) evBtn.addEventListener('click', () => openEvidenceModal(c));
+    wireVerdictControl(card, c.hashId);
     container.appendChild(card);
+  }
+}
+
+// ── "Was this right?" ───────────────────────────────────────────────────────
+//
+// Signal could not measure itself. A convergence rule that fires on noise looked
+// exactly like one that fires on a real pattern, for ever, because no answer was ever
+// recorded — docs/blindspots.md carried that as the one gap with no plan and no owner.
+// Two clicks here are the whole loop; `npm run report:weekly` turns them into a
+// precision number per rule.
+//
+// `unclear` is a real third option, not a cop-out. Folding "I can't tell from this"
+// into either side would invent a verdict the operator did not give, and a rule whose
+// answers are mostly `unclear` has a legibility problem rather than a precision one.
+const VERDICT_LABELS = { right: 'Right', wrong: 'Wrong', unclear: 'Unclear' };
+
+function renderVerdictControl(hashId) {
+  const current = state.feedback?.[hashId]?.verdict || null;
+  const buttons = Object.entries(VERDICT_LABELS).map(([v, label]) => `
+    <button class="verdict-btn ${current === v ? 'is-active' : ''}"
+            data-verdict="${v}" data-verdict-for="${esc(hashId)}"
+            title="Record that this convergence was ${label.toLowerCase()}"
+            aria-pressed="${current === v}">${label}</button>`).join('');
+  return `<span class="verdict-control" data-verdict-group="${esc(hashId)}">
+    <span class="verdict-label">Was this right?</span>${buttons}
+  </span>`;
+}
+
+function wireVerdictControl(root, hashId) {
+  for (const btn of root.querySelectorAll(`[data-verdict-for="${CSS.escape(hashId)}"]`)) {
+    btn.addEventListener('click', async () => {
+      const verdict = btn.dataset.verdict;
+      const group = root.querySelector(`[data-verdict-group="${CSS.escape(hashId)}"]`);
+      // Optimistic: the click should feel instant, and a failed POST reverts below.
+      const previous = state.feedback?.[hashId]?.verdict || null;
+      setVerdictActive(group, verdict);
+      state.feedback = state.feedback || {};
+      state.feedback[hashId] = { verdict };
+      try {
+        const res = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ subjectId: hashId, verdict }),
+        });
+        if (!res.ok) {
+          const { error } = await res.json().catch(() => ({}));
+          throw new Error(error || `HTTP ${res.status}`);
+        }
+      } catch (err) {
+        setVerdictActive(group, previous);
+        if (previous) state.feedback[hashId] = { verdict: previous };
+        else delete state.feedback[hashId];
+        // Say what went wrong. The most likely cause by far is that the migration
+        // adding signal_feedback has not been applied yet, and the server says so.
+        console.warn('[verdict] not recorded:', err.message);
+        toast(`Verdict not recorded — ${err.message}`);
+      }
+    });
+  }
+}
+
+function setVerdictActive(group, verdict) {
+  if (!group) return;
+  for (const b of group.querySelectorAll('.verdict-btn')) {
+    const on = b.dataset.verdict === verdict;
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+}
+
+/** Pull existing verdicts so the buttons render in their true state after a reload. */
+async function loadFeedbackState() {
+  const convs = state.signals.filter((s) => s.signalType === 'convergence').map((s) => s.hashId);
+  if (!convs.length) { state.feedback = {}; return; }
+  try {
+    const res = await fetch(`/api/feedback?ids=${encodeURIComponent(convs.join(','))}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { verdicts } = await res.json();
+    state.feedback = verdicts || {};
+  } catch {
+    // A dashboard that cannot read verdicts must still render everything else.
+    state.feedback = {};
   }
 }
 
@@ -2139,6 +2268,7 @@ function renderSignals() {
     if (!state.filters.showNoise && s.signalType === 'noise') return false;
     if (state.filters.minImpact && s.impactScore < state.filters.minImpact) return false;
     if (state.filters.type && s.signalType !== state.filters.type) return false;
+    if (state.filters.sourceKind && s.sourceKind !== state.filters.sourceKind) return false;
     return true;
   });
   renderSignalsContextLabel(filtered.length);
@@ -2174,6 +2304,7 @@ function renderSignalsContextLabel(visibleCount) {
   const filtersActive =
     state.filters.minImpact > 0 ||
     !!state.filters.type ||
+    !!state.filters.sourceKind ||
     state.filters.showNoise;
   const countLabel = filtersActive && visibleCount !== totalForCompany
     ? `${visibleCount} of ${totalForCompany}`
@@ -2183,24 +2314,27 @@ function renderSignalsContextLabel(visibleCount) {
       ? `<span class="scope-label">Filtered to</span> <strong>${esc(company.name)}</strong>`
       : '<strong>Whole market</strong>'}</span>
     <span class="scope-count">${countLabel} signal${visibleCount === 1 ? '' : 's'}</span>
-    ${filtersActive ? '<span class="scope-filters-hint" title="Min-impact, type, or noise filters are active — click to clear">· filters active <button type="button" class="scope-clear-btn" id="scope-clear-btn">clear</button></span>' : ''}`;
+    ${filtersActive ? '<span class="scope-filters-hint" title="Min-impact, type, source, or noise filters are active — click to clear">· filters active <button type="button" class="scope-clear-btn" id="scope-clear-btn">clear</button></span>' : ''}`;
   const clearBtn = el.querySelector('#scope-clear-btn');
   if (clearBtn) clearBtn.addEventListener('click', clearSignalFilters);
 }
 
-// Reset only the per-signal filters (impact / type / noise). Leaves the competitor
+// Reset only the per-signal filters (impact / type / source / noise). Leaves the competitor
 // selection alone — that's driven by the competitor nav, not this panel.
 function clearSignalFilters() {
   state.filters.minImpact = 0;
   state.filters.type = '';
+  state.filters.sourceKind = '';
   state.filters.showNoise = false;
   const slider = document.getElementById('impact-min');
   const val = document.getElementById('impact-min-val');
   const typeSel = document.getElementById('type-filter');
+  const sourceSel = document.getElementById('source-filter');
   const noiseBox = document.getElementById('show-noise');
   if (slider) slider.value = '0';
   if (val) val.textContent = '0';
   if (typeSel) typeSel.value = '';
+  if (sourceSel) sourceSel.value = '';
   if (noiseBox) noiseBox.checked = false;
   renderSignals();
 }
@@ -3753,6 +3887,30 @@ function wireCopyDelegation() {
       });
     }
   });
+}
+
+/**
+ * Transient message in the existing toast element.
+ *
+ * Reuses #copy-toast rather than adding a second floating element, and restores its
+ * default label afterwards so the copy path is unaffected. Errors need somewhere to
+ * land that is not an alert() — a modal dialog blocks the page and, in this dashboard,
+ * would interrupt the browser automation used to screenshot it.
+ */
+function toast(message, ms = 2600) {
+  const el = document.getElementById('copy-toast');
+  if (!el) return;
+  el.textContent = message;
+  el.classList.remove('hidden');
+  el.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => {
+      el.classList.add('hidden');
+      el.textContent = 'Copied ✓';
+    }, 300);
+  }, ms);
 }
 
 function copyToClipboard(text) {

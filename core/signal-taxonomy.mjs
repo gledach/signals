@@ -45,6 +45,9 @@ export const SOURCE_TIER_SCORES = {
   trends: 70,    // Google Trends — aggregated behaviour, not a single source
   correlation: 95, // synthesized from multiple underlying sources — highest tier
   'manual-clip': 60, // human-submitted via Chrome extension — decent signal, unverified
+  // Zone 2 promote from Gmail Google Alerts (Plan 07 Path A′). Below news/blog:
+  // third-party publisher via alert intermediary, not first-party outlet.
+  'email-google-alert': 65,
   unknown: 40,
 };
 

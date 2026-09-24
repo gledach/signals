@@ -2910,3 +2910,47 @@ table.verified-facts ul { margin: 4px 0 0; padding-left: 16px; }
   .battle-table thead th:first-child,
   .battle-table tbody th { width: 96px; font-size: 10px; }
 }
+
+/* ── "Was this right?" — operator verdicts on convergences ─────────────────
+   The measurement loop for Signal's own precision. See sql/010-signal-feedback.sql.
+
+   Intel's .conv-actions row is hover-only (opacity: 0), which is right for the jump and
+   evidence buttons but wrong for a recorded answer: a verdict the operator cannot see
+   without hovering is a verdict they will give twice. So an ANSWERED control overrides
+   the hover rule and stays visible; an unanswered one stays quiet like its neighbours. */
+.verdict-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding-left: 8px;
+}
+.verdict-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.conv-actions .verdict-btn {
+  padding: 2px 8px;
+  font-size: 10px;
+  color: var(--muted);
+  border-color: transparent;
+}
+.conv-actions .verdict-btn:hover { color: var(--text); border-color: var(--border); }
+.conv-actions .verdict-btn.is-active {
+  color: var(--text);
+  border-color: currentColor;
+  font-weight: 600;
+}
+.conv-actions .verdict-btn[data-verdict="right"].is-active { color: var(--ok, #3fb950); }
+.conv-actions .verdict-btn[data-verdict="wrong"].is-active { color: var(--danger, #f85149); }
+.conv-actions .verdict-btn[data-verdict="unclear"].is-active { color: var(--warn, #d29922); }
+
+/* An answered card shows its verdict without needing hover. */
+#intel-convergence-cards .conv-card:has(.verdict-btn.is-active) .conv-actions { opacity: 1; }
+#intel-convergence-cards .conv-card:has(.verdict-btn.is-active) .conv-actions > :not(.verdict-control) {
+  opacity: 0;
+  transition: opacity 0.12s var(--ease);
+}
+#intel-convergence-cards .conv-card:hover .conv-actions > :not(.verdict-control) { opacity: 1; }

@@ -3,12 +3,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { loadEnv } from '../runtime/env.mjs';
 import { DEBUG_DIR, LLM_COST_LOG } from '../runtime/paths.mjs';
 loadEnv();
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// No __dirname here on purpose — runtime/paths.mjs is the single source of truth for
+// project paths, and deriving one from import.meta.url is the thing that file exists to
+// prevent. `path` below is only used for basename/dirname on values it hands us.
 const DUMP_DIR = DEBUG_DIR;
 const COST_LOG = LLM_COST_LOG;
 
@@ -136,9 +137,75 @@ function registerCostFooter() {
   });
 }
 
+// ── Proactive spend ceiling ────────────────────────────────────────────────
+//
+// There was no ceiling on this path. `core/agent-budget.mjs` enforces one, but only
+// `mcp-server.mjs` consults it — so an agent was bounded while cron, `npm run all`,
+// `refresh`, `research` and `analyst` were not. The only thing standing between a
+// misconfigured loop and the bill was classify.mjs's tripwire, which is REACTIVE: it
+// fires after OpenRouter starts refusing, i.e. after the money is gone.
+//
+// OFF unless CI_LLM_DAILY_CEILING_USD is set, so default behaviour is unchanged.
+//
+// When the ceiling is hit this THROWS rather than degrading to the keyword classifier.
+// That looks harsher than falling back, and it is deliberate: a silent downgrade writes
+// keyword-quality rows into the permanent store, which is exactly how ~1,900 production
+// rows were corrupted on 2026-08-01 (see classify.mjs). A stopped run is recoverable; a
+// store full of quietly-wrong classifications is not.
+//
+// Checked once per process, against the same rolling 24h `llm_cost` ledger the agent
+// budget uses — so an agent and the cron draw down one number, not two.
+const DAILY_CEILING_USD = Number(process.env.CI_LLM_DAILY_CEILING_USD || 0);
+let _ceilingCheck = null;
+
+class BudgetCeilingError extends Error {}
+
+/**
+ * The decision, separated from the I/O so it can be tested without a ledger, a network
+ * or a key. Returns null when the call may proceed, or the refusal message.
+ */
+export function ceilingVerdict(spent, ceiling = DAILY_CEILING_USD) {
+  if (!(ceiling > 0)) return null;
+  if (!(spent >= ceiling)) return null;
+  return `Refusing to call the LLM: $${spent.toFixed(2)} spent in the last 24h, at or over the `
+    + `$${ceiling.toFixed(2)} ceiling (CI_LLM_DAILY_CEILING_USD). `
+    + 'Budget frees up as older spend ages out of the rolling window. '
+    + 'Review with: npm run cost';
+}
+
+async function assertDailyCeiling() {
+  if (!(DAILY_CEILING_USD > 0)) return;
+  // Cache the PROMISE, not the outcome: every call awaits the same check, so a refusal
+  // refuses all of them rather than only the first one to arrive.
+  if (!_ceilingCheck) {
+    _ceilingCheck = (async () => {
+      const { spentSince, windowStart } = await import('../core/agent-budget.mjs');
+      const spent = await spentSince(windowStart());
+      const refusal = ceilingVerdict(spent);
+      if (refusal) throw new BudgetCeilingError(refusal);
+      console.log(
+        `[openrouter] budget ok — $${spent.toFixed(4)} of $${DAILY_CEILING_USD.toFixed(2)} used in the last 24h`,
+      );
+    })();
+  }
+  try {
+    await _ceilingCheck;
+  } catch (err) {
+    if (err instanceof BudgetCeilingError) throw err;
+    // The ledger is telemetry and it lives in Turso. A read failure must not halt a
+    // pipeline that is otherwise healthy — that would turn a database hiccup into an
+    // outage. Warn, proceed, and leave the reactive tripwire and OpenRouter's own limits
+    // as the backstop. Note this is the OPPOSITE choice to checkBudget(), which fails
+    // closed: there, refusing one agent action is cheap.
+    console.warn(`[openrouter] spend ledger unreadable (${err.message}) — ceiling NOT enforced this run`);
+    _ceilingCheck = Promise.resolve();
+  }
+}
+
 export async function chat({ model, messages, temperature = 0.2, maxTokens = 1024, responseFormat, meta, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error('OPENROUTER_API_KEY not set in env');
+  await assertDailyCeiling();
 
   const chosenModel = model || DEFAULT_CLASSIFIER_MODEL;
   const body = {

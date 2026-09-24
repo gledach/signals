@@ -1,24 +1,29 @@
 # Plan 07 — Email-to-signal ingest
 
-> Tier: **GOOD** · Effort: ~4 hours (Google Alerts only) · ~1–2 days (full pipeline) · Cost: $0–12/mo
-> **Status:** Ready to execute. Architecture locked 2026-04-16.
+> Tier: **GOOD** · Effort: Phase 1 shipped · remaining parsers ~30 min each · Cost: $0–12/mo  
+> **Status:** **Phase 1 SHIPPED (2026-08-08) as Path A′** — Gmail API `gmail.readonly` + three zones.  
+> Operator runbook: **[docs/gmail.md](../gmail.md)**. Security SoT: `.apsolut/ideas/gmaillocalingestion.html`.
 
-Ingest any intel delivered via email — Google Alerts, Talkwalker Alerts, Mention.com digests, Crunchbase daily, ListenNotes podcast alerts, Morning Brew / Stratechery / The Information, SEC Form D notifications, investor briefings — as Signal signals. Generalizes the "some service only outputs email" problem once.
+Ingest any intel delivered via email — Google Alerts first, later Talkwalker, Crunchbase digests, newsletters — as Signal signals. Generalizes the "some service only outputs email" problem once.
 
-**The big framing:** this isn't a "Google Alerts integration." It's an **email ingest pipeline** where Google Alerts becomes the first parser; every subsequent source is ~30 min of parser work.
+**The big framing:** this is an **email ingest pipeline** where Google Alerts is the first parser; every subsequent source is ~30 min of parser work **behind the same Zone 1 / Zone 2 wall**.
 
 ---
 
-## TL;DR — how hard is it?
+## TL;DR — current state
 
-| Scope | Effort |
+| Scope | Status |
 |---|---|
-| Google Alerts only (first parser + core pipeline) | ~4 hours |
-| + Talkwalker + generic URL-extractor parser | ~1 full day |
-| + Crunchbase + ListenNotes + SEC Form D parsers | ~1.5 days |
-| + Cloudflare Email Routing (Path B, push-based) | +half day |
+| Path A′ Zone 1 (Gmail API + local inbox DB + GA parser + sanitiser + OAuth/PKCE) | **SHIPPED** — `ingest/gmail*`, `npm run watch:gmail` |
+| Path A′ Zone 2 (promote + classify → `appendSignal`) | **SHIPPED** — `pipeline/email-promote.mjs` |
+| Offline fixtures + `npm test` gate | **SHIPPED** — `test/fixtures/email/` |
+| Operator live (dedicated Gmail, GCP OAuth Production, Task Scheduler) | **Operator** — see [docs/gmail.md](../gmail.md) |
+| Path 0 Google Alerts RSS (zero mailbox secret) | Optional; still valid via feeds |
+| Path A IMAP + app password | **REJECTED** (2026-08-08 SoT) — do not implement |
+| Additional parsers (Talkwalker, Crunchbase, …) | Not started (~30 min each) |
+| Path B Cloudflare push | Deferred (needs authed public ingest) |
 
-**Recommended first ship:** Path A (Gmail IMAP) with Google Alerts parser only. 4 hours. Ship, see value, add parsers opportunistically.
+**Recommended live path today:** Path A′ with ~20 alerts → local promote → scale.
 
 ---
 
@@ -54,41 +59,36 @@ Ingest any intel delivered via email — Google Alerts, Talkwalker Alerts, Menti
 
 ---
 
-## Architecture
+## Architecture (Path A′ — shipped)
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│ email-watch.mjs  (cron: every 30 min)                       │
-│                        │                                      │
-│                        ▼                                      │
-│  ┌─ imapflow ───── connect Gmail, fetch UNSEEN ─────┐       │
-│  │                     │                              │       │
-│  │                     ▼                              │       │
-│  │  for each message: parse via mailparser            │       │
-│  │                     │                              │       │
-│  │                     ▼                              │       │
-│  │  parser registry matches by sender / subject:       │       │
-│  │   googlealerts-noreply@google.com → google-alerts   │       │
-│  │   noreply@talkwalker.com          → talkwalker      │       │
-│  │   notifications@crunchbase.com    → crunchbase      │       │
-│  │   (anything else)                 → generic-urls    │       │
-│  │                     │                              │       │
-│  │                     ▼                              │       │
-│  │  extract signals (title + url + snippet + query)   │       │
-│  │                     │                              │       │
-│  │                     ▼                              │       │
-│  │  → LLM classify (reuse existing classify.mjs)      │       │
-│  │  → appendSignal to Turso                          │       │
-│  │  → mark message read                               │       │
-│  └────────────────────────────────────────────────────┘       │
-└────────────────────────────────────────────────────────────┘
+ZONE 1 — npm run watch:gmail          ZONE 2 — npm run email:promote
+ingest/gmail-ingest.mjs               pipeline/email-promote.mjs
+  │ token: CredMan / DPAPI              │ NO Gmail token
+  │ egress: Google only                 │ may call classify (capped)
+  │ NO openrouter / classify            │
+  ▼                                     ▼
+Gmail API gmail.readonly            pending rows in
+  label Signal/Alerts                 data/email/inbox.db
+  sanitise + GA parser                    │
+  ▼                                       ▼
+data/email/inbox.db (local only)    listicle / wrong-entity
+  status=pending                      classifySignalBatch
+                                      appendSignal (store.mjs)
+                                      sourceKind=email-google-alert
 ```
 
-Every signal gets `sourceKind: 'email-<parser>'` so it's distinguishable in the dashboard (e.g., `email-google-alert`, `email-talkwalker`, `email-generic`).
+Every promoted signal gets `sourceKind: 'email-google-alert'` (and later `email-<parser>`).  
+MCP and agents read the **signals store only**. Dashboard filter by `sourceKind`.
+
+Canonical operator docs: **[docs/gmail.md](../gmail.md)**.
 
 ---
 
-## Path A — IMAP polling (recommended starting point)
+## Path A (IMAP) — historical / REJECTED
+
+> **Do not implement.** Superseded 2026-08-08 by Path A′ (Gmail API + zones).  
+> App passwords grant full mailbox scope with no revocation granularity.
 
 ### Files to add
 
@@ -246,18 +246,19 @@ Test during setup by attempting connection once. If it fails with cert error, ad
 
 ---
 
-## Shipping order (Phase 1 — ~4 hours end-to-end)
+## Shipping order (Phase 1 — Path A′ code)
 
-- [ ] `npm install imapflow mailparser`
-- [ ] User completes one-time Gmail setup (5 min)
-- [ ] Write `email-watch.mjs` — IMAP connect, fetch UNSEEN, dispatch by sender
-- [ ] Write `email-parsers/google-alerts.mjs` — HTML extractor with snippet capture
-- [ ] Write `email-parsers/generic.mjs` — fallback URL extractor for unknown senders
-- [ ] Wire output through existing `classify.mjs` + `appendSignal`
-- [ ] Add to `package.json`: `watch:email`, `watch:email:dry`
-- [ ] Add step to `all` chain (after `watch:certs`)
-- [ ] Update `help.mjs` + HOWTO section
-- [ ] Smoke test: user triggers one Google Alert manually → verify arrival in inbox → run `npm run watch:email` → verify signals land in Turso → visible in dashboard
+- [x] Gmail API Zone 1 modules under `ingest/gmail/` (no classify/OpenRouter)
+- [x] Google Alerts parser + HTML sanitiser + trusted-From registry
+- [x] Local email store `data/email/inbox.db`
+- [x] Zone 2 `pipeline/email-promote.mjs` + prod Turso gate
+- [x] OAuth setup with PKCE (`npm run gmail:oauth`)
+- [x] `package.json` scripts: `watch:gmail*`, `email:promote*`, `gmail:oauth`
+- [x] Offline fixtures in `npm test`
+- [x] `docs/gmail.md`, HOWTO, doctor section, `.env.example`
+- [x] Multi-agent review + P0 fixes (dry-run no LLM, hidden anchors, mark-seen, etc.)
+- [ ] **Operator:** dedicated Gmail, GCP Production OAuth, label, ~20 alerts, Task Scheduler
+- [ ] **Not** wiring into `ops/cron-entry.mjs` / Railway until human re-approves token custody
 
 ## Shipping order (Phase 2 — additional parsers, ~30 min each)
 
@@ -265,15 +266,15 @@ Test during setup by attempting connection once. If it fails with cert error, ad
 - [ ] Crunchbase daily digest parser
 - [ ] SEC Form D email parser (EDGAR notifications)
 - [ ] ListenNotes podcast-alert parser
-- [ ] Generic newsletter parser (any `<a>` link extraction for unsupported sources)
+- [ ] Generic newsletter parser — only behind `CI_GMAIL_ALLOW_GENERIC` + fixtures
 
 ## Shipping order (Phase 3 — Cloudflare push, +half day)
 
-- [ ] Register domain or use subdomain of `homevendor.ai`
+- [ ] Register domain or use subdomain
 - [ ] Configure Cloudflare Email Routing
 - [ ] Write Cloudflare Worker (email → webhook)
-- [ ] Add `POST /api/ingest-email` to `serve.mjs`
-- [ ] Migrate from IMAP polling to push-based (keep IMAP as fallback)
+- [ ] Add **authenticated** `POST /api/ingest-email` (password gate first)
+- [ ] Keep local Zone 1 as fallback
 
 ---
 
@@ -385,6 +386,9 @@ Once Phase 1 is shipped, the pattern for adding each: write parser, add to regis
 |---|---|---|
 | 2026-04-16 | Plan scoped as email-ingest-pipeline (not Google-Alerts-integration) | User asked "how hard is Gmail hookup" — reframed to reusable pipeline where Google Alerts is one parser among many |
 | 2026-04-16 | Path A (IMAP) chosen for Phase 1 | Simpler setup; Cloudflare Path B deferred to Phase 3 |
-| TBD | Phase 1 started | |
-| TBD | Phase 1 shipped | |
+| 2026-08-08 | **Amend Path A with hard safety rails; optional Path 0 RSS first** | Multi-agent session (grok synthesis in `.apsolut-agents/runs/2026-08-08-gmail-stability-synthesis.md`). For ~100 alerts/day: dedicated Gmail only, **label/folder scan not full INBOX**, readonly/mark-read-after-store, env caps on messages+classify/day, no raw MIME in Turso, generic parser **off by default**, offline `.eml` fixtures before cron wire. Prefer starting ~20 **Google Alerts RSS** URLs (zero mailbox secret) to measure noise, then IMAP. Path B still blocked on authenticated public ingest. |
+| 2026-08-08 | **Supersede IMAP/app-password Path A as default** | Operator source: `.apsolut/ideas/gmaillocalingestion.html`. Recommended path is **Gmail REST API `gmail.readonly`** (own GCP OAuth desktop client) → local ingest daemon (Zone 1, token, no LLM) → sanitised local store → agents/Signal pipeline read store only (Zone 2, no token, no mailbox tools). App password + IMAP **rejected** (full mailbox scope, no revocation granularity). Hosted aggregators / gmail.modify MCP disqualified. Optional RSS remains zero-secret Phase 0. Multi-agent cards T-13/T-14 in flight. |
+| 2026-08-08 | **Phase 1 code landed (Path A′)** | `ingest/gmail/*` + `ingest/gmail-ingest.mjs` (Zone 1), `pipeline/email-promote.mjs` (Zone 2), `ops/gmail-oauth-setup.mjs`, fixtures under `test/fixtures/email/`. Scripts: `watch:gmail`, `watch:gmail:dry`, `email:promote`, `gmail:oauth`. **Not** wired into `ops/cron-entry.mjs` or Railway. Local store only (`data/email/inbox.db`). |
+| TBD | Phase 1 operator live (OAuth + label + first 20 alerts) | |
+| TBD | Phase 2 parsers added | |
 | TBD | Phase 2 parsers added | |

@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## Operator vault (seshat · davinci)
+
+`.apsolut/` uses the **davinci** profile from [apsolut-seshat](https://github.com/apsolut/apsolut-seshat).
+Read `.apsolut/PROFILE.md`. Numbered folders `01-inbox` … `08-screenshots`
+(`01-inbox` has free-form subfolders: important/, updates/, spam/, …).
+Do not bulk-load the vault; open one file per need. Product docs: `docs/`.
+
 This project uses [Turso](https://turso.tech/) (hosted libSQL) as its signal
 store. Schema source of truth: `sql/*.sql` applied via `npm run db:migrate`.
 The public store API lives in `core/store.mjs` — never talk to the DB directly
@@ -47,6 +54,18 @@ empty `allowActions`, and an operator opts in by adding `'run_analyst'` in
 it is bounded by a rolling 24h ceiling ($2.00/day, $0.30/call) read from the
 shared `llm_cost` ledger, so a refusal may be temporary. `npm run doctor`
 reports the active policy and remaining budget.
+
+## Gmail / Google Alerts (Path A′)
+
+Optional local collection path. Full docs: `docs/gmail.md`.
+
+- **Zone 1** (`npm run watch:gmail`) holds OAuth `gmail.readonly` only, writes
+  `data/email/inbox.db`, never classifies, never calls OpenRouter.
+- **Zone 2** (`npm run email:promote`) classifies pending hits into signals
+  (`sourceKind: email-google-alert`) via `core/store.mjs`.
+- **Agents never open Gmail.** Do not add mail tools to `mcp-server.mjs`.
+- App-password IMAP is rejected. Do not put the refresh token on Railway in v1.
+- Multi-agent security SoT: `.apsolut/ideas/gmaillocalingestion.html`.
 
 <!-- apsolut-agents:begin -->
 ## Multi-agent workspace (read first, every session)

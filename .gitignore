@@ -14,11 +14,26 @@ npm-debug.log
 # Local runtime logs (fetch output, etc.)
 .logs/
 
+# ── apsolut-seshat (davinci) ────────────────────────────────────────────────
+# Markdown vault under .apsolut/ may be committed. Binaries + heavy local scratch stay out.
+# apsolut (davinci): keep the binary folders + their templates, ignore the binaries
+.apsolut/07-files/*
+!.apsolut/07-files/000-template.md
+.apsolut/08-screenshots/*
+!.apsolut/08-screenshots/000-template.md
+# Pre-davinci local scratch (large / machine-specific)
+.apsolut/concepts/
+.apsolut/ref/
+.apsolut/screenshots/
+.apsolut/*.db
+.apsolut/**/*.db
+# ideas/ HTML runbooks may be force-added if useful; default ignore keeps noise down
+# (uncomment next line to ignore all ideas HTML too)
+# .apsolut/ideas/
+
 # Screenshots — dashboard captures from `npm run shot` and from browser
-# sessions. They live under .apsolut/screenshots/, inside the operator scratch
-# area that is already ignored wholesale above, so a capture cannot be committed
-# by accident. This root-level rule is kept only so an older working copy with
-# a stale screenshots/ directory stays clean.
+# sessions. Prefer .apsolut/08-screenshots/ (davinci). Root rule keeps stale
+# top-level screenshots/ directories clean.
 screenshots/
 
 # Analyst briefs — committed to git per Plan 13 Phase 5. Durability comes from
@@ -34,6 +49,8 @@ screenshots/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+# Zone 1 Gmail local store + DPAPI token blob (never commit)
+data/email/
 
 # Your own roster / feeds. These OVERRIDE the shipped defaults and are deliberately
 # untracked, so customising what you track never conflicts with `git pull`.

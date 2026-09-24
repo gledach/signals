@@ -27,6 +27,9 @@ Without `OPENROUTER_API_KEY` the keyword classifier runs instead of the LLM and
 `npm run refresh` / `npm run research` won't work. Everything else still does.
 `npm run doctor` (Step 8) tells you exactly what each missing key blocks.
 
+Optional later: Google Alerts via Gmail (local only) needs a GCP OAuth client —
+see [docs/gmail.md](./gmail.md). Not required for the first dashboard.
+
 Keep whatever he sends open in another window — you'll paste it into a file in
 Step 6. **Don't share these keys with anyone or commit them to git.**
 

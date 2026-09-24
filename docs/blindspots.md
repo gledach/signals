@@ -14,10 +14,10 @@ Review quarterly alongside [roadmap.md](./roadmap.md) and [plans/README.md](./pl
 - Actual product behavior (agent quality on a real repo, API internals, failure modes under load)
 - Employment / team signals (LinkedIn posts, jobs, Glassdoor)
 - Short-form social (Twitter/X, LinkedIn posts, TikTok)
-- Non-English coverage
+- Non-English coverage *(mechanism now exists — set `CI_NEWS_LOCALES`; nobody has chosen the locales)*
 - Real pricing / contract terms
 - Proprietary data (your CRM, their internals)
-- Its own effectiveness (no feedback loop on what convergence fires are right)
+- ~~Its own effectiveness~~ *(loop shipped — verdicts in Intel → precision per rule in `npm run report:weekly`. Needs `npm run db:migrate`, then operator clicks.)*
 
 ---
 
@@ -32,7 +32,7 @@ Ranked by expected impact for someone tracking the AI coding-agent market:
 | 3 | **Employment signals** (LinkedIn jobs, Glassdoor, Levels) | High — jobs leak roadmap months ahead | 2 days Proxycurl | [Plan 02 G3](./plans/02-good-builds.md), not built |
 | 4 | **Social short-form** (Twitter/X, LinkedIn posts) | Medium — 30–40% of real-time signal lives here | 1–2 days + $100/mo Twitter API | Not planned |
 | 5 | **Real pricing + customer-logo diffing** | Medium — leading signal for wins/losses | 3 hours | [Plan 03 T6](./plans/03-thinkable-bets.md), not built |
-| 6 | **Non-English coverage** | Medium — `core/feed-urls.mjs` defaults to `hl=en-US&gl=US` and nothing overrides it | Hours | Not scoped; trivial add |
+| 6 | ~~**Non-English coverage**~~ | Medium | Hours | **Closed (mechanism).** `CI_NEWS_LOCALES="de-DE:DE,ja-JP:JP"` adds one news feed per company and per category query in each locale. Opt-in by design — each locale multiplies ingest volume and classifier spend, so the default is still en-US only. Still open: nobody has *chosen* the locales |
 | 7 | **Investor network intel** (VC jet / yacht tracking) | Medium — leading indicator of rounds + M&A | 2 weeks OSINT | Sketched, never written up (see plans/README.md) |
 | 8 | **Customer 10-Q sentiment** (public customers talking about them) | Medium | 1 week | [Plan 03 T3](./plans/03-thinkable-bets.md), not built |
 | 9 | **Podcast appearances** beyond YouTube | Low-medium | 3 days | [Plan 02 G5](./plans/02-good-builds.md), not built |
@@ -106,7 +106,7 @@ Ranked by expected impact for someone tracking the AI coding-agent market:
 
 | Gap | Detail | Priority | Fix options |
 |---|---|---|---|
-| Non-English news (Japanese, Chinese, German, French) | Regional coverage invisible | Medium | Add feeds with `hl=ja-JP&gl=JP` etc. — trivial |
+| ~~Non-English news (Japanese, Chinese, German, French)~~ | **Mechanism shipped.** `CI_NEWS_LOCALES="ja-JP:JP,de-DE:DE,fr-FR:FR"` builds the `hl`/`gl` feeds per company and per category query | Medium | Opt-in — pick the locales that matter and measure the added classifier spend |
 | Regional tech press (Tech.eu, Sifted, Nikkei Asia, TechCrunch JP) | Non-US trade coverage | Medium | Add RSS feeds |
 | Local business directories (Europe / Asia) | Regional review aggregators | Low | Manual |
 | Non-English podcasts + YouTube | Whisper supports it | Low | Add feeds |
@@ -158,7 +158,12 @@ Ranked by expected impact for someone tracking the AI coding-agent market:
 
 ### 📨 Email-delivered intel
 
-Google Alerts + Mention.com + newsletters + investor emails. Covered in [Plan 07](./plans/07-email-ingest.md).
+| Gap | Detail | Priority | Fix options |
+|---|---|---|---|
+| Google Alerts | **Phase 1 code shipped** (Gmail API Path A′) — operator OAuth + label still required for live | High | [docs/gmail.md](./gmail.md), [Plan 07](./plans/07-email-ingest.md) |
+| Talkwalker / Mention / Crunchbase digests | Same Zone 1/2 pipeline; new parser modules only | Medium | ~30 min each after live GA works |
+| Newsletters without structured HTML | Generic parser **off by default** (cost + injection) | Low | Enable only with caps + fixtures |
+| Hosted Railway Zone 1 | Token on shared container rejected for v1 | — | Keep Task Scheduler local |
 
 ---
 
@@ -169,7 +174,7 @@ These are gaps in Signal's own reasoning / feedback / self-awareness:
 | Gap | Impact |
 |---|---|
 | **No feedback loop** — classifier doesn't learn from "this landed" captures | Over months, Signal can't tell which kill shots actually win YOUR deals |
-| **No calibration** — convergence fires never re-scored against reality | Can't distinguish "rule that predicted 3 real events" from "rule that cried wolf 3 times" |
+| ~~**No calibration**~~ — **closed.** "Was this right?" on every convergence card writes a verdict to `signal_feedback`; the weekly report prints precision per rule and flags any rule below 50% | Was: can't distinguish "rule that predicted 3 real events" from "rule that cried wolf 3 times". Now measurable — but only once the operator answers, and only for convergences |
 | **No cross-run learning** — every fetch is stateless | Signal importance doesn't update based on outcomes |
 | **No win/loss sync** — depends on external CRM (Salesforce, HubSpot) | Truest validation (did we win?) never enters Signal |
 | **No rep-activity integration** (Gong, Chorus) | Which battle content actually gets used in calls = invisible |
@@ -178,7 +183,7 @@ These are gaps in Signal's own reasoning / feedback / self-awareness:
 | **No CRM / Salesforce sync** | Data stuck in Signal, can't flow to where deals actually live |
 | **No programmatic export** beyond Markdown / PDF | Hard to pipe anywhere |
 | **Battle mode section matching is regex-based** | Rigid — breaks if battlecard structure shifts |
-| **Correlation rules are hand-tuned** | No ML on rule effectiveness — each rule is a hypothesis, never evaluated |
+| **Correlation rules are hand-tuned** | Still no ML, but a rule is no longer *unevaluated*: the per-rule precision table in the weekly report is the evidence for retuning or retiring one |
 | **No version history** on battlecards | Relies on git; no in-app diff view |
 | **Classifier has no adversarial test set** | Unknown false-positive / false-negative rates |
 | **No "audit trail"** for convergence fires | When correlation engine surfaces an insight, we don't record why each signal qualified |
@@ -201,7 +206,7 @@ If you wanted to materially narrow blind spots, ranked by cost:
 ### Free wins
 | Build | Hours | Returns |
 |---|---|---|
-| Non-English news feeds (Japan, Germany, France) | 1 | Regional coverage |
+| ~~Non-English news feeds (Japan, Germany, France)~~ | **done** | Regional coverage — set `CI_NEWS_LOCALES` |
 | Plan 01 Q8 API docs changelog | 4 | Product surface diff |
 | Plan 03 T6 Customer-logo diffing | 3 | First-order customer-win signal |
 | Plan 02 G7 Reddit deep-mining | 16 | Customer-voice access (free Reddit API) |
@@ -251,6 +256,8 @@ Run through this every 3 months (a 30-min review), update the doc:
 
 Strong: **category awareness, deal prep, convergence detection, daily signal flow.**
 
-Weak: **customer voice in private channels, employment intel, real pricing, feedback loops on effectiveness.**
+Weak: **customer voice in private channels, employment intel, real pricing.**
+
+Newly measurable: **its own precision** — the verdict loop exists; what it does not yet have is data, because that requires the operator to answer. A loop nobody uses measures nothing, so this moves from "structural gap" to "habit not yet formed".
 
 **Single highest-ROI unbuilt item:** Plan 03 T4 — demo-call recording. It's the blind spot you're uniquely positioned to close (you build AI coding), and nobody else in the CI space has it.

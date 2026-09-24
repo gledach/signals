@@ -16,7 +16,7 @@
 //   blog      — vendor blog/changelog, only where a real URL is known (see below)
 //   category  — market-wide, not attributable to one company
 
-import { buildFeeds, googleNewsUrl } from '../core/feed-urls.mjs';
+import { buildFeeds, googleNewsUrl, newsLocales } from '../core/feed-urls.mjs';
 import { COMPANIES, MARKETS } from './companies.mjs';
 
 // Market-wide queries. These catch the category shift that no single company's feed
@@ -27,14 +27,19 @@ const CATEGORY_QUERIES = {
   'vibe-coding': '"vibe coding" OR "prompt to app" OR "AI app builder"',
 };
 
+// Category feeds follow the same locale list as company news. A market-wide shift is
+// exactly the thing most likely to be reported in the regional press first — "every
+// vendor here shipped X" reaches Nikkei or Heise before it reaches US trade coverage
+// about as often as the reverse.
 const categoryFeeds = MARKETS
   .filter((m) => CATEGORY_QUERIES[m])
-  .map((m) => ({
+  .flatMap((m) => newsLocales().map((loc) => ({
     companyId: 'category',
     market: m,
     kind: 'category',
-    url: googleNewsUrl(CATEGORY_QUERIES[m]),
-  }));
+    locale: `${loc.lang}:${loc.country}`,
+    url: googleNewsUrl(CATEGORY_QUERIES[m], loc),
+  })));
 
 // Hand-added feeds go here — vendor blog/changelog RSS is NOT constructible (every
 // vendor picks a different path) and guessing produces 404s on a user's first fetch,

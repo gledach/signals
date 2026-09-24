@@ -133,6 +133,135 @@ section('What is unlocked');
   }
 }
 
+// ── Gmail Path A′ (optional local Zone 1 / Zone 2) ─────────────────────────
+section('Gmail alerts (Path A′ — local only)');
+{
+  const has = (k) => !!process.env[k]?.trim();
+  const clientOk = has('CI_GMAIL_CLIENT_ID') && has('CI_GMAIL_CLIENT_SECRET');
+  const label = process.env.CI_GMAIL_LABEL || 'Signal/Alerts';
+  const emailDb = fromRoot('data', 'email', 'inbox.db');
+  const dpapi = fromRoot('data', 'email', 'refresh.dpapi.b64');
+  const ingestPath = fromRoot('ingest', 'gmail-ingest.mjs');
+  const promotePath = fromRoot('pipeline', 'email-promote.mjs');
+
+  if (fs.existsSync(ingestPath) && fs.existsSync(promotePath)) {
+    ok('Gmail modules present (Zone 1 ingest + Zone 2 promote)');
+  } else {
+    bad('Gmail modules missing', 'Expected ingest/gmail-ingest.mjs and pipeline/email-promote.mjs');
+  }
+
+  if (clientOk) ok('CI_GMAIL_CLIENT_ID + CI_GMAIL_CLIENT_SECRET set', `label default: ${label}`);
+  else console.log(`${WARN.replace('warn', ' -- ')} Gmail OAuth client not set — optional. Unlocks: npm run gmail:oauth + watch:gmail. See docs/gmail.md`);
+
+  // Token presence (never print secrets). keytar is opaque; DPAPI file is a local signal.
+  //
+  // Presence is NOT validity. This reported a clean `ok` for a token Google had already
+  // expired 39 days earlier, and the first sign of trouble was `watch:gmail` dying with
+  // a bare `invalid_grant`. Doctor cannot prove a token works without spending a network
+  // round trip on every run — but it can report the one number that predicts this
+  // failure, because a consent screen left in "Testing" expires refresh tokens after 7
+  // days and that is the common case by a wide margin.
+  if (fs.existsSync(dpapi)) {
+    const ageDays = Math.floor((Date.now() - fs.statSync(dpapi).mtimeMs) / 86400_000);
+    if (ageDays > 7) {
+      warn(
+        `DPAPI refresh-token blob is ${ageDays} days old`,
+        'Still valid only if the OAuth consent screen is "In production" — a "Testing" '
+        + 'screen expires refresh tokens after 7 days. If watch:gmail fails with '
+        + 'invalid_grant, publish the consent screen then run: npm run gmail:oauth',
+      );
+    } else {
+      ok(`DPAPI refresh-token blob present under data/email/ (${ageDays}d old)`);
+    }
+  }
+  else if (has('CI_GMAIL_REFRESH_TOKEN') && process.env.CI_GMAIL_ALLOW_ENV_TOKEN === '1') {
+    warn('refresh token via env (CI_GMAIL_ALLOW_ENV_TOKEN=1)', 'Prefer CredMan/keytar or npm run gmail:oauth DPAPI for production use.');
+  } else if (clientOk) {
+    warn('OAuth client set but no local token found', 'Run: npm run gmail:oauth');
+  }
+
+  if (fs.existsSync(emailDb)) {
+    try {
+      const emailStore = await import('../ingest/gmail/local-store.mjs');
+      const counts = await emailStore.countHitsByStatus();
+      const pending = counts.pending || 0;
+      const promoted = counts.promoted || 0;
+      const errored = counts.error || 0;
+      const skipped = counts.skipped || 0;
+      // Report every status, not just the two happy ones. `error` is the status that
+      // matters most here and it was the one this line did not print: hits park there on
+      // a per-item failure and nothing retries them, so an invisible count is a silent
+      // data loss that looks like a clean bill of health.
+      ok(
+        `local email inbox DB — pending=${pending} promoted=${promoted} skipped=${skipped} error=${errored}`,
+        emailDb,
+      );
+      if (pending > 0) {
+        console.log('        Promote with: npm run email:promote:dry  then  npm run email:promote:nollm or email:promote');
+      }
+      if (errored > 0) {
+        warn(
+          `${errored} email hit(s) parked in error`,
+          'Nothing retries these on its own. Recover with: npm run email:requeue',
+        );
+      }
+
+      // A message stuck mid-resume, or one a parser keeps returning nothing for, is
+      // invisible in the status counts above — it lives in gmail_seen_messages.
+      // Which mailbox is being read. Blank until the next successful watch:gmail — the
+      // address was not recorded before, which is why an expired token left no trace of
+      // which account had been authorised.
+      const sync = await emailStore.loadSyncState().catch(() => null);
+      if (sync?.accountEmail) {
+        console.log(`        mailbox: ${sync.accountEmail} · label ${sync.labelName || '?'}`);
+      } else {
+        console.log('        mailbox: not recorded yet — next successful watch:gmail will store it');
+      }
+
+      const stalled = await emailStore.countStalledMessages().catch(() => null);
+      if (stalled?.partial) {
+        console.log(`        ${stalled.partial} message(s) partially ingested — next watch:gmail resumes them`);
+      }
+      if (stalled?.zeroHit) {
+        warn(
+          `${stalled.zeroHit} message(s) parse to zero hits repeatedly`,
+          'A parser is not matching this mail. See ingest/gmail/parsers/ and docs/gmail.md.',
+        );
+      }
+    } catch (err) {
+      warn(`email inbox DB exists but could not be read: ${err.message}`);
+    }
+  } else {
+    console.log(`${WARN.replace('warn', ' -- ')} no data/email/inbox.db yet — run fixture dry or watch:gmail after OAuth`);
+  }
+
+  const turso = process.env.TURSO_DATABASE_URL || '';
+  const hosted = /^libsql:\/\/|^wss?:\/\/|^https?:\/\//.test(turso);
+  if (hosted && process.env.CI_EMAIL_PROMOTE_ALLOW_PROD !== '1') {
+    console.log(`${WARN.replace('warn', ' -- ')} promote to hosted Turso is gated — set CI_EMAIL_PROMOTE_ALLOW_PROD=1 only after review`);
+  }
+
+  // Hard invariant: MCP must not grow Gmail tools.
+  try {
+    const mcpSrc = fs.readFileSync(fromRoot('mcp-server.mjs'), 'utf8');
+    if (/\bgmail\b/i.test(mcpSrc) || /send_email|read_mail/i.test(mcpSrc)) {
+      bad('mcp-server.mjs appears to reference Gmail/mail tools', 'Zone 2 rule: agents never hold the mailbox. Remove any mail tools.');
+    } else {
+      ok('MCP has no Gmail tools (agents read store only)');
+    }
+  } catch { /* ignore */ }
+
+  // Cron must not silently schedule Gmail (token must stay local).
+  try {
+    const cronSrc = fs.readFileSync(fromRoot('ops', 'cron-entry.mjs'), 'utf8');
+    if (/gmail-ingest|watch:gmail|email-promote/i.test(cronSrc)) {
+      warn('cron-entry.mjs references Gmail — token on Railway is a different threat model', 'Default Path A′ keeps Zone 1 on Windows Task Scheduler only.');
+    } else {
+      ok('cron-entry does not run Gmail (Zone 1 stays local by default)');
+    }
+  } catch { /* ignore */ }
+}
+
 // ── agent surface ──────────────────────────────────────────────────────────
 section('Agent surface (MCP)');
 {

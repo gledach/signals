@@ -8,7 +8,7 @@ import path from 'node:path';
 import { COMPANIES, COMPETITOR_IDS, OUR_COMPANY_ID, MAIN_COMPANY_ID } from '../config/companies.mjs';
 import { framing, winThemeHeadings } from '../core/home-brand.mjs';
 import { readJsonArtifact, writeJsonArtifact, listJsonArtifacts, removeArtifact } from '../core/artifacts.mjs';
-import { loadLlmCost, loadIndex, loadSitemapSnapshot, loadCertSnapshot, listBriefs, loadBrief, saveBrief, getLastCronRun, getCronRuns, appendSignal, updateSignal } from '../core/store.mjs';
+import { loadLlmCost, loadIndex, loadSitemapSnapshot, loadCertSnapshot, listBriefs, loadBrief, saveBrief, getLastCronRun, getCronRuns, appendSignal, updateSignal, upsertFeedback, loadFeedbackFor, feedbackPrecision } from '../core/store.mjs';
 import { SIGNAL_TYPES as SIGNAL_TYPE_DEFS } from '../core/signal-taxonomy.mjs';
 import { renderWeeklyReport as renderWeeklyReportMd } from '../cli/weekly-report-render.mjs';
 import { chatJson, synthesisModel, hasApiKey } from '../pipeline/openrouter.mjs';
@@ -46,6 +46,20 @@ function send(res, status, body, type = 'text/plain', extraHeaders = {}) {
   res.end(body);
 }
 function sendJson(res, obj) { send(res, 200, JSON.stringify(obj), MIME['.json']); }
+
+/**
+ * Recover the correlation rule id from a convergence hashId.
+ *
+ * correlate.mjs builds it as `convergence:<ruleId>:<companyId>:<isoWeek>`, so the rule
+ * is already in the key. Reading it from there rather than from the signal row is
+ * deliberate: every correlate run deletes and rewrites the convergence rows, and a
+ * verdict must stay attributable to its rule after its subject is gone. Returns null
+ * for ordinary signals, which have no rule.
+ */
+function ruleIdFromHash(hashId) {
+  const parts = String(hashId || '').split(':');
+  return parts[0] === 'convergence' && parts[1] ? parts[1] : null;
+}
 
 // ────────────────────────────── static file cache ───────────────────────────
 // Read viewer files once at startup so concurrent requests don't block on I/O.
@@ -365,6 +379,47 @@ const server = http.createServer(async (req, res) => {
       const updated = await updateSignal(targetHash, patch);
       if (!updated) return send(res, 404, JSON.stringify({ error: 'signal not found' }), MIME['.json']);
       return sendJson(res, { ok: true, hashId: targetHash, patch });
+    }
+
+    // ── Was this right? Operator verdicts on what Signal produced.
+    //
+    // The one blind spot in docs/blindspots.md with no plan and no owner was Signal's
+    // own effectiveness: a convergence rule that fires on noise is indistinguishable
+    // from one that fires on a real pattern, for ever, because nothing ever records an
+    // answer. This is the answer being recorded.
+    if (pathname === '/api/feedback' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { subjectId, verdict, note } = body || {};
+      if (!subjectId) return send(res, 400, JSON.stringify({ error: 'subjectId required' }), MIME['.json']);
+      if (!['right', 'wrong', 'unclear'].includes(verdict)) {
+        return send(res, 400, JSON.stringify({ error: 'verdict must be right, wrong or unclear' }), MIME['.json']);
+      }
+      // Denormalise the subject's identity onto the verdict. Convergences are deleted
+      // and rewritten by every correlate run, so the row this verdict is about may not
+      // exist tomorrow — and the verdict is still evidence about the rule that made it.
+      const all = await loadIndex();
+      const subject = all.find((s) => s.hashId === subjectId);
+      const result = await upsertFeedback({
+        subjectId,
+        verdict,
+        note: typeof note === 'string' && note.trim() ? note.trim().slice(0, 500) : null,
+        signalType: subject?.signalType ?? null,
+        companyId: subject?.companyId ?? null,
+        ruleId: ruleIdFromHash(subjectId),
+        source: 'viewer',
+      });
+      if (!result.ok) return send(res, 503, JSON.stringify({ error: result.reason }), MIME['.json']);
+      return sendJson(res, { ok: true, subjectId, verdict });
+    }
+
+    if (pathname === '/api/feedback' && req.method === 'GET') {
+      const sinceDays = Number(url.searchParams.get('days') || 30);
+      const ids = (url.searchParams.get('ids') || '').split(',').filter(Boolean);
+      const [summary, verdicts] = await Promise.all([
+        feedbackPrecision({ sinceDays: Number.isFinite(sinceDays) ? sinceDays : 30 }),
+        ids.length ? loadFeedbackFor(ids) : Promise.resolve({}),
+      ]);
+      return sendJson(res, { summary, verdicts });
     }
 
     // ── OG image / favicon resolver (with in-memory cache)

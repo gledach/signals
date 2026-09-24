@@ -694,3 +694,130 @@ export async function updateArtifactBody({ kind, artifactKey, companyId, scope, 
     metadata: metadata ?? existing?.metadata ?? null,
   });
 }
+
+// ── Operator feedback ───────────────────────────────────────────────────────
+//
+// "Was this right?" — the loop that lets Signal measure itself. See
+// sql/010-signal-feedback.sql for why verdicts are append-only rows rather than a
+// column on `signals`.
+//
+// Every function here tolerates the table being ABSENT. The migration is applied by
+// hand (`npm run db:migrate` writes to the canonical store, which is a human decision),
+// so between this code landing and that being run, the table does not exist. A missing
+// table must degrade to "no feedback recorded yet" and never break the dashboard or the
+// weekly report — those are read paths the operator depends on.
+
+const VERDICTS = new Set(['right', 'wrong', 'unclear']);
+
+function isMissingFeedbackTable(err) {
+  return /no such table: ?signal_feedback/i.test(String(err?.message || ''));
+}
+
+/**
+ * Record (or correct) one verdict. Upsert on (subjectId, source): clicking again is a
+ * correction, not a second vote — see the unique index in the migration.
+ *
+ * @returns {Promise<{ ok: boolean, reason?: string }>}
+ */
+export async function upsertFeedback({
+  subjectId, verdict, signalType = null, companyId = null,
+  ruleId = null, note = null, source = 'viewer',
+}) {
+  if (!subjectId) throw new Error('upsertFeedback: subjectId required');
+  if (!VERDICTS.has(verdict)) {
+    throw new Error(`upsertFeedback: verdict must be one of ${[...VERDICTS].join(', ')}, got "${verdict}"`);
+  }
+  const client = getClient();
+  try {
+    await client.execute({
+      sql: `INSERT INTO signal_feedback (ts, subjectId, verdict, signalType, companyId, ruleId, note, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(subjectId, source) DO UPDATE SET
+              ts = excluded.ts,
+              verdict = excluded.verdict,
+              note = excluded.note`,
+      args: [
+        new Date().toISOString(), subjectId, verdict,
+        signalType, companyId, ruleId, note, source,
+      ],
+    });
+    return { ok: true };
+  } catch (err) {
+    if (isMissingFeedbackTable(err)) {
+      return { ok: false, reason: 'signal_feedback table not present — run: npm run db:migrate' };
+    }
+    throw err;
+  }
+}
+
+/** Verdicts for a set of subject ids, keyed by subjectId. Used to render current state. */
+export async function loadFeedbackFor(subjectIds) {
+  const ids = [...new Set((subjectIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  const client = getClient();
+  const out = {};
+  const CHUNK = 200;
+  try {
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK);
+      const res = await client.execute({
+        sql: `SELECT subjectId, verdict, note, ts, source FROM signal_feedback
+              WHERE subjectId IN (${chunk.map(() => '?').join(',')})`,
+        args: chunk,
+      });
+      for (const r of res.rows) {
+        out[r.subjectId] = { verdict: r.verdict, note: r.note, ts: r.ts, source: r.source };
+      }
+    }
+  } catch (err) {
+    if (isMissingFeedbackTable(err)) return {};
+    throw err;
+  }
+  return out;
+}
+
+/**
+ * Precision since `sinceIso`, overall and per rule.
+ *
+ * `unclear` is counted separately and excluded from the denominator on purpose. It is
+ * an honest third answer — "I cannot tell from this" — and folding it into either side
+ * would manufacture a number out of the operator's uncertainty. A rule whose verdicts
+ * are mostly `unclear` has a legibility problem, not a precision problem, and the two
+ * want different fixes.
+ *
+ * Returns precision = null rather than 0 when nothing has been judged. Zero means
+ * "everything was wrong"; null means "we do not know yet", and a self-assessment
+ * feature that cannot tell those apart is worse than none.
+ */
+export async function feedbackPrecision({ sinceDays = 30 } = {}) {
+  const since = new Date(Date.now() - sinceDays * 86400_000).toISOString();
+  const client = getClient();
+  const empty = { total: 0, right: 0, wrong: 0, unclear: 0, precision: null, byRule: {} };
+  try {
+    const res = await client.execute({
+      sql: `SELECT ruleId, verdict, COUNT(*) AS c FROM signal_feedback
+            WHERE ts >= ? GROUP BY ruleId, verdict`,
+      args: [since],
+    });
+    const acc = { ...empty, byRule: {} };
+    for (const r of res.rows) {
+      const n = Number(r.c || 0);
+      acc[r.verdict] = (acc[r.verdict] || 0) + n;
+      acc.total += n;
+      const key = r.ruleId || '(none)';
+      acc.byRule[key] ||= { right: 0, wrong: 0, unclear: 0, precision: null };
+      acc.byRule[key][r.verdict] += n;
+    }
+    acc.precision = ratio(acc.right, acc.wrong);
+    for (const v of Object.values(acc.byRule)) v.precision = ratio(v.right, v.wrong);
+    return acc;
+  } catch (err) {
+    if (isMissingFeedbackTable(err)) return empty;
+    throw err;
+  }
+}
+
+function ratio(right, wrong) {
+  const judged = right + wrong;
+  return judged ? right / judged : null;
+}

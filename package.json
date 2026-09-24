@@ -65,10 +65,18 @@
     "demo:export": "node --env-file-if-exists=.env cli/demo.mjs export",
     "demo:seed": "node --env-file-if-exists=.env cli/demo.mjs seed",
     "demo:clear": "node --env-file-if-exists=.env cli/demo.mjs clear",
-    "test": "npm run smoke && node test/fixtures/correlation/parse-fixtures.mjs && node test/fixtures/artifacts/parse-fixtures.mjs && node test/fixtures/mcp/parse-fixtures.mjs && node test/fixtures/github/parse-fixtures.mjs && node test/fixtures/reddit/parse-fixtures.mjs",
+    "test": "npm run smoke && node test/fixtures/correlation/parse-fixtures.mjs && node test/fixtures/artifacts/parse-fixtures.mjs && node test/fixtures/mcp/parse-fixtures.mjs && node test/fixtures/github/parse-fixtures.mjs && node test/fixtures/reddit/parse-fixtures.mjs && node test/fixtures/email/parse-fixtures.mjs",
     "mcp": "node --env-file-if-exists=.env mcp-server.mjs",
     "watch:aeo": "node --env-file-if-exists=.env watchers/aeo-watch.mjs",
-    "watch:aeo:dry": "node --env-file-if-exists=.env watchers/aeo-watch.mjs --dry-run"
+    "watch:aeo:dry": "node --env-file-if-exists=.env watchers/aeo-watch.mjs --dry-run",
+    "watch:gmail": "node --env-file-if-exists=.env ingest/gmail-ingest.mjs",
+    "watch:gmail:dry": "node --env-file-if-exists=.env ingest/gmail-ingest.mjs --dry-run",
+    "email:promote": "node --env-file-if-exists=.env pipeline/email-promote.mjs",
+    "email:promote:dry": "node --env-file-if-exists=.env pipeline/email-promote.mjs --dry-run",
+    "email:promote:nollm": "node --env-file-if-exists=.env pipeline/email-promote.mjs --no-llm",
+    "email:requeue": "node --env-file-if-exists=.env cli/email-requeue.mjs",
+    "email:requeue:dry": "node --env-file-if-exists=.env cli/email-requeue.mjs --dry-run",
+    "gmail:oauth": "node --env-file-if-exists=.env ops/gmail-oauth-setup.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.17.2",

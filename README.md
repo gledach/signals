@@ -36,7 +36,7 @@ where that is going.
 ```bash
 cp config/companies.default.mjs config/companies.local.mjs   # the roster — the only file most deployments edit
 npm run companies                                            # confirm what is live
-npm test                                                     # gate: 15 smoke sections + 5 fixture suites, all offline
+npm test                                                     # gate: smoke + fixture suites (incl. email), all offline
 ```
 
 `companies.local.mjs` is gitignored and overrides the shipped roster, so you can pull
@@ -52,6 +52,8 @@ scoring), `agent-policy` (what an MCP agent may do), `aeo-prompts`, and `feeds`.
 
 ## Docs
 
+**Index:** [docs/README.md](./docs/README.md)
+
 | | |
 |---|---|
 | [docs/start.md](./docs/start.md) | Install guide assuming no prior git/Node knowledge |
@@ -59,8 +61,45 @@ scoring), `agent-policy` (what an MCP agent may do), `aeo-prompts`, and `feeds`.
 | [docs/why.md](./docs/why.md) | Why this architecture — zero build step, 5 runtime deps |
 | [docs/cost.md](./docs/cost.md) | LLM spend, model ladder, budget guardrails |
 | [docs/mcp.md](./docs/mcp.md) | The MCP server — tools, resources, agent policy |
+| [docs/gmail.md](./docs/gmail.md) | Google Alerts via Gmail (Path A′ zones) — setup, env, hard rules |
 | [docs/blindspots.md](./docs/blindspots.md) | What Signal cannot see. Honest audit |
-| [docs/decisions/demo-data.md](./docs/decisions/demo-data.md) | Why the repo ships with data |
+| [docs/decisions/](./docs/decisions/) | Accepted one-way doors (incl. Gmail vs IMAP) |
+| [docs/plans/](./docs/plans/) | Build plans by tier |
+
+### Folder READMEs (code map)
+
+| Directory | README |
+|---|---|
+| [`ingest/`](./ingest/README.md) | Zone 1 collectors (Gmail) — not ordinary watchers |
+| [`ingest/gmail/`](./ingest/gmail/README.md) | Gmail token process modules |
+| [`ingest/gmail/parsers/`](./ingest/gmail/parsers/README.md) | Alert parsers + how to add one |
+| [`pipeline/`](./pipeline/README.md) | Classify / promote / notify |
+| [`watchers/`](./watchers/README.md) | Public-source collectors + cron note |
+| [`ops/`](./ops/README.md) | Cron, migrate, `gmail:oauth` |
+| [`core/`](./core/README.md) | Store chokepoint + scoring |
+| [`config/`](./config/README.md) | Roster / policy resolution |
+| [`test/`](./test/README.md) | Offline gates (`npm test`) |
+| [`test/fixtures/email/`](./test/fixtures/email/README.md) | Gmail parser fixtures |
+
+### Optional: Google Alerts (local Gmail)
+
+Phase 1 code is in-tree. **Does not** run on Railway cron by default.  
+Full guide: **[docs/gmail.md](./docs/gmail.md)** — setup, env, hard rules,
+[automation](./docs/gmail.md#automation-windows-task-scheduler) and
+[troubleshooting](./docs/gmail.md#troubleshooting).
+
+```bash
+# Offline proof
+npm run watch:gmail:dry -- --fixture=test/fixtures/email/google-alert-sample.html
+# After GCP Desktop OAuth client in .env:
+# npm run gmail:oauth && npm run watch:gmail && npm run email:promote:nollm
+npm run doctor    # reports Gmail modules, token age, hit statuses, MCP/cron invariants
+```
+
+**Two zones, and the second one is easy to forget.** `watch:gmail` only fills the local
+`data/email/inbox.db`; nothing appears in the dashboard until `email:promote` runs.
+If Live Feed shows no `email-google-alert` signals, check `npm run email:requeue:dry`
+for a large `pending` count — that is the usual cause, not a parser fault.
 
 ## Disclaimer
 
@@ -78,6 +117,9 @@ The quick start above needs no accounts. These unlock the rest:
 ```bash
 npm run help                                # full cheat-sheet, grouped by job
 npm run fetch                               # collect fresh signals (needs no key; --no-llm for keyword-only)
+# Optional local Gmail alerts (never put the refresh token on Railway in v1):
+# npm run gmail:oauth && npm run watch:gmail && npm run email:promote:nollm
+# → docs/gmail.md
 npm run correlate                            # build convergences from what you have
 npm run bootstrap -- --company=<id>          # generate a battlecard   (needs OPENROUTER_API_KEY)
 npm run analyst -- --mode=brief              # analyst brief           (needs OPENROUTER_API_KEY)

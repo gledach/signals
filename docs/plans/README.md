@@ -8,7 +8,7 @@ Tiered plans by ambition. Pick by mood, budget, and time available.
 | [02-good-builds](./02-good-builds.md) | GOOD | ~1 week each, 7 items | $5–100/mo total | You want the system to *feel complete* |
 | [03-thinkable-bets](./03-thinkable-bets.md) | THINKABLE | 1–2 weeks, design-heavy | $0–20/mo | You want the system to be *smart*, not just *present* |
 | [06-crazy-ideas](./06-crazy-ideas.md) | CRAZY | variable | variable | You're killing time or feeling creative |
-| [07-email-ingest](./07-email-ingest.md) | **READY · GOOD** | ~4h first parser / ~1–2d full | $0–12/mo | Google Alerts / Mention / newsletters → signals (email ingest pipeline) |
+| [07-email-ingest](./07-email-ingest.md) | **PHASE 1 SHIPPED · GOOD** | operator OAuth + more parsers | $0–12/mo | Gmail API zones — see [../gmail.md](../gmail.md) |
 | [08-knowledge-graph](./08-knowledge-graph.md) | **APPROVED · THINKABLE+** | 4–5 days | ~$3/mo | **The compounding move** — Turso canonical + Obsidian workspace hybrid |
 | [09-document-ingest](./09-document-ingest.md) | **READY · GOOD** | 2 days core / +1 day UI | ~$0/mo | Docling PDF/DOCX/PPTX ingest — page-cited facts for battlecards and analyst |
 | [10-turso-state-migration](./10-turso-state-migration.md) | **READY · GOOD** | ~3 hours | ~$0/mo | Move sitemap/cert/tavily/trends state from `data/` into Turso — unblocks cloud-cron deploy |
@@ -48,8 +48,8 @@ order:
    actionable signal type; turns the system from pull → push.
 2. **Ship [03-thinkable-bets](./03-thinkable-bets.md) §Demo-call recording.** The AI
    coding-specific moat. Nobody else can build this.
-3. **Ship [07-email-ingest](./07-email-ingest.md) or [09-document-ingest](./09-document-ingest.md).**
-   Both are READY and both widen collection rather than deepening synthesis.
+3. **Go live on [07-email-ingest](./07-email-ingest.md) ([docs/gmail.md](../gmail.md)) or ship [09-document-ingest](./09-document-ingest.md).**
+   Email Phase 1 code is in-tree; operator OAuth + Task Scheduler unlock it. Document ingest still widens collection.
 4. **Then [08-knowledge-graph](./08-knowledge-graph.md)** — the compounding move, and the
    one that pays off more the more of the above you have already shipped.
 5. **[06-crazy-ideas](./06-crazy-ideas.md)** is for when you're unblocked and want to experiment.

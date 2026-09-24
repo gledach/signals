@@ -412,6 +412,27 @@ section('8. Feed / roster integrity');
 
     const bare = feeds.FEEDS.filter((f) => /[?&]q=$/.test(f.url) || f.url.includes('q=&'));
     if (bare.length) bad(`${bare.length} feed(s) have an empty query`);
+
+    // Non-English coverage is opt-in via CI_NEWS_LOCALES, and MUST stay opt-in: each
+    // extra locale adds one feed per company and every item it returns is an item the
+    // classifier pays to judge. If this ever fires by default, ingest volume and LLM
+    // spend have silently multiplied.
+    const nonEnglish = feeds.FEEDS.filter((f) => f.locale && f.locale !== 'en-US:US');
+    if (!process.env.CI_NEWS_LOCALES && nonEnglish.length) {
+      bad(`${nonEnglish.length} non-English feed(s) with CI_NEWS_LOCALES unset — locales must be opt-in`);
+    } else {
+      ok('news locales are opt-in — default roster is en-US only');
+    }
+
+    const { newsLocales } = await import('../core/feed-urls.mjs');
+    const parsed = newsLocales('de-DE:DE,ja-JP:JP');
+    if (parsed.length === 3 && parsed[0].lang === 'en-US') {
+      ok('CI_NEWS_LOCALES adds locales, never replaces the en-US default');
+    } else {
+      bad(`newsLocales() dropped the en-US default: ${JSON.stringify(parsed)}`);
+    }
+    if (newsLocales('not-a-locale').length === 1) ok('a malformed locale is dropped, not fatal');
+    else bad('newsLocales() accepted a malformed entry');
   }
 }
 
@@ -1365,6 +1386,122 @@ section('16. First-party evidence is not corroboration');
 
   if (!Number.isFinite(FIRST_PARTY.minIndependent)) bad('FIRST_PARTY.minIndependent is not a number');
   else ok(`independence floor configured (minIndependent=${FIRST_PARTY.minIndependent})`);
+}
+
+// ───────── 17. LLM spend has a ceiling on every path, not just the agent ────
+// core/agent-budget.mjs was enforced only by mcp-server.mjs, so an agent was bounded
+// while cron, `npm run all`, refresh, research and analyst were not. classify.mjs's
+// tripwire is reactive — it fires after OpenRouter starts refusing, i.e. after the money
+// is gone. The proactive ceiling lives at the one chokepoint every spender passes.
+
+section('17. LLM spend ceiling');
+{
+  const or = await import('../pipeline/openrouter.mjs');
+
+  if (typeof or.ceilingVerdict !== 'function') {
+    bad('openrouter.ceilingVerdict is not exported — the ceiling cannot be tested');
+  } else {
+    if (or.ceilingVerdict(100, 0) === null) ok('no ceiling configured → never refuses (default is unchanged)');
+    else bad('an unset ceiling refused a call — CI_LLM_DAILY_CEILING_USD must be opt-in');
+
+    if (or.ceilingVerdict(1.0, 5.0) === null) ok('under the ceiling → proceeds');
+    else bad('ceilingVerdict refused a call below the ceiling');
+
+    const atLimit = or.ceilingVerdict(5.0, 5.0);
+    if (typeof atLimit === 'string' && /5\.00 ceiling/.test(atLimit)) {
+      ok('at the ceiling → refuses, and the message names the limit');
+    } else bad(`spending exactly the ceiling was allowed: ${atLimit}`);
+
+    if (typeof or.ceilingVerdict(9.99, 5.0) === 'string') ok('over the ceiling → refuses');
+    else bad('ceilingVerdict allowed a call over the ceiling');
+  }
+
+  // Structural: the check must run BEFORE the request is built, or it bounds nothing.
+  const src = fs.readFileSync(path.join(ROOT, 'pipeline', 'openrouter.mjs'), 'utf8');
+  const checkAt = src.indexOf('await assertDailyCeiling()');
+  const fetchAt = src.indexOf('await fetch(BASE_URL');
+  if (checkAt === -1) bad('chat() no longer calls assertDailyCeiling()');
+  else if (fetchAt !== -1 && checkAt > fetchAt) bad('the ceiling is checked AFTER the request — it bounds nothing');
+  else ok('the ceiling is checked before the request leaves the process');
+
+  // The ceiling and the agent budget must read the SAME ledger, or they are two
+  // budgets wearing one name.
+  if (/agent-budget\.mjs/.test(src)) ok('ceiling draws down the same llm_cost ledger as the agent budget');
+  else bad('openrouter ceiling uses its own counter, separate from core/agent-budget.mjs');
+}
+
+// ───────── 18. Signal can measure itself ────────────────────────────────────
+// docs/blindspots.md listed "its own effectiveness — no feedback loop on what
+// convergence fires are right" as the only gap with no plan, no owner and no fix
+// option. These assertions protect the properties that make the loop honest.
+
+section('18. Self-measurement loop');
+{
+  const store = await import('../core/store.mjs');
+  for (const fn of ['upsertFeedback', 'loadFeedbackFor', 'feedbackPrecision']) {
+    if (typeof store[fn] === 'function') ok(`store.${fn}() exported`);
+    else bad(`store.${fn}() missing — the feedback loop is not wired`);
+  }
+
+  // The migration must exist AND must not be assumed applied. `npm run db:migrate`
+  // writes the canonical store, which is a human decision, so every read path has to
+  // survive the table being absent.
+  const migration = path.join(ROOT, 'sql', '010-signal-feedback.sql');
+  if (fs.existsSync(migration)) ok('sql/010-signal-feedback.sql present');
+  else bad('feedback migration missing');
+
+  const storeSrc = fs.readFileSync(path.join(ROOT, 'core', 'store.mjs'), 'utf8');
+  if (/isMissingFeedbackTable/.test(storeSrc)) {
+    ok('a missing signal_feedback table degrades instead of throwing');
+  } else bad('store does not handle an unmigrated signal_feedback table');
+
+  // Strip SQL comments before inspecting the DDL. The comment block in this migration
+  // explains at length why there is deliberately NO foreign key, and a naive grep for
+  // "FOREIGN KEY" matches that explanation and fails on the very thing it documents.
+  const migRaw = fs.readFileSync(migration, 'utf8');
+  const mig = migRaw.split('\n').filter((l) => !/^\s*--/.test(l)).join('\n');
+  // One verdict per subject per source: a repeat click is a correction, not a second
+  // vote. Without this, one emphatic operator can skew the precision figure.
+  if (/UNIQUE INDEX.*signal_feedback \(subjectId, source\)/is.test(mig)) {
+    ok('one verdict per subject per source — a repeat click corrects, it does not stack');
+  } else bad('signal_feedback has no uniqueness constraint — verdicts would double-count');
+
+  // A verdict must outlive its subject: correlate deletes and rewrites every
+  // convergence row, and a verdict tied to one by foreign key would vanish with it.
+  if (/FOREIGN KEY/i.test(mig)) {
+    bad('signal_feedback has a foreign key — verdicts would die with the convergence rewrite');
+  } else ok('no FK on signal_feedback — verdicts survive the convergence rewrite');
+  if (/ruleId/.test(migRaw)) ok('ruleId denormalised onto the verdict so it outlives the subject');
+  else bad('signal_feedback does not record which rule it judged');
+
+  // "Nothing judged" and "everything was wrong" are different facts.
+  const acc = await store.feedbackPrecision({ sinceDays: 1 }).catch(() => null);
+  if (acc && acc.total === 0 && acc.precision === null) {
+    ok('no verdicts → precision is null, not 0 (unknown is not failure)');
+  } else if (acc && acc.total > 0) {
+    ok(`feedback ledger is live — ${acc.total} verdict(s) in the last day`);
+  } else bad(`feedbackPrecision() did not degrade cleanly: ${JSON.stringify(acc)}`);
+
+  const reportSrc = fs.readFileSync(path.join(ROOT, 'cli', 'weekly-report-render.mjs'), 'utf8');
+  if (/renderAccuracySection/.test(reportSrc)) ok('weekly report prints the precision figure');
+  else bad('weekly report does not surface accuracy — the loop has no output');
+  if (/Not measured/.test(reportSrc)) ok('the report says "not measured" rather than inventing a 0%');
+  else bad('the report cannot distinguish "unmeasured" from "0% precision"');
+
+  const serveSrc = fs.readFileSync(path.join(ROOT, 'dashboard', 'serve.mjs'), 'utf8');
+  if (/'\/api\/feedback' && req\.method === 'POST'/.test(serveSrc)) ok('POST /api/feedback wired');
+  else bad('no POST /api/feedback — the dashboard cannot record a verdict');
+
+  const viewerSrc = fs.readFileSync(path.join(ROOT, 'dashboard', 'viewer', 'viewer.js'), 'utf8');
+  if (/renderVerdictControl/.test(viewerSrc)) ok('convergence cards carry a verdict control');
+  else bad('viewer has no verdict control — the loop has no input');
+
+  // Intel's action row is hover-only. An answered verdict that is invisible without
+  // hovering is one the operator will give twice.
+  const css = fs.readFileSync(path.join(ROOT, 'dashboard', 'viewer', 'viewer.css'), 'utf8');
+  if (/:has\(\.verdict-btn\.is-active\)[\s\S]{0,120}opacity: 1/.test(css)) {
+    ok('an answered convergence shows its verdict without hover');
+  } else bad('recorded verdicts are hidden behind :hover');
 }
 
 // ────────────────────────────────── verdict ─────────────────────────────────

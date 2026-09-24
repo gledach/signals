@@ -1,0 +1,9 @@
+{
+  "messageId": "fixture-msg-001",
+  "threadId": "fixture-thread-001",
+  "from": "Google Alerts <googlealerts-noreply@google.com>",
+  "subject": "Google Alert - Claude Code",
+  "internalDate": "2026-08-08T12:00:00.000Z",
+  "html": "<html><body><div style=\"display:none\">hidden evil https://evil.example/x</div><a href=\"https://www.google.com/url?rct=j&amp;sa=t&amp;url=https://tech.example.com/claude-code-release-2-1&amp;ct=ga\">Claude Code 2.1 release notes</a><br><font color=\"#666666\">Tech Example · 3 hours ago</font><br><div>Release 2.1 adds MCP tool allowlists for Claude Code.</div></body></html>",
+  "text": ""
+}

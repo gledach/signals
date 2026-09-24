@@ -3,6 +3,8 @@
 Task-oriented reference. For every "how do I…" question, find the section below.
 Quick-scan layout: each how-to is self-contained; jump in and out.
 
+**Docs index:** [README.md](./README.md) · **Gmail:** [gmail.md](./gmail.md)
+
 **Table of contents**
 - [First-time setup](#first-time-setup) (do this once)
 - [Daily usage cheat sheet](#daily-usage-cheat-sheet)
@@ -17,6 +19,7 @@ Quick-scan layout: each how-to is self-contained; jump in and out.
   - [track competitor websites (sitemap + robots)](#how-to-track-competitor-websites)
   - [watch Hacker News mentions](#how-to-watch-hacker-news-mentions)
   - [watch GitHub repos](#how-to-watch-github-repos)
+  - [ingest Google Alerts via Gmail (safe local path)](#how-to-ingest-google-alerts-via-gmail)
   - [measure answer-engine visibility](#how-to-measure-answer-engine-visibility)
   - [get Windows toast alerts](#how-to-get-windows-toast-alerts)
   - [tune the toast threshold and rate-limit](#how-to-tune-the-toast-threshold-and-rate-limit)
@@ -586,6 +589,40 @@ Set `GITHUB_TOKEN` (or `GH_TOKEN`) to raise the rate limit from 60 req/hr to 5,0
 one the watcher still runs and says so.
 
 Not wired into the cron entrypoint — schedule it yourself if you want it.
+
+---
+
+### How to ingest Google Alerts via Gmail
+
+Canonical reference: **[docs/gmail.md](./gmail.md)** (env table, file map, hard rules).  
+Security design: `.apsolut/ideas/gmaillocalingestion.html` · Plan: [plans/07-email-ingest.md](./plans/07-email-ingest.md).
+
+```bash
+# Offline (no account)
+npm run watch:gmail:dry -- --fixture=test/fixtures/email/google-alert-sample.html
+
+# After CI_GMAIL_CLIENT_ID + CI_GMAIL_CLIENT_SECRET in .env
+npm run gmail:oauth
+npm run watch:gmail                    # Zone 1 → data/email/inbox.db
+npm run email:promote:dry              # Zone 2 preview (no LLM spend)
+npm run email:promote:nollm            # keyword classify → signals
+# npm run email:promote                # LLM classify (costs); needs CI_EMAIL_PROMOTE_ALLOW_PROD=1 for hosted Turso
+npm run doctor                         # OAuth / inbox / MCP invariants
+```
+
+**Setup once**
+
+1. **Dedicated Gmail** (not personal) + 2FA.
+2. GCP project → Gmail API → OAuth **Desktop** client → consent **In production**.
+3. Label `Signal/Alerts` + filter `from:(googlealerts-noreply@google.com)`.
+4. Start with ~20 **qualified** alerts (not bare homonym brand tokens).
+5. Env: `CI_GMAIL_CLIENT_ID`, `CI_GMAIL_CLIENT_SECRET` (see `.env.example`).
+
+**Hard rules:** Zone 1 never classifies or calls OpenRouter. MCP never talks to Gmail. Do **not** put the refresh token on Railway in v1. App passwords / IMAP are **rejected**. Caps: `CI_GMAIL_MAX_MESSAGES_PER_RUN`, `CI_GMAIL_MAX_HITS_PER_RUN`, `CI_EMAIL_MAX_CLASSIFY_PER_RUN`, `CI_EMAIL_MAX_SIGNALS_PER_DAY`.
+
+**Schedule:** open **`.apsolut/ideas/gmail-next-steps.html`** (auto-run local vs Railway free hybrid). Scripts: `ops/run-gmail-ingest.cmd`, `ops/run-gmail-promote.cmd`. **Not** on `ops/cron-entry.mjs` until a human re-approves token custody on Railway.
+
+Promoted rows use `sourceKind: email-google-alert` and `hashId: email:ga:<messageId>:<i>` — filter them in the Live Feed / MCP `search_signals`.
 
 ---
 

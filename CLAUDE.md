@@ -1,3 +1,19 @@
+<!-- apsolut-seshat-davinci-start -->
+## Operator vault (apsolut-seshat · davinci)
+
+`.apsolut/` is a **davinci** notebook vault ([apsolut-seshat](https://github.com/apsolut/apsolut-seshat)).
+
+Pointers only — load one file on demand, never the whole vault:
+
+- Profile: `.apsolut/PROFILE.md`
+- Inbox → ideas → plan: `.apsolut/01-inbox/` (subfolders: important/, updates/, spam/, …) · `02-ideas/` · `03-plan/`
+- Library / decisions / knowledge: `04-library/` · `05-decisions/` · `06-knowledge/`
+- Binaries: read `07-files/000-template.md` or `08-screenshots/000-template.md` **first**, open one file
+- Pre-existing: `ideas/` (Gmail HTML runbooks), `concepts/` (UI experiments) — leave them
+- Product docs remain under `docs/`; multi-agent talk under `.apsolut-agents/`
+- Do not dump architecture into this file — put it in `.apsolut/06-knowledge/` or `docs/`
+<!-- apsolut-seshat-davinci-end -->
+
 <!-- turso-db-start -->
 This project uses [Turso](https://turso.tech/) (hosted libSQL) as its signal store.
 
@@ -5,6 +21,17 @@ Schema source of truth: `sql/*.sql` migration files, applied via `npm run db:mig
 
 Turso is canonical. The pre-Turso implementation is not recoverable from this repository — its history was reinitialised.
 <!-- turso-db-end -->
+
+<!-- gmail-path-a-start -->
+## Gmail Path A′ (optional)
+
+Google Alerts land via Gmail API `gmail.readonly` in a **separate Zone 1 process**
+(`ingest/gmail-ingest.mjs` → local `data/email/inbox.db`), then Zone 2
+(`pipeline/email-promote.mjs`) promotes into the signal store. Agents read signals
+only — never the mailbox. Operator docs: `docs/gmail.md`. Security SoT:
+`.apsolut/ideas/gmaillocalingestion.html`. Do not implement IMAP app passwords;
+do not wire Zone 1 into Railway `cron-entry` without an explicit human decision.
+<!-- gmail-path-a-end -->
 
 <!-- analyst-persona-start -->
 When the operator asks for competitive analysis, adopt the persona defined in `analyst/persona.md` and follow its output contract (YAML frontmatter, `[[wiki-links]]`, strict section order, banned-words list).

@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { COMPANIES, COMPETITOR_IDS, OUR_COMPANY_ID } from '../config/companies.mjs';
-import { loadIndex } from '../core/store.mjs';
+import { loadIndex, feedbackPrecision } from '../core/store.mjs';
 import { BATTLECARDS_DIR } from '../runtime/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -145,6 +145,12 @@ export async function renderWeeklyReport({ weekKey } = {}) {
   }
   const activeCount = perCompetitor.filter((p) => p.signalCount > 0).length;
 
+  // How good was any of this? Verdicts the operator recorded in the dashboard, turned
+  // into a precision figure per correlation rule. Returns an empty shape when the
+  // signal_feedback migration has not been applied, so the report renders either way.
+  const windowDays = Math.max(1, Math.round((endMs - startMs) / 86400_000));
+  const accuracy = await feedbackPrecision({ sinceDays: windowDays });
+
   const body = renderMarkdown({
     weekKey: effectiveWeek,
     startMs,
@@ -155,6 +161,7 @@ export async function renderWeeklyReport({ weekKey } = {}) {
     topSignals,
     perCompetitor,
     activeCount,
+    accuracy,
   });
 
   return {
@@ -167,11 +174,61 @@ export async function renderWeeklyReport({ weekKey } = {}) {
     signalCount: inWindow.length,
     convergenceCount: convergences.length,
     competitorCount: activeCount,
+    accuracy,
     body,
   };
 }
 
-function renderMarkdown({ weekKey, startMs, endMs, windowMode, inWindow, convergences, topSignals, perCompetitor, activeCount }) {
+/**
+ * The self-assessment block.
+ *
+ * States "not measured" plainly when nothing has been judged. A precision of 0% and an
+ * absence of verdicts are completely different facts, and printing 0% for the second
+ * would be a lie about the instrument in a document written to be trusted.
+ */
+function renderAccuracySection(accuracy) {
+  const out = ['## Was any of this right?'];
+  const a = accuracy || {};
+  const pct = (v) => `${Math.round(v * 100)}%`;
+
+  if (!a.total) {
+    out.push(
+      '*Not measured. No verdicts recorded in this window — open Intel in the dashboard '
+      + 'and answer "Was this right?" on a convergence. Two clicks become the precision '
+      + 'figure printed here.*',
+      '',
+    );
+    return out;
+  }
+
+  const judged = a.right + a.wrong;
+  out.push(
+    a.precision === null
+      ? `**Precision: not yet determinable** — ${a.unclear} verdict(s), all "unclear".`
+      : `**Precision: ${pct(a.precision)}** — ${a.right} right, ${a.wrong} wrong of ${judged} judged.`,
+  );
+  if (a.unclear) {
+    out.push('', `${a.unclear} marked *unclear* and excluded from the figure — those are a legibility problem, not a precision one.`);
+  }
+
+  const rules = Object.entries(a.byRule)
+    .filter(([, v]) => v.precision !== null)
+    .sort((x, y) => x[1].precision - y[1].precision);
+  if (rules.length) {
+    out.push('', '| Rule | Right | Wrong | Precision |', '|---|---|---|---|');
+    for (const [rule, v] of rules) {
+      out.push(`| \`${rule}\` | ${v.right} | ${v.wrong} | ${pct(v.precision)} |`);
+    }
+    const worst = rules[0];
+    if (worst[1].precision < 0.5) {
+      out.push('', `⚠ \`${worst[0]}\` is below 50% — it is manufacturing patterns. Retune or retire it.`);
+    }
+  }
+  out.push('');
+  return out;
+}
+
+function renderMarkdown({ weekKey, startMs, endMs, windowMode, inWindow, convergences, topSignals, perCompetitor, activeCount, accuracy }) {
   const startDate = new Date(startMs).toISOString().slice(0, 10);
   const endDate = new Date(endMs).toISOString().slice(0, 10);
   const dateRange = `${startDate} → ${endDate}`;
@@ -193,6 +250,13 @@ function renderMarkdown({ weekKey, startMs, endMs, windowMode, inWindow, converg
   lines.push('');
 
   // ── Convergences — ALL of them, sorted by impact, with full evidence ─────
+  // ── How good was this? ───────────────────────────────────────────────────
+  // Every other number in this report measures the market. This one measures the
+  // instrument. Without it a rule that fires on noise reads exactly like a rule that
+  // fires on a real pattern — which is the gap docs/blindspots.md called Signal's own
+  // effectiveness and left to nobody.
+  lines.push(...renderAccuracySection(accuracy));
+
   lines.push('## Convergences this week');
   if (!convergences.length) {
     lines.push('*No convergences detected this week. That means either nothing big is happening, or the signal sources need more coverage.*');

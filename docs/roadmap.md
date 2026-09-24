@@ -19,7 +19,7 @@ Detailed plans live in `docs/plans/` — picked by **ambition tier**:
 | [02-good-builds](./plans/02-good-builds.md) | **GOOD** | ~1 week each (7 items) | $5–100/mo | You want the system to feel complete |
 | [03-thinkable-bets](./plans/03-thinkable-bets.md) | **THINKABLE** | 1–2 weeks, design-heavy (8 items) | $0–20/mo | You want it smart, not just present |
 | [06-crazy-ideas](./plans/06-crazy-ideas.md) | **CRAZY** | variable (18 items) | variable | Unblocked, feeling creative |
-| [07-email-ingest](./plans/07-email-ingest.md) | **READY · GOOD** | ~4h first parser / ~1–2d full | $0–12/mo | Google Alerts + newsletters → Signal signals (email ingest pipeline) |
+| [07-email-ingest](./plans/07-email-ingest.md) | **PHASE 1 SHIPPED · GOOD** | live OAuth = operator | $0–12/mo | Gmail API Path A′ (zones) — [docs/gmail.md](./gmail.md); more parsers next |
 | [08-knowledge-graph](./plans/08-knowledge-graph.md) | **APPROVED · THINKABLE+** | 4–5 days | ~$3/mo | **Turso canonical + Obsidian workspace hybrid** — persistent KB, entity extraction, verified facts grounding synthesis |
 | [09-document-ingest](./plans/09-document-ingest.md) | **READY · GOOD** | ~2 days core + 1 day UI | ~$0/mo | **Docling PDF/DOCX/PPTX ingest** — earnings calls, product docs, investor decks → chunked + page-cited in battlecards |
 | [10-turso-state-migration](./plans/10-turso-state-migration.md) | **SHIPPED** | — | ~$0/mo | Watcher state (sitemap, robots, cert, tavily budget, trend baselines) lives in Turso — `sql/003-watcher-state.sql` + the loader/saver pairs in `core/store.mjs`. Ephemeral-host deploy is unblocked |
@@ -89,7 +89,7 @@ What is actually open, in order:
 
 **Next** — [03 Thinkable Bets](./plans/03-thinkable-bets.md): Demo-call recording (T4) — the AI coding moat nobody else can build. Still gated by the single-party-consent jurisdiction check in the legal baseline below.
 
-**Then** — the READY plans: [07 Email Ingest](./plans/07-email-ingest.md) and [09 Document Ingest](./plans/09-document-ingest.md). Both are days, not weeks, and both widen input rather than adding a new surface.
+**Then** — finish operator live setup for [07 Email Ingest](./plans/07-email-ingest.md) / [docs/gmail.md](./gmail.md) (Phase 1 code is in; OAuth + label + Task Scheduler remain human), and ship [09 Document Ingest](./plans/09-document-ingest.md).
 
 **After that** — [13 arXiv Watcher](./plans/13-arxiv-watcher.md) (IDEA · GOOD) and [12 Notion Publish](./plans/12-notion-publish.md) (THINKABLE · GOOD), then [08 Knowledge Graph](./plans/08-knowledge-graph.md) — the approved direction, and the largest build of the four.
 
