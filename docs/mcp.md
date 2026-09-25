@@ -244,3 +244,41 @@ is plain stdio JSON-RPC with no client-specific behaviour, and it locates the pr
 itself regardless of launch directory. The block under [Wire it up](#wire-it-up) is the
 whole configuration. Confirm the file location in your client's own documentation; the
 contents do not change.
+
+## Other agent runtimes
+
+Signal exposes itself two ways, and both are open standards rather than client-specific
+integrations — so "does it work with X" is usually answered by X's own documentation, not
+by anything here.
+
+**MCP, for querying.** Plain stdio JSON-RPC with no client-specific behaviour. Any runtime
+accepting an `mcpServers` entry with `command` and `args` works with the block under
+[Wire it up](#wire-it-up) unchanged. The two most-used open personal-agent runtimes of 2026
+— Hermes Agent and OpenClaw — both support MCP, so both can query this store today with no
+code on either side.
+
+**Agent Skills, for procedures.** The skills under `.claude/skills/` follow the
+[Agent Skills](https://agentskills.io) open format: a directory containing a `SKILL.md`
+with YAML frontmatter. The format was released by Anthropic as an open standard and is now
+implemented by roughly forty-five clients — editors, CLIs and personal-agent runtimes
+alike. Copy a skill directory into whatever path your runtime discovers skills from and it
+will be picked up.
+
+Discovery is by **progressive disclosure**: at startup a client reads only `name` and
+`description`, and loads the body only when a task matches. The description is therefore
+the entire basis on which a skill is chosen — which is why each one here states what it
+does *and* when to use it, and why smoke section 29 fails if that stops being true.
+
+```bash
+node tools/skill-frontmatter.mjs --check   # validate frontmatter against the spec
+```
+
+**What does not change between runtimes:** the agent policy. `run_analyst` is the only
+paid tool and it refuses by default regardless of which client is asking. A more capable
+runtime does not get more permission — see [Read-only by default](#read-only-by-default-deliberately)
+and, before adding a write tool, the section above on why that is harder than it looks.
+
+One ecosystem note worth carrying into that decision: a 2026 audit of the largest public
+skill marketplace found **341 malicious skills** among roughly 13,000. A skill is
+instructions an agent will follow, and a marketplace is a supply chain. Read one before
+installing it, the same way you would read a dependency.

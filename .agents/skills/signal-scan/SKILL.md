@@ -1,3 +1,12 @@
+---
+name: signal-scan
+description: Run a competitive-intelligence sweep over recently collected signals and produce a ranked analyst brief. Use when asked what changed in the market, for a weekly sweep, or for a ranked overview of competitor activity.
+license: MIT
+metadata:
+  project: signals
+  repository: https://github.com/gledach/signals
+---
+
 # signal-scan — Run a /scan mode competitive intelligence sweep
 
 Run a routine scan over recently ingested signals. Ranks and interprets what changed across all tracked competitors in the last 14 days.

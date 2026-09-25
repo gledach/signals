@@ -1,3 +1,12 @@
+---
+name: signal-deep-dive
+description: Run a deep competitive analysis of one named competitor, grounded in stored signals with evidence citations. Use when asked to go deep on a specific company, build a case against a rival, or prepare for a competitive deal.
+license: MIT
+metadata:
+  project: signals
+  repository: https://github.com/gledach/signals
+---
+
 # signal-deep-dive — Run a /deep mode analysis on a specific competitor
 
 Deep-dive analysis on a single company, product, capability, or market shift. Uses Opus-tier model for maximum reasoning depth over a 90-day signal window.

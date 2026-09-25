@@ -1,3 +1,12 @@
+---
+name: signal-capture
+description: Add a signal to the Signal store by hand, with company, type and source URL. Use when the user has spotted something a watcher missed and wants it recorded as evidence.
+license: MIT
+metadata:
+  project: signals
+  repository: https://github.com/gledach/signals
+---
+
 # signal-capture — Add a signal to the Turso database
 
 Manually insert a competitive intelligence signal into the signals store. Use this when a user provides intel that should be captured outside the automated cron pipeline.

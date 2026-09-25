@@ -1,3 +1,12 @@
+---
+name: signal-battlecard
+description: Generate or update a competitor battlecard with kill shots, objection handlers and a feature matrix. Use when preparing sales collateral for a competitor or refreshing an existing battlecard.
+license: MIT
+metadata:
+  project: signals
+  repository: https://github.com/gledach/signals
+---
+
 # signal-battlecard — Generate or update a competitor battlecard
 
 Bootstrap a new battlecard or refresh an existing one for a tracked competitor. Battlecards are the sales team's competitive weapon — positioning, kill shots, objections, feature comparison.

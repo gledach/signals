@@ -2017,6 +2017,56 @@ section('28. Writes are idempotent by construction');
   } else bad('a timeout is retried — each attempt bills for a response nobody reads');
 }
 
+// ───────── 29. skills conform to the Agent Skills standard ─────────────────
+// Agent Skills (agentskills.io, originally Anthropic, now an open standard) is implemented
+// by roughly forty-five agent clients — the current list is at agentskills.io/clients.
+// Discovery is by PROGRESSIVE DISCLOSURE: at startup a client reads only the
+// `name` and `description` from each skill's YAML frontmatter, and loads the body only if
+// a task matches.
+//
+// This repo's skills had no frontmatter for months. They worked in the one client they
+// were written for and were invisible in every other — including both of the agent
+// runtimes most likely to want them. The failure is silent: nothing errors, the skill
+// simply never appears.
+
+section('29. Skills are portable across agent clients');
+{
+  const skillsDir = path.join(ROOT, '.claude', 'skills');
+  if (!fs.existsSync(skillsDir)) {
+    ok('no skills directory — nothing to check');
+  } else {
+    const dirs = fs.readdirSync(skillsDir).filter((d) => fs.existsSync(path.join(skillsDir, d, 'SKILL.md')));
+    ok(`${dirs.length} skill(s) found`);
+    let bad_ = 0;
+    for (const d of dirs) {
+      const src = fs.readFileSync(path.join(skillsDir, d, 'SKILL.md'), 'utf8');
+      if (!src.startsWith('---\n')) { bad(`${d}: no YAML frontmatter — invisible to spec-compliant clients`); bad_++; continue; }
+      const block = src.slice(4, src.indexOf('\n---', 4));
+      const name = /^name:\s*(\S+)/m.exec(block)?.[1];
+      const desc = /^description:\s*(.+)$/m.exec(block)?.[1];
+      if (name !== d) { bad(`${d}: frontmatter name "${name}" must match the directory name`); bad_++; continue; }
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name) || name.length > 64) { bad(`${d}: name violates the spec charset or length`); bad_++; continue; }
+      if (!desc || desc.length < 20) { bad(`${d}: description missing or too short — it IS the discovery surface`); bad_++; continue; }
+      if (desc.length > 1024) { bad(`${d}: description exceeds the 1024-character limit`); bad_++; continue; }
+      // The spec asks for what it does AND when to use it; without the second half a
+      // client has nothing to match a task against. Looks for a trigger clause at all
+      // rather than one exact phrase — "use when", "use before … or when asked", and
+      // "use only when" are all valid, and matching on wording tests the phrasing
+      // instead of the substance.
+      if (!/\bwhen\b/i.test(desc)) { bad(`${d}: description does not say WHEN to use the skill`); bad_++; continue; }
+    }
+    if (!bad_) ok(`all ${dirs.length} descriptions state what the skill does and when to use it`);
+
+    // The body is loaded whole on activation; the spec recommends keeping it small.
+    for (const d of dirs) {
+      const lines = fs.readFileSync(path.join(skillsDir, d, 'SKILL.md'), 'utf8').split('\n').length;
+      if (lines <= 500) continue;
+      bad(`${d}: SKILL.md is ${lines} lines — the spec recommends under 500; move detail into references/`);
+    }
+    ok('no SKILL.md exceeds the recommended body size');
+  }
+}
+
 // ────────────────────────────────── verdict ─────────────────────────────────
 
 console.log(FAIL ? '\nRED — smoke failed\n' : '\nGREEN — smoke passed\n');

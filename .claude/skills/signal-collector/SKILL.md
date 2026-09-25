@@ -1,3 +1,12 @@
+---
+name: signal-collector
+description: Add a new signal source to Signal as a collector, using the collector interface. Use when asked to track a new source, add a watcher or feed, or migrate an existing watcher onto the shared runner.
+license: MIT
+metadata:
+  project: signals
+  repository: https://github.com/gledach/signals
+---
+
 # signal-collector — Add a new signal source
 
 Add a source to Signal by writing one file. The collector interface owns the boundary:
