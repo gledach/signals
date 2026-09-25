@@ -1897,9 +1897,12 @@ section('26. Tracked files do not reference private workspaces');
   //
   // `SCREENSHOTS_DIR` is the one legitimate use: it is a real directory the code creates,
   // not a pointer at a document a clone will not have.
-  // Allowed: files that name `.apsolut/screenshots` as a real directory the code creates
-  // or documents, rather than pointing at a document a clone will not have.
-  const ALLOWED = new Set(['runtime/paths.mjs', 'tools/shot.mjs', 'docs/images/README.md']);
+  // No allowlist. There was one — `runtime/paths.mjs` and `tools/shot.mjs` hardcoded a
+  // notes-vault path as the screenshot directory, and docs/images/README.md explained it.
+  // All three were reworded or made configurable (SIGNALS_SCREENSHOTS_DIR) instead, on the
+  // grounds that a clone should never be shown a directory name that means nothing to it.
+  // An empty allowlist is the honest state: no tracked file has a reason to name one.
+  const ALLOWED = new Set();
   const tracked = execSync('git ls-files', { cwd: ROOT, encoding: 'utf8' })
     .split('\n').map((s) => s.trim()).filter(Boolean)
     .filter((f) => /\.(md|mjs|js|json|yml|yaml|html|cmd|sh|example)$/.test(f))

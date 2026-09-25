@@ -601,7 +601,26 @@ Signal/
 
 ---
 
+## How this repo is worked on
+
+Signal needs none of the following — it is a plain Node project and `npm test` is the whole
+gate. But the two tools below shaped how it was built, and they are the reason a lot of the
+comments in here explain *why* rather than *what*:
+
+- **[apsolut-seshat](https://github.com/apsolut/apsolut-seshat)** — a notes vault that sits
+  beside a repo rather than inside it: inbox → ideas → plan → decisions → knowledge. What
+  keeps working notes, half-formed ideas and operational detail **out** of the codebase, so
+  what remains in `docs/` is documentation rather than someone's scratchpad.
+- **apsolut-agents** — a shared workspace for several AI agents on one repo: an append-only
+  log, task cards, human-gated one-way doors, and one agent able to dispatch another and
+  stay accountable for the result. Several decisions here came out of adversarial review
+  between models — see [docs/decisions/](./docs/decisions/), which records the rejected
+  option as well as the accepted one.
+
+Neither is a dependency and neither ships in this repo. If you work with AI agents on a
+codebase you own, both are worth a look.
+
 ## See also
 
 - [docs/roadmap.md](./docs/roadmap.md) — master roadmap
-- [docs/plans/](./docs/plans/) — tiered plans (quick wins → crazy ideas)
+- [docs/plans/](./docs/plans/) — plans, and [00-backlog](./docs/plans/00-backlog.md) for unbuilt ideas

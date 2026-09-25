@@ -3,11 +3,12 @@
 Screenshots that appear in `README.md` or anywhere under `docs/` live here, and **only**
 here, because they must be committed to render on GitHub.
 
-Everything else — scratch captures, concept explorations, debugging shots, anything from
-`npm run shot` — goes to `.apsolut/screenshots/`, which is gitignored precisely so a
-throwaway capture is structurally incapable of reaching a public repo. That rule is not
-relaxed by this directory; this is the deliberate exception for product assets, and the
-distinction is intent: a README image is documentation, a scratch capture is working state.
+Everything else — scratch captures, debugging shots, anything from `npm run shot` — goes
+to `.screenshots/` (or wherever `SIGNALS_SCREENSHOTS_DIR` points), which is gitignored
+precisely so a throwaway capture is structurally incapable of reaching a public repo. That
+rule is not relaxed by this directory; this is the deliberate exception for product
+assets, and the distinction is intent: a README image is documentation, a scratch capture
+is working state.
 
 ## What is in here
 

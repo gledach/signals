@@ -1,8 +1,15 @@
 # Node
 node_modules/
 npm-debug.log
+
+# Maintainer working directories: a notes vault and a multi-agent workspace. Neither is
+# part of this project — they sit beside it and are excluded wholesale so working notes,
+# session logs and operational detail cannot reach the repo. Nothing in the codebase
+# depends on either; see the README for what they are.
 .apsolut/
 .apsolut-agents/
+.gstack/
+
 # Env
 .env
 .env.local
@@ -14,26 +21,10 @@ npm-debug.log
 # Local runtime logs (fetch output, etc.)
 .logs/
 
-# ── apsolut-seshat (davinci) ────────────────────────────────────────────────
-# Markdown vault under .apsolut/ may be committed. Binaries + heavy local scratch stay out.
-# apsolut (davinci): keep the binary folders + their templates, ignore the binaries
-.apsolut/07-files/*
-!.apsolut/07-files/000-template.md
-.apsolut/08-screenshots/*
-!.apsolut/08-screenshots/000-template.md
-# Pre-davinci local scratch (large / machine-specific)
-.apsolut/concepts/
-.apsolut/ref/
-.apsolut/screenshots/
-.apsolut/*.db
-.apsolut/**/*.db
-# ideas/ HTML runbooks may be force-added if useful; default ignore keeps noise down
-# (uncomment next line to ignore all ideas HTML too)
-# .apsolut/ideas/
-
-# Screenshots — dashboard captures from `npm run shot` and from browser
-# sessions. Prefer .apsolut/08-screenshots/ (davinci). Root rule keeps stale
-# top-level screenshots/ directories clean.
+# Dashboard captures from `npm run shot` and from browser sessions. Gitignored so a
+# screenshot of a real deployment cannot be committed by accident. README and docs images
+# are the deliberate exception and live in docs/images/, which is tracked.
+.screenshots/
 screenshots/
 
 # Analyst briefs. This comment used to claim they were "committed to git … (3) git
@@ -95,12 +86,6 @@ battlecards/*.md
 !battlecards/_template.md
 briefs/*.md
 
-# Agent coordination workspace. Deliberately OUT of git: the session log
-# records infrastructure, spend and incident detail that should not ship in a
-# public repo. It was stripped from history on 2026-08-02; this keeps the
-# working copy usable without re-committing it.
-.apsolut-agents/
-.gstack/
 
 # The static dashboard snapshot from `npm run demo:html` — ~4 MB, regenerated on demand
 # and fully derived from the store. Committing it would add a multi-megabyte binary-ish
@@ -109,14 +94,11 @@ briefs/*.md
 demo/signal-demo.html
 
 # The current handoff note. Live operations detail — deploy state, credential incidents,
-# spend, Gmail volumes — and it points at .apsolut-agents/ paths a public clone has no
-# copy of. Kept on disk because the vault-docs skill writes it here by contract; kept out
-# of git because it is an internal status report, not documentation.
+# spend, Gmail volumes — and it points at maintainer notes a clone has no copy of. Kept
+# on disk for local use; kept out of git because it is an internal status report, not
+# documentation.
 HANDOFF.md
 
-# Internal restructure status doc. Names unpublished companion repos and cites maintainer
-# notes that are not in this repository. Useful to the maintainer, confusing to everyone else.
-docs/plans/REORG.md
 
 # Empty lockfile for an external skills manager; nothing in this repo reads it.
 skills-lock.json

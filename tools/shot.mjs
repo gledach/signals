@@ -8,7 +8,7 @@
 //   node tools/shot.mjs --width=1920       # wider viewport
 //   node tools/shot.mjs --theme=light      # light theme
 //
-// Output: .apsolut/screenshots/dash-{mode}-{theme}.png
+// Output: .screenshots/dash-{mode}-{theme}.png  (override: SIGNALS_SCREENSHOTS_DIR)
 
 import { chromium } from 'playwright';
 import fs from 'node:fs';

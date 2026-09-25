@@ -52,11 +52,18 @@ export const SNAPSHOTS_DIR = at('data', 'snapshots');
 export const TRENDS_DIR = at('data', 'trends');
 export const LOGS_DIR = at('.logs');
 export const DEBUG_DIR = at('.debug');
-// Screenshots live under .apsolut/, the operator's scratch area, which is
-// already gitignored as a whole — so a dashboard capture can never be committed
-// by accident. Previously `screenshots/` at the repo root, which needed its own
-// ignore rule and sat next to tracked directories.
-export const SCREENSHOTS_DIR = at('.apsolut', 'screenshots');
+// Dashboard captures from `npm run shot`. Gitignored, so a screenshot of a real
+// deployment — its roster, its scores, its conclusions about named companies — can never
+// be committed by accident. README and docs images are the deliberate exception and live
+// in `docs/images/`, which IS tracked; see its README.
+//
+// Override with SIGNALS_SCREENSHOTS_DIR if you keep captures in a notes vault or anywhere
+// outside the repo. Relative paths resolve from the repo root.
+export const SCREENSHOTS_DIR = process.env.SIGNALS_SCREENSHOTS_DIR
+  ? (path.isAbsolute(process.env.SIGNALS_SCREENSHOTS_DIR)
+    ? process.env.SIGNALS_SCREENSHOTS_DIR
+    : at(process.env.SIGNALS_SCREENSHOTS_DIR))
+  : at('.screenshots');
 export const CHROME_DATA_DIR = at('chrome-extension', 'data');
 
 // ── Individual files ────────────────────────────────────────────────────────
