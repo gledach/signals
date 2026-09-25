@@ -1,6 +1,13 @@
 # Signal Chrome Extension
 
-Chrome side-panel extension for the Signal (Competitive Intelligence Agent) platform — full dashboard, AI-powered Intel Check, signal clipper, and desktop notifications.
+Chrome side-panel extension for Signal — dashboard, AI-powered Intel Check, signal clipper
+and desktop notifications, using Chrome's built-in AI.
+
+> **Status: experimental, and the least finished part of this repo.** It requires the
+> dashboard running locally (`npm run view`) or a reachable deployment, it is not covered
+> by `npm test`, and it has not been updated since 2026-08-02 while the dashboard and store
+> moved on. Two documented features were never implemented — marked **not implemented**
+> below. Treat it as a working prototype, not a supported surface.
 
 ## Features
 
@@ -11,8 +18,10 @@ Click the extension icon to open a full-height side panel with three tabs:
 - Total signal count, critical count, last cron run timestamp
 - Filter by company, impact band, signal type
 - Click any signal to see full detail (summary, rationale, source link)
-- Inline reclassify — click the signal type badge to change it (writes to Turso)
-- Dismiss to noise — one-click ✕ button
+- ~~Inline reclassify — click the signal type badge to change it~~ — **not implemented.**
+  The server route (`PATCH /api/signal`) exists and the dashboard uses it; the extension
+  makes no PATCH call at all.
+- ~~Dismiss to noise — one-click ✕ button~~ — **not implemented**, same reason.
 
 **Intel** (unified Check → Clip flow)
 1. Select a competitor from the dropdown
@@ -106,7 +115,7 @@ icons/                 — Extension icons (16/48/128px)
 │   GET /api/signals → renders signal list                     │
 │   GET /api/config  → company names, IDs                      │
 │   GET /api/cron-status → last run time                       │
-│   PATCH /api/signal → reclassify / dismiss to noise          │
+│   (PATCH /api/signal → reclassify: NOT IMPLEMENTED)          │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐

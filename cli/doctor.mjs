@@ -116,6 +116,40 @@ try {
     if (never.length) warn(`no signal has EVER been collected for: ${never.join(', ')}`, 'Check the feeds for these before drawing conclusions about them.');
     else ok('every tracked company has produced at least one signal');
   }
+
+  // Is the SCHEDULER actually running, as opposed to someone running commands by hand?
+  //
+  // These look identical from the store: signals arrive either way. The difference shows
+  // up only in `cron_runs`, which `ops/cron-entry.mjs` writes to before it does anything
+  // else — so an empty table with a populated store means every signal you have was
+  // collected manually, and the schedule you think you configured is not running.
+  //
+  // Worth its own check because the failure is silent and pleasant: the dashboard fills
+  // up, nothing errors, and the deployment looks healthy right up until you stop running
+  // commands yourself.
+  try {
+    const runs = await store.getCronRuns(5);
+    if (!runs.length && stats.total) {
+      warn('the scheduler has never logged a run, but the store has signals',
+        'Every signal here was collected by hand. `ops/cron-entry.mjs` writes to cron_runs '
+        + 'before its first task, so an empty table means it has not executed against THIS '
+        + 'database. Check the Railway cron schedule and that the service shares this '
+        + 'TURSO_DATABASE_URL. Verify with: node ops/cron-entry.mjs --manual');
+    } else if (!runs.length) {
+      console.log('        No scheduled runs yet — expected on a fresh clone.');
+    } else {
+      const last = runs[0];
+      const ageH = Math.floor((Date.now() - new Date(last.startedAt).getTime()) / 3_600_000);
+      const failed = (() => { try { return JSON.parse(last.tasksFailed || '[]'); } catch { return []; } })();
+      if (ageH > 12) {
+        warn(`last scheduled run was ${ageH}h ago`, 'The cron is configured for every 6h. Check the Railway service is not paused or failing to boot.');
+      } else if (failed.length) {
+        warn(`last scheduled run had ${failed.length} failed task(s): ${failed.join(', ')}`, 'Stage isolation means the rest still ran. Check the Railway deploy log.');
+      } else {
+        ok(`scheduler healthy — last run ${ageH}h ago, no failed tasks`);
+      }
+    }
+  } catch { /* cron_runs missing on an un-migrated database — db:migrate covers it */ }
 } catch (err) {
   bad(`database unreachable: ${err.message}`, 'Run `npm run db:migrate`. If you set TURSO_DATABASE_URL, check the token too.');
 }

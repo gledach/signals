@@ -94,7 +94,7 @@ scoring), `agent-policy` (what an MCP agent may do), `aeo-prompts`, and `feeds`.
 | [docs/plans/](./docs/plans/) | Plans against this codebase, plus [00-backlog](./docs/plans/00-backlog.md) for unbuilt ideas |
 | [docs/nextsteps.md](./docs/nextsteps.md) | Architectural direction — the knowledge-layer thesis |
 | [analyst/persona.md](./analyst/persona.md) | The analyst prompt behind `npm run analyst` — modes, output contract, banned words |
-| [chrome-extension/README.md](./chrome-extension/README.md) | Chrome side-panel extension (experimental) |
+| [chrome-extension/README.md](./chrome-extension/README.md) | Chrome side-panel extension — **experimental**, needs the dashboard running, not covered by `npm test` |
 
 ### Folder READMEs (code map)
 
