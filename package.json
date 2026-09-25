@@ -2,7 +2,7 @@
   "name": "signals",
   "version": "0.1.0",
   "private": false,
-  "description": "Signal — Competitive Intelligence Agent. Single-tenant CLI: ingest public signals, classify, correlate, generate battlecards and analyst briefs. Local-first libSQL, no build step.",
+  "description": "Signal \u2014 Competitive Intelligence Agent. Single-tenant CLI: ingest public signals, classify, correlate, generate battlecards and analyst briefs. Local-first libSQL, no build step.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -69,7 +69,7 @@
     "demo:export": "node --env-file-if-exists=.env cli/demo.mjs export",
     "demo:seed": "node --env-file-if-exists=.env cli/demo.mjs seed",
     "demo:clear": "node --env-file-if-exists=.env cli/demo.mjs clear",
-    "test": "npm run smoke && node test/fixtures/correlation/parse-fixtures.mjs && node test/fixtures/artifacts/parse-fixtures.mjs && node test/fixtures/mcp/parse-fixtures.mjs && node test/fixtures/github/parse-fixtures.mjs && node test/fixtures/reddit/parse-fixtures.mjs && node test/fixtures/email/parse-fixtures.mjs",
+    "test": "npm run smoke && node test/fixtures/collector/parse-fixtures.mjs && node test/fixtures/correlation/parse-fixtures.mjs && node test/fixtures/artifacts/parse-fixtures.mjs && node test/fixtures/mcp/parse-fixtures.mjs && node test/fixtures/github/parse-fixtures.mjs && node test/fixtures/reddit/parse-fixtures.mjs && node test/fixtures/email/parse-fixtures.mjs",
     "mcp": "node --env-file-if-exists=.env mcp-server.mjs",
     "watch:aeo": "node --env-file-if-exists=.env watchers/aeo-watch.mjs",
     "watch:aeo:dry": "node --env-file-if-exists=.env watchers/aeo-watch.mjs --dry-run",

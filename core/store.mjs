@@ -108,6 +108,35 @@ export async function alreadySeen(hashId) {
   return res.rows.length > 0;
 }
 
+/**
+ * Which of these hashIds are already stored? Returns a Set of the ones that are.
+ *
+ * The batch form of `alreadySeen`, and the reason it exists: a watcher run is mostly
+ * duplicates, so calling `alreadySeen` per item spends nearly the whole run paying
+ * round-trip latency to learn "seen it". One query per chunk answers the same question.
+ * `fetch-signals.mjs` does the per-item version today; the collector runner does this.
+ *
+ * Chunked because SQLite has a hard limit on bound parameters (999 by default) and a
+ * caller with a large batch would otherwise get a runtime error that looks like a
+ * database fault rather than a query-size problem.
+ */
+export async function seenHashIds(hashIds) {
+  const ids = [...new Set((hashIds || []).filter(Boolean).map(String))];
+  if (!ids.length) return new Set();
+  const client = getClient();
+  const seen = new Set();
+  const CHUNK = 500;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    const res = await client.execute({
+      sql: `SELECT hashId FROM signals WHERE hashId IN (${chunk.map(() => '?').join(',')})`,
+      args: chunk,
+    });
+    for (const row of res.rows) seen.add(String(row.hashId));
+  }
+  return seen;
+}
+
 // Cap the result set so a malformed caller cannot OOM the process. The viewer
 // separately caps display at MAX_VISIBLE_SIGNALS=300. This was 500 until a growing
 // roster crossed it and older signals silently vanished from the viewer while still

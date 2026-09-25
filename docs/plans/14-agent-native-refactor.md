@@ -88,6 +88,20 @@ The rule that makes it hold: **Surface never touches Turso; Engine never renders
 
 ## Phase 1 — Collector interface (~2 days, unblocks everything else)
 
+> **PARTIALLY SHIPPED (2026-09-26).** The contract, the runner and a reference
+> implementation are in: `core/collector.mjs` (`defineCollector`, item validation),
+> `core/collector-runner.mjs` (batch dedup, bounded concurrency, per-item isolation,
+> classify/score/store/notify), and `watchers/collectors/hn.mjs`. Batch dedup landed with
+> it — `seenHashIds()` in `core/store.mjs` replaces the per-item `alreadySeen()` round
+> trip this plan called the largest available latency win.
+>
+> 26 offline assertions in `test/fixtures/collector/`, and smoke section 27 enforces the
+> boundary. Adding a source is now one file — see `/signal-collector`.
+>
+> **Still open:** the other eight watchers have not been migrated. They work unchanged;
+> the interface exists alongside them rather than replacing them, so migration is
+> incremental and each one is independently verifiable against its current output.
+
 Seven watchers, seven bespoke shapes. Each is its own CLI, its own state handling, its own
 error behavior, its own logging. Adding an eighth source means writing all of that again —
 which is exactly the friction that makes a candidate source list (Reddit,

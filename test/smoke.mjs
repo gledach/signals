@@ -1928,6 +1928,49 @@ section('26. Tracked files do not reference private workspaces');
   }
 }
 
+// ───────── 27. collectors collect; the runner does everything else ──────────
+// The split only holds if it is enforced. A collector that writes to the store, or that
+// fills in a signalType, has silently reintroduced the duplication the interface exists
+// to remove — and in the signalType case has produced a classification no model computed,
+// which is the failure `docs/decisions/llm-failure-policy.md` was written for.
+//
+// Behavioural coverage lives in test/fixtures/collector/. This section guards the
+// boundary itself, which a unit test cannot see.
+
+section('27. Collector boundary holds');
+{
+  const collectorsDir = path.join(ROOT, 'watchers', 'collectors');
+  if (!fs.existsSync(collectorsDir)) {
+    ok('no collectors yet — nothing to enforce');
+  } else {
+    const files = fs.readdirSync(collectorsDir).filter((f) => f.endsWith('.mjs'));
+    ok(`${files.length} collector(s) found`);
+
+    for (const f of files) {
+      const src = fs.readFileSync(path.join(collectorsDir, f), 'utf8');
+      // A collector must not reach the store. That is the whole boundary.
+      const writes = ['appendSignal', 'updateSignal', 'importBatch', 'saveArtifact', 'upsertFeedback']
+        .filter((fn) => new RegExp(`\\b${fn}\\s*\\(`).test(src));
+      if (!writes.length) ok(`${f} does not write to the store`);
+      else bad(`${f} calls ${writes.join(', ')} — collectors return items, the runner stores them`);
+
+      // Nor classify. A collector that classifies has guessed a verdict.
+      if (!/classifySignal\s*\(|\bclassify\s*\(/.test(src)) ok(`${f} does not classify`);
+      else bad(`${f} classifies — that is the runner's job, and a guessed verdict is unstorable`);
+
+      if (/defineCollector\s*\(/.test(src)) ok(`${f} goes through defineCollector (validated at import)`);
+      else bad(`${f} exports a raw object — it is never validated`);
+    }
+
+    // The runner must still obey the degraded-verdict policy rather than reimplementing it.
+    const runner = fs.readFileSync(path.join(ROOT, 'core', 'collector-runner.mjs'), 'utf8');
+    if (/isDegraded\(/.test(runner)) ok('the runner asks isDegraded() before storing');
+    else bad('the runner stores without consulting the degraded-verdict policy');
+    if (/seenHashIds|deps\.seen/.test(runner)) ok('the runner deduplicates in a batch');
+    else bad('the runner has lost batch dedup — back to one round trip per item');
+  }
+}
+
 // ────────────────────────────────── verdict ─────────────────────────────────
 
 console.log(FAIL ? '\nRED — smoke failed\n' : '\nGREEN — smoke passed\n');
