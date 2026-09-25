@@ -185,3 +185,62 @@ hand-driven deployment is not falsely reported as dead.
 - *"Has anyone in the vibe-coding segment changed pricing?"* → `search_signals` with `market` and `signalType`
 - *"What's the strongest signal about X, and what's the evidence?"* → `get_convergences` with `companyId`
 - *"Which competitors have gone quiet?"* → `market_summary` → `companiesWithNoSignals`
+
+## Can an agent WRITE to the store?
+
+Not today. The MCP server imports five read functions and `readArtifact`, and nothing
+else — there is no write path on this surface at all, in any configuration. `run_analyst`
+is the single exception and it writes only a brief, through the analyst, under the budget
+ceiling above.
+
+**The mechanism to add one already exists**, and if you want an agent that files signals,
+corrects a misclassification, or records a verdict, this is where you would start:
+
+1. `core/store.mjs` already exposes `appendSignal`, `updateSignal` and `upsertFeedback` —
+   the dashboard uses all three. Never reach past it to the database.
+2. `config/agent-policy.default.mjs` already gates actions by name. A write tool should be
+   a new entry in `allowActions`, off by default, enabled per deployment in the gitignored
+   `agent-policy.local.mjs` — the same shape `run_analyst` uses.
+3. Add an assertion to `test/smoke.mjs`. Every dangerous capability in this repo is held
+   in place by one; a write tool that is only *documented* as gated is not gated.
+
+Ask your coding agent to build it. It is a contained change.
+
+### Read this before you do
+
+**Signals are attacker-influenced input.** They are ingested from RSS, Google News, Reddit,
+Hacker News, YouTube and Tavily — anyone can publish a blog post, and a competitor who
+knows you run this can publish one aimed at you. That makes a write-capable agent the exact
+shape this project already refused once, for the mailbox:
+[decisions/gmail-ingest.md](./decisions/gmail-ingest.md) sets out the lethal trifecta —
+private data, attacker-controlled input, and an exfiltration channel in one context — and
+the four public incidents where it went wrong.
+
+An agent with read access to signals, write access to the store, and ordinary network
+egress has all three. The concrete failure is not exotic: a planted post is ingested as a
+signal, an agent reads it, follows the instruction inside it, and writes a fabricated
+signal or corrupts a battlecard. Nothing in the pipeline distinguishes a competitor's
+words from your own conclusions once they are both rows in the same table.
+
+That does not make it a bad idea — it makes it a design problem with known answers:
+
+- **Quarantine what an agent writes.** A distinct `classifyMethod` or source tag, visible
+  in the viewer, so agent-authored rows never silently become evidence. `correlate.mjs`
+  treats stored signals as corroboration; anything an agent can write, it can also promote
+  into a convergence verdict.
+- **Never let the writer be the reader.** The same boundary Zone 1 and Zone 2 enforce for
+  Gmail: the process that ingests untrusted text should not be the process that can write
+  conclusions about it.
+- **Prefer append to update.** A new row is reviewable; a silent edit to an existing
+  verdict is not. This is why `signal_feedback` is append-only rather than a column on
+  `signals`.
+- **Keep the budget ceiling in front of it.** It is a rolling 24h number shared with cron
+  and CLI, so a runaway agent cannot spend the pipeline's day.
+
+### Other MCP clients
+
+Any client that accepts an `mcpServers` entry with `command` and `args` works — the server
+is plain stdio JSON-RPC with no client-specific behaviour, and it locates the project
+itself regardless of launch directory. The block under [Wire it up](#wire-it-up) is the
+whole configuration. Confirm the file location in your client's own documentation; the
+contents do not change.

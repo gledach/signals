@@ -19,6 +19,12 @@
 //   };
 //   export default { policy };
 
+// WANTING A WRITE TOOL IS REASONABLE — see docs/mcp.md § "Can an agent WRITE to the
+// store?" before building one. Short version: signals are ingested from RSS, Reddit, HN
+// and search, so they are attacker-influenced input. An agent that can read them, write
+// to the store, and reach the network is the same lethal trifecta this project already
+// refused for the mailbox (docs/decisions/gmail-ingest.md). Solvable, but design for it.
+
 export const policy = {
   // Actions an agent may trigger. Empty means the surface is purely read-only.
   // Currently recognised: 'run_analyst'.
