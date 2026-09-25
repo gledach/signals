@@ -41,6 +41,8 @@
     "reclassify:dry": "node --env-file-if-exists=.env cli/reclassify-signals.mjs --dry-run",
     "clean:convergences": "node --env-file-if-exists=.env -e \"import('./core/store.mjs').then(async m => { const r = await m.deleteSignalsByType('convergence'); console.log('deleted:', r.deleted); })\"",
     "transcripts": "node --env-file-if-exists=.env cli/transcripts-cli.mjs",
+    "transcripts:sync": "node --env-file-if-exists=.env cli/transcripts-cli.mjs --sync",
+    "transcripts:sync:dry": "node --env-file-if-exists=.env cli/transcripts-cli.mjs --sync --dry-run",
     "notify:test": "node --env-file-if-exists=.env ops/notify-test.mjs",
     "all": "npm run fetch && npm run watch:hn && npm run watch:sites && npm run watch:certs && npm run watch:youtube && npm run watch:tavily && npm run watch:trends && npm run correlate && npm run refresh",
     "db:migrate": "node --env-file-if-exists=.env ops/db-migrate.mjs",
@@ -54,6 +56,7 @@
     "deep:all": "node --env-file-if-exists=.env cli/analyst.mjs --mode=deep --all-competitors --force",
     "deep:all:dry": "node --env-file-if-exists=.env cli/analyst.mjs --mode=deep --all-competitors --dry-run",
     "cost": "node --env-file-if-exists=.env cli/cost-report.mjs",
+    "cost:estimate": "node --env-file-if-exists=.env cli/cost-estimate.mjs",
     "cost:today": "node --env-file-if-exists=.env cli/cost-report.mjs --today",
     "cost:7d": "node --env-file-if-exists=.env cli/cost-report.mjs --7d",
     "report:weekly": "node --env-file-if-exists=.env cli/weekly-report.mjs",
@@ -62,6 +65,7 @@
     "chrome-data:14d": "node --env-file-if-exists=.env cli/chrome-data.mjs --days=14",
     "start": "node --env-file-if-exists=.env ops/cron-entry.mjs",
     "companies": "node cli/list-companies.mjs",
+    "demo:html": "node --env-file-if-exists=.env cli/demo-html.mjs",
     "demo:export": "node --env-file-if-exists=.env cli/demo.mjs export",
     "demo:seed": "node --env-file-if-exists=.env cli/demo.mjs seed",
     "demo:clear": "node --env-file-if-exists=.env cli/demo.mjs clear",
@@ -81,21 +85,23 @@
   "dependencies": {
     "@libsql/client": "^0.17.2",
     "google-trends-api": "^4.9.2",
-    "node-notifier": "^10.0.1",
-    "nodejs-whisper": "^0.3.0",
     "youtube-transcript": "^1.3.0"
+  },
+  "optionalDependencies": {
+    "node-notifier": "^10.0.1",
+    "nodejs-whisper": "^0.3.0"
   },
   "devDependencies": {
     "playwright": "^1.59.1"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/apsolut/apsolut-signal.git"
+    "url": "git+https://github.com/gledach/signals.git"
   },
   "bugs": {
-    "url": "https://github.com/apsolut/apsolut-signal/issues"
+    "url": "https://github.com/gledach/signals/issues"
   },
-  "homepage": "https://github.com/apsolut/apsolut-signal#readme",
+  "homepage": "https://github.com/gledach/signals#readme",
   "keywords": [
     "competitive-intelligence",
     "market-monitoring",

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Retroactively re-fetch transcripts for YouTube signals already in Turso that
-// don't yet have a transcript saved to data/transcripts/.
+// are not yet archived.
 //   node --env-file=.env backfill-transcripts.mjs [--dry-run]
-// Safe to re-run; skips any videoId where the transcript file already exists.
+// Safe to re-run; skips any videoId already archived (database first, disk mirror
+// second). This is also the RECOVERY path: an archive lost to a Railway redeploy
+// before the store became canonical is rebuilt by running this once.
 
 import { COMPANIES } from '../config/companies.mjs';
 import { loadIndex } from '../core/store.mjs';
@@ -25,7 +27,7 @@ async function main() {
       skipped.push({ sig, reason: 'bad hashId' });
       continue;
     }
-    if (hasTranscript(sig.companyId, videoId)) {
+    if (await hasTranscript(sig.companyId, videoId)) {
       skipped.push({ sig, reason: 'already archived', videoId });
       continue;
     }
@@ -59,7 +61,7 @@ async function main() {
       missing++;
       continue;
     }
-    saveTranscript(sig.companyId, videoId, {
+    await saveTranscript(sig.companyId, videoId, {
       title: sig.title,
       channelId,
       source: transcript.source,

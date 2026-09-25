@@ -1,7 +1,7 @@
 @echo off
 REM Zone 2 — promote pending email hits (local Task Scheduler).
 REM Requires CI_EMAIL_PROMOTE_ALLOW_PROD=1 when TURSO is hosted.
-REM See .apsolut/ideas/gmail-next-steps.html
+REM See docs/gmail.md (Automation section)
 cd /d "%~dp0.."
 if not exist .logs mkdir .logs
 echo ===== %date% %time% gmail-promote =====>> .logs\gmail-promote.log

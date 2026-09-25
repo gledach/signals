@@ -39,9 +39,9 @@ Accepted cross-cutting decisions: [decisions/](./decisions/).
 
 ## Security (Gmail)
 
-Operator-facing design HTML (local ideas vault):  
-`../.apsolut/ideas/gmaillocalingestion.html`  
-(Not always present on every clone if `.apsolut/` is gitignored — ask the operator.)
+The zone model, the hard rules, and why IMAP app passwords are refused outright:
+**[gmail.md](./gmail.md)** and **[decisions/gmail-ingest.md](./decisions/gmail-ingest.md)**.
+Those two are the public record and are complete on their own.
 
-Multi-agent design artifacts (if workspace installed):  
-`../.apsolut-agents/runs/2026-08-08-*.md`
+The original design was drafted in the maintainer's private notes, which are not part of
+this repository — nothing in `docs/` depends on them.

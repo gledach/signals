@@ -15,7 +15,7 @@ launches it from.
 ### Claude Code
 
 ```bash
-claude mcp add signal -- node /absolute/path/to/apsolut-signal/mcp-server.mjs
+claude mcp add signal -- node /absolute/path/to/signals/mcp-server.mjs
 ```
 
 ### Claude Desktop / any client using `mcpServers`
@@ -28,7 +28,7 @@ Windows: `%APPDATA%\Claude\`):
   "mcpServers": {
     "signal": {
       "command": "node",
-      "args": ["/absolute/path/to/apsolut-signal/mcp-server.mjs"]
+      "args": ["/absolute/path/to/signals/mcp-server.mjs"]
     }
   }
 }
@@ -44,7 +44,7 @@ checkout:
   "mcpServers": {
     "signal-security": {
       "command": "node",
-      "args": ["/absolute/path/to/apsolut-signal/mcp-server.mjs"],
+      "args": ["/absolute/path/to/signals/mcp-server.mjs"],
       "env": { "SIGNALS_COMPANIES": "config/security-vendors.mjs" }
     }
   }

@@ -22,16 +22,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadArtifact, saveArtifact, listArtifacts, deleteArtifact } from './store.mjs';
-import { BATTLECARDS_DIR, BRIEFS_DIR, TALK_TRACKS_DIR, ensureDir } from '../runtime/paths.mjs';
+import { BATTLECARDS_DIR, BRIEFS_DIR, TALK_TRACKS_DIR, TRANSCRIPTS_DIR, ensureDir } from '../runtime/paths.mjs';
 
 export const AUTO_START = '<!-- AUTO:START -->';
 export const AUTO_END = '<!-- AUTO:END -->';
 
-/** Where each artifact kind mirrors to on disk. */
+/**
+ * Where each artifact kind mirrors to on disk.
+ *
+ * `transcript` keys are `<companyId>/<videoId>`, which is why its mirror lands at the
+ * same `data/transcripts/<companyId>/<videoId>.json` path the archive has always used —
+ * adoption does not move or rewrite a single existing file.
+ */
 const MIRROR = {
   battlecard: (key) => path.join(BATTLECARDS_DIR, `${key}.md`),
   brief: (key) => path.join(BRIEFS_DIR, `${key}.md`),
   talktrack: (key) => path.join(TALK_TRACKS_DIR, `${key}.json`),
+  transcript: (key) => path.join(TRANSCRIPTS_DIR, `${key}.json`),
 };
 
 /** Base directory each kind mirrors under, for disk sweeps. */
@@ -39,6 +46,7 @@ const KIND_ROOT = {
   battlecard: BATTLECARDS_DIR,
   brief: BRIEFS_DIR,
   talktrack: TALK_TRACKS_DIR,
+  transcript: TRANSCRIPTS_DIR,
 };
 
 function mirrorPath(kind, artifactKey) {

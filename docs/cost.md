@@ -19,6 +19,23 @@ month** in LLM calls, plus whatever your Railway plan costs. Turso and Tavily
 stay on their free tiers. There is no GitHub Actions workflow in this repo —
 `ops/cron-entry.mjs` is the scheduler entry point.
 
+> **That figure assumes the shipped cadence and the shipped models. Two overrides
+> break it, and both were live on this deployment on 2026-09-25:**
+>
+> 1. **A per-company job on the 6h tier.** Battlecard refresh used to sit in the
+>    every-run block: 12 synthesis calls at $0.145 = $1.74 a run × 4 runs a day =
+>    **~$209/month for battlecards alone**. Fixed — it now runs on the daily tier
+>    (`ops/cron-entry.mjs`), and smoke section 23 fails if anything per-company drifts
+>    back onto the 6h path. If you add a workflow that fans out over the roster, put it
+>    behind the daily or weekly gate.
+> 2. **A reasoning model on the classifier.** `deepseek/deepseek-v4-pro` emitted 1,905
+>    output tokens and took 41.7s *per signal*. Output tokens are the expensive side of
+>    every rate card, so this inflates both the bill and the wall clock. See `.env.example`
+>    → classifier notes.
+>
+> Run `npm run cost:estimate` before any large job — it prices the next run from this
+> deployment's own ledger, not from this paragraph.
+
 If that feels high:
 
 ```bash
@@ -123,34 +140,44 @@ Raising it past ~40 risks the provider's output cap, and a rejected batch
 degrades silently to the keyword classifier — check your configured model's
 real output cap before raising it.
 
-| Tier | Slug | ~$/1M in / out | Upgrade trigger |
+Rates are OpenRouter's own, per 1M input/output, checked 2026-09-25. They move — treat
+this as a shape, and `npm run cost:estimate` as the number.
+
+| Tier | Slug | $/1M in / out | Upgrade trigger |
 |---|---|---|---|
-| 🪙 Budget | `deepseek/deepseek-chat` | $0.14 / $0.28 | If >5% of classifications come back malformed → move up |
-| 🪙 Budget | `qwen/qwen3-coder` | $0.18 / $0.36 | Decent JSON discipline; good first swap |
-| 💰 Balanced | `moonshotai/kimi-k2.5-0127` | $0.40 / $0.80 | If Qwen misses the product_launch vs press_release nuance |
-| ⭐ **Default** | `anthropic/claude-haiku-4.5` | $1 / $5 | Sweet spot — reliably nails JSON |
-| 🚫 Don't | `anthropic/claude-sonnet-4.5` | $3 / $15 | Overkill for triage; 3× Haiku cost for ~1% accuracy gain |
-| 🚫 **Never** | `anthropic/claude-opus-4.7` | $15 / $75 | Fetch will spend $3+ per run; bankrupts your OpenRouter cap in days |
+| 🪙 Cheapest | `z-ai/glm-5.3-flash` | $0.045 / $0.14 | ~30× under the default. Prove it with `reclassify:dry` before trusting it |
+| 🪙 Budget | `deepseek/deepseek-v4-flash` | $0.049 / $0.097 | Same caveat |
+| 💰 Balanced | `deepseek/deepseek-v4.1-flash` | $0.15 / $0.60 | Non-reasoning and fast; the safe saving |
+| 💰 Balanced | `qwen/qwen3-coder` | $0.30 / $1.00 | Decent JSON discipline |
+| ⭐ **Default** | `anthropic/claude-haiku-4.5` | $1.00 / $5.00 | Reliably nails JSON; one vendor, no surprises |
+| 🚫 Don't | `deepseek/deepseek-v4-pro` | $0.652 / $1.304 | **A reasoning model.** Measured here: 1,905 output tokens and 41.7s *per signal* to answer a fixed-schema question |
+| 🚫 Don't | `google/gemini-3.6-flash` | $0.75 / $3.75 | "Flash" is not cheap — output rate dominates, so this costs MORE than v4-pro on this workload |
+| 🚫 **Never** | `anthropic/claude-opus-5` | $5.00 / $25.00 | Thousands of calls per run; bankrupts an OpenRouter cap in days |
+
+**Compare the OUTPUT column first.** Classification is output-light only if the model does
+not deliberate — a reasoning model bills its thinking as output, which is the expensive
+side of every rate card, and it is the single most costly mistake available on this knob.
 
 ### `CI_SYNTHESIS_MODEL` — battlecards + self-card, dozens per week
 
 Medium volume. Quality of structured markdown matters more than raw cost.
 
-| Tier | Slug | When it's enough |
-|---|---|---|
-| 🪙 Budget | `deepseek/deepseek-chat-v3` | Functional battlecards; occasional weak kill shots |
-| 💰 Balanced | `qwen/qwen3.6-plus-04-02` | Near-Sonnet on 70% of battlecards; worth A/B testing |
-| ⭐ **Default** | `anthropic/claude-sonnet-4.5` | Reliable, crisp structure. The right default |
-| 🎯 Premium | `anthropic/claude-opus-4.7` | Only if battlecard structure is genuinely failing on Sonnet — ~5× the cost on the highest-volume synthesis path. Note `npm run research` is NOT governed by this knob; it runs on `CI_DEEP_MODEL` |
+Cheapest is the wrong objective here: these are the artefacts humans read.
+
+| Tier | Slug | $/1M in / out | When it's enough |
+|---|---|---|---|
+| 🪙 Budget | `anthropic/claude-haiku-4.5` | $1.00 / $5.00 | Functional, but a triage model writing prose reads like one |
+| ⭐ **Default** | `anthropic/claude-sonnet-5` | $2.00 / $10.00 | Reliable, crisp structure. Supersedes Sonnet 4.5 **and costs less** |
+| 🎯 Premium | `anthropic/claude-opus-5` | $5.00 / $25.00 | Only if structure genuinely fails on Sonnet — ~2.5× on the highest-volume synthesis path. `npm run research` is NOT governed by this knob; it runs on `CI_DEEP_MODEL` |
 
 ### `CI_DEEP_MODEL` — analyst `/deep` `/gap` `/outside` + `npm run research`, 1–10 calls/day
 
 Low volume. Quality-per-call dominates; absolute cost is peanuts.
 
-| Tier | Slug | When it's enough |
-|---|---|---|
-| 💰 Balanced | `anthropic/claude-sonnet-4.5` | Usable for `/deep`. Noticeably shallow on `/gap` + `/outside`, which are the reason this knob exists. (`/scan` and `/brief` are unaffected — they run on `CI_SYNTHESIS_MODEL`) |
-| ⭐ **Default** | `anthropic/claude-opus-4.7` | Every mode gets the reasoning floor it needs |
+| Tier | Slug | $/1M in / out | When it's enough |
+|---|---|---|---|
+| 💰 Balanced | `anthropic/claude-sonnet-5` | $2.00 / $10.00 | Usable for `/deep`; ~60% cheaper. Shallower on `/gap` + `/outside`, which are the reason this knob exists. (`/scan` and `/brief` are unaffected — they run on `CI_SYNTHESIS_MODEL`) |
+| ⭐ **Default** | `anthropic/claude-opus-5` | $5.00 / $25.00 | Every mode gets the reasoning floor it needs. Same price as the Opus 4.7 it replaced |
 
 ---
 

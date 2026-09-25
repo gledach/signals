@@ -4,15 +4,12 @@ Tiered plans by ambition. Pick by mood, budget, and time available.
 
 | Plan | Tier | Effort | Ongoing cost | When to pick it |
 |---|---|---|---|---|
-| [01-quick-wins](./01-quick-wins.md) | QUICK | ~1 day each, 8 items | $0 | You have an afternoon and want visible wins |
-| [02-good-builds](./02-good-builds.md) | GOOD | ~1 week each, 7 items | $5–100/mo total | You want the system to *feel complete* |
-| [03-thinkable-bets](./03-thinkable-bets.md) | THINKABLE | 1–2 weeks, design-heavy | $0–20/mo | You want the system to be *smart*, not just *present* |
-| [06-crazy-ideas](./06-crazy-ideas.md) | CRAZY | variable | variable | You're killing time or feeling creative |
+| [00-backlog](./00-backlog.md) | **IDEAS** | unscheduled | varies | Unbuilt ideas, kept so [blindspots.md](../blindspots.md) can name a next step per gap |
 | [07-email-ingest](./07-email-ingest.md) | **PHASE 1 SHIPPED · GOOD** | operator OAuth + more parsers | $0–12/mo | Gmail API zones — see [../gmail.md](../gmail.md) |
 | [08-knowledge-graph](./08-knowledge-graph.md) | **APPROVED · THINKABLE+** | 4–5 days | ~$3/mo | **The compounding move** — Turso canonical + Obsidian workspace hybrid |
 | [09-document-ingest](./09-document-ingest.md) | **READY · GOOD** | 2 days core / +1 day UI | ~$0/mo | Docling PDF/DOCX/PPTX ingest — page-cited facts for battlecards and analyst |
-| [10-turso-state-migration](./10-turso-state-migration.md) | **READY · GOOD** | ~3 hours | ~$0/mo | Move sitemap/cert/tavily/trends state from `data/` into Turso — unblocks cloud-cron deploy |
-| [11-railway-deploy](./11-railway-deploy.md) | **READY · GOOD** | ~30 min first time | ~$5/mo | Ship the 9 ingest/correlation crons to Railway; viewer stays local. Depends on Plan 10 |
+| [10-turso-state-migration](./10-turso-state-migration.md) | **SHIPPED** | ~3 hours | ~$0/mo | Move sitemap/cert/tavily/trends state from `data/` into Turso — unblocks cloud-cron deploy |
+| [11-railway-deploy](./11-railway-deploy.md) | **SHIPPED** | ~30 min first time | ~$5/mo | Ship the 9 ingest/correlation crons to Railway; viewer stays local. Depends on Plan 10 |
 | [12-notion-publish](./12-notion-publish.md) | **THINKABLE · GOOD** | ~1–3 days | $0–10/mo | Publish battlecards + briefs to Notion as a downstream read mirror for non-git collaborators. Markdown stays canonical |
 | [13-arxiv-watcher](./13-arxiv-watcher.md) | **IDEA · GOOD** | ~1–1.5 days | ~$0.05–0.20/mo | arXiv preprint watcher — capability research signal + author-affiliation tracking. Closes BLINDSPOTS #3 (employment) at $0 instead of $49/mo Proxycurl |
 
@@ -21,11 +18,13 @@ in conversation and never written up, so there is no `04-*.md` or `05-*.md` to r
 survive only as rows in [blindspots.md](../blindspots.md); the numbering is left with holes
 rather than renumbered, because the other plan files cite each other by number.
 
-**Plans 01–03 predate the repo extraction.** They were written while this code still lived
-inside `news-into-intelligence/competitive/`, so their build steps say `competitive/x.mjs`
-where today's repo means `watchers/x.mjs`, `pipeline/x.mjs` or `cli/x.mjs`. Read the prefix
-as "the repo root". Several of their items have also shipped since — check the ✅ list in
-[roadmap.md](../roadmap.md) before building anything from them.
+**Plans 01, 02, 03 and 06 were removed on 2026-09-25.** They predated the repo extraction —
+every build step pointed at a `news-into-intelligence/competitive/` layout that no longer
+exists — and eight of their items had shipped without being marked, which made them
+actively misleading. The surviving ideas are consolidated in
+[00-backlog.md](./00-backlog.md), with original IDs preserved. **04 and 05 were never
+written**, so the numbering has holes; the other files cite each other by number, so
+renumbering would cost more than it is worth.
 
 ## How to read a plan file
 
@@ -44,15 +43,15 @@ Website diffing, cert transparency, YouTube+Whisper, the weekly digest and the c
 engine are all shipped — see the ✅ list in [roadmap.md](../roadmap.md). What is left, in
 order:
 
-1. **Ship [02-good-builds](./02-good-builds.md) §Customer-win miner.** The single most
+1. **Ship [00-backlog](./00-backlog.md) G2 — Customer-win miner.** The single most
    actionable signal type; turns the system from pull → push.
-2. **Ship [03-thinkable-bets](./03-thinkable-bets.md) §Demo-call recording.** The AI
+2. **Ship [00-backlog](./00-backlog.md) T4 — Demo-call recording.** The AI
    coding-specific moat. Nobody else can build this.
 3. **Go live on [07-email-ingest](./07-email-ingest.md) ([docs/gmail.md](../gmail.md)) or ship [09-document-ingest](./09-document-ingest.md).**
    Email Phase 1 code is in-tree; operator OAuth + Task Scheduler unlock it. Document ingest still widens collection.
 4. **Then [08-knowledge-graph](./08-knowledge-graph.md)** — the compounding move, and the
    one that pays off more the more of the above you have already shipped.
-5. **[06-crazy-ideas](./06-crazy-ideas.md)** is for when you're unblocked and want to experiment.
+5. **[00-backlog](./00-backlog.md) §Speculative** is for when you're unblocked and want to experiment.
 
 ## What's missing from these plans (deliberately)
 

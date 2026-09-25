@@ -11,22 +11,12 @@
 
 ## Where to go next
 
-Detailed plans live in `docs/plans/` — picked by **ambition tier**:
+The plan index lives in **[plans/README.md](./plans/README.md)** — tier, effort, cost and
+status for every plan, plus the recommended cross-tier ordering.
 
-| Plan | Tier | Time | Cost | Pick when |
-|---|---|---|---|---|
-| [01-quick-wins](./plans/01-quick-wins.md) | **QUICK** | ~1 day each (8 items) | $0 | You have an afternoon |
-| [02-good-builds](./plans/02-good-builds.md) | **GOOD** | ~1 week each (7 items) | $5–100/mo | You want the system to feel complete |
-| [03-thinkable-bets](./plans/03-thinkable-bets.md) | **THINKABLE** | 1–2 weeks, design-heavy (8 items) | $0–20/mo | You want it smart, not just present |
-| [06-crazy-ideas](./plans/06-crazy-ideas.md) | **CRAZY** | variable (18 items) | variable | Unblocked, feeling creative |
-| [07-email-ingest](./plans/07-email-ingest.md) | **PHASE 1 SHIPPED · GOOD** | live OAuth = operator | $0–12/mo | Gmail API Path A′ (zones) — [docs/gmail.md](./gmail.md); more parsers next |
-| [08-knowledge-graph](./plans/08-knowledge-graph.md) | **APPROVED · THINKABLE+** | 4–5 days | ~$3/mo | **Turso canonical + Obsidian workspace hybrid** — persistent KB, entity extraction, verified facts grounding synthesis |
-| [09-document-ingest](./plans/09-document-ingest.md) | **READY · GOOD** | ~2 days core + 1 day UI | ~$0/mo | **Docling PDF/DOCX/PPTX ingest** — earnings calls, product docs, investor decks → chunked + page-cited in battlecards |
-| [10-turso-state-migration](./plans/10-turso-state-migration.md) | **SHIPPED** | — | ~$0/mo | Watcher state (sitemap, robots, cert, tavily budget, trend baselines) lives in Turso — `sql/003-watcher-state.sql` + the loader/saver pairs in `core/store.mjs`. Ephemeral-host deploy is unblocked |
-| [11-railway-deploy](./plans/11-railway-deploy.md) | **BUILT · deploy pending** | ~30 min | ~$5/mo | One 6-hourly entry point (`ops/cron-entry.mjs`, `npm start`) runs the collection pipeline plus daily/weekly branches and logs each run to `cron_runs`; viewer stays local, Turso is shared state |
-| [12-notion-publish](./plans/12-notion-publish.md) | **THINKABLE · GOOD** | ~1–3 days | $0–10/mo | Signal → Notion one-way publish pipeline (markdown canonical, Notion is read-mirror for non-git collaborators) |
-| [13-arxiv-watcher](./plans/13-arxiv-watcher.md) | **IDEA · GOOD** | ~1–1.5 days | ~$0.05–0.20/mo | arXiv preprint watcher — capability research signal + author-affiliation tracking (closes BLINDSPOTS #3 at $0 instead of Proxycurl $49/mo) |
-| [14-agent-native-refactor](./plans/14-agent-native-refactor.md) | **PROPOSED · HARD** | ~2 weeks, phases land independently | ~$0/mo (net saving) | **Stability at scale.** The agent surface itself has landed — `mcp-server.mjs` ships 8 tools plus `signal://` resources. What remains: a collector interface, concurrency + per-item isolation + batched dedup inside the fetch stage (stage-level isolation already works in `cron-entry.mjs`; the gap is one level down), LLM batching, and splitting `serve.mjs` into `api/` + a static client. The plan's own revised order now ranks these after a convergence rebuild |
+It used to be duplicated here. The two copies drifted (this one still called Plan 11
+"deploy pending" long after the cron was live on Railway), which is the predictable
+outcome of maintaining the same table twice. One index, one place.
 
 ---
 
@@ -56,6 +46,9 @@ Detailed executable plan: [plans/08-knowledge-graph.md](./plans/08-knowledge-gra
 - ✅ Comparison anchor card (`battlecards/<MAIN_COMPANY_ID>.md`) grounds every other battlecard. Only an `isUs` deployment gets a true partisan self-card; in anchored (`isMain`) mode the same file is a neutral reference profile
 - ✅ 13 competitor battlecards with kill shots + objection handlers + feature matrix
 - ✅ Correlation engine + convergence signals with structured `evidence` citations
+- ✅ Self-measurement loop — operator verdicts (`signal_feedback`) feed per-rule precision in `npm run report:weekly`
+- ✅ Generated artifacts (battlecards, talk-tracks, briefs, transcripts) canonical in the store, disk as mirror — `core/artifacts.mjs`
+- ✅ Spend controls — rolling 24h ceiling (`CI_LLM_DAILY_CEILING_USD`), per-run cost footer, `npm run cost:estimate` priced from the local ledger, prompt caching on Anthropic models
 - ✅ Tavily search (budget-guarded), YouTube transcripts, cert transparency, sitemap + robots diff, Google Trends, Hacker News, GitHub releases/activity, Reddit, and weekly answer-engine visibility (`watch:aeo`)
 - ✅ Localhost viewer at `:5180` — Linear-style sidebar with two labelled axes: **VIEWS**, eight modes across the whole market (Live Feed / Battle / Compare / Market / Intel / Report / Briefs / Inbox), and **COMPANIES**, where a click opens that company's own page (Overview · Signals · Infrastructure · Battlecard) from anywhere. Number keys 1-8 switch modes; `g` + letter (f/b/c/m/i/r/s/x) also works. Battle is call-prep (deal-context filters, kill shots, objections, win themes, talk-track, saved preps, Infrastructure panel); Compare is the N-way side-by-side (anchor + up to 3 rivals, `vs=a,b,c`) with the section grid, verified-facts table and feature matrix
 - ✅ Analyst CLI (`npm run analyst`) — 5 modes driven by `analyst/persona.md`
@@ -87,13 +80,13 @@ correlation engine is `pipeline/correlate.mjs`.
 
 What is actually open, in order:
 
-**Next** — [03 Thinkable Bets](./plans/03-thinkable-bets.md): Demo-call recording (T4) — the AI coding moat nobody else can build. Still gated by the single-party-consent jurisdiction check in the legal baseline below.
+**Next** — [00 Backlog](./plans/00-backlog.md): Demo-call recording (T4) — the AI coding moat nobody else can build. Still gated by the single-party-consent jurisdiction check in the legal baseline below.
 
 **Then** — finish operator live setup for [07 Email Ingest](./plans/07-email-ingest.md) / [docs/gmail.md](./gmail.md) (Phase 1 code is in; OAuth + label + Task Scheduler remain human), and ship [09 Document Ingest](./plans/09-document-ingest.md).
 
 **After that** — [13 arXiv Watcher](./plans/13-arxiv-watcher.md) (IDEA · GOOD) and [12 Notion Publish](./plans/12-notion-publish.md) (THINKABLE · GOOD), then [08 Knowledge Graph](./plans/08-knowledge-graph.md) — the approved direction, and the largest build of the four.
 
-**Ongoing** — [06 Crazy Ideas](./plans/06-crazy-ideas.md) — one every 2 weeks when between major builds.
+**Ongoing** — [00 Backlog §Speculative](./plans/00-backlog.md) — one every 2 weeks when between major builds.
 
 ---
 
@@ -110,12 +103,16 @@ What is actually open, in order:
 
 ## Budget summary
 
+> **Cadence, not model choice, is what actually moves these numbers.** A job that makes
+> one LLM call per tracked company costs 4× more on the 6-hourly tier than the daily one —
+> battlecard refresh sat there until 2026-09-25 and cost ~$209/month on its own. See
+> [cost.md](./cost.md) and run `npm run cost:estimate` before trusting any row below.
+
 | Phase | Monthly cost |
 |---|---|
-| Phase 1 (current) | ~$10–15 (LLM only) |
-| + Plan 01 shipped | no change |
-| + Plan 02 shipped (G1 YouTube + G2 wins + G3 LinkedIn + G4 digest + G5 podcasts) | ~$75 |
-| + Plan 03 shipped (T4 demo calls + others) | ~$120 |
+| Phase 1 (current) | ~$10–15 (LLM only), at the shipped cadence and models |
+| + backlog G2 wins + G3 LinkedIn + G5 podcasts shipped | ~$75 |
+| + backlog T4 demo calls + others shipped | ~$120 |
 | **Steady-state** | **~$150–200/mo** |
 
 Solo-founder affordable throughout.
@@ -137,7 +134,7 @@ All plans respect:
 
 ## Open questions
 
-1. If this deployment ever sets `isUs`, which jurisdiction is that vendor in? (Blocks Plan 03 T4 demo-call recording — single-party-consent check. Moot while the roster is anchored via `isMain` with no home vendor)
+1. If this deployment ever sets `isUs`, which jurisdiction is that vendor in? (Blocks backlog T4 demo-call recording — single-party-consent check. Moot while the roster is anchored via `isMain` with no home vendor)
 2. Proxycurl vs. existing sales tooling — consolidate, don't stack
 3. Who owns the HUMAN section long-term? In anchored mode it asks for verification and corrections, not deal history — that is an analyst's job, not a PMM's. (Revisit if this deployment ever sets `isUs`.)
 4. Turso free-tier capacity (9 GB / 1B reads / 25M writes) — currently ~1,100 signals, plenty of headroom

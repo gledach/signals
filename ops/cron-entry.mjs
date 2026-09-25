@@ -2,9 +2,13 @@
 // Smart cron entry point for Railway.
 // Runs every 6 hours (0 */6 * * *). Decides what to run based on UTC time:
 //
-//   EVERY RUN  — signal collection pipeline (fetch + watchers + correlate + refresh)
-//   DAILY      — morning brief  (once per day, on the 06:00 UTC run)
-//   WEEKLY     — deep analysis + weekly report  (Mondays on the 06:00 UTC run)
+//   EVERY RUN  — signal collection only (fetch + watchers + correlate)
+//   DAILY      — battlecard refresh + morning brief  (on the 06:00 UTC run)
+//   WEEKLY     — deep analysis + weekly report + AEO  (Mondays on the 06:00 UTC run)
+//
+// The tiering is a spend decision, not a taste one: anything that makes one LLM call per
+// tracked company must justify running four times a day, and collection is the only
+// thing here that does. See the note on the battlecard refresh below.
 //
 // All times are UTC (Railway cron is UTC-based).
 // Each run is logged to Turso (cron_runs table) for dashboard visibility.
@@ -60,12 +64,30 @@ run('watch:tavily',        'node --env-file-if-exists=.env watchers/tavily-watch
 run('watch:trends',        'node --env-file-if-exists=.env watchers/trends-watch.mjs');
 run('watch:github',        'node --env-file-if-exists=.env watchers/github-watch.mjs');
 run('correlate',           'node --env-file-if-exists=.env pipeline/correlate.mjs');
-run('refresh battlecards', 'node --env-file-if-exists=.env cli/refresh-battlecards.mjs');
+// NOTE: battlecard refresh is deliberately NOT here — see the daily block below.
 
-// ── Daily: morning brief (06:00 UTC run only) ──────────────────────────────
+// ── Daily: battlecards + morning brief (06:00 UTC run only) ────────────────
 const isDailyRun = hour >= 5 && hour <= 7; // catch the ~06:00 UTC window
 
 if (isDailyRun) {
+  // WHY BATTLECARDS MOVED OUT OF THE EVERY-RUN BLOCK (2026-09-25, measured):
+  //
+  // It ran on all four daily runs. One refresh is one synthesis call per tracked
+  // company — 12 calls at $0.145 each on the configured synthesis model, so $1.74 a
+  // run, $7 a day, **~$209 a month for battlecards alone**. docs/cost.md budgeted
+  // $15-25/month for the whole system.
+  //
+  // What that bought: nothing. A battlecard is a synthesis document over a company's
+  // accumulated signal history. Regenerating it every six hours re-reads a corpus that
+  // moved by a handful of rows and re-derives substantially the same prose — four times
+  // the bill for a flat line.
+  //
+  // This is the same argument `watch:aeo` already makes below, and it was simply never
+  // applied here. Daily is the right cadence: fresh every morning, ahead of the brief
+  // that reads them, at a quarter of the cost.
+  //
+  // Run it on demand any time with `npm run refresh`.
+  run('refresh battlecards', 'node --env-file-if-exists=.env cli/refresh-battlecards.mjs');
   run('daily brief', 'node --env-file-if-exists=.env cli/analyst.mjs --mode=brief --force');
   run('daily scan',  'node --env-file-if-exists=.env cli/analyst.mjs --mode=scan --force');
 }

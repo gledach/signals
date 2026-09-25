@@ -27,15 +27,15 @@ Ranked by expected impact for someone tracking the AI coding-agent market:
 
 | # | Blind spot | Impact | Fix effort | Fix status |
 |---|---|---|---|---|
-| 1 | **Actual product behavior** on a real codebase (latency, model choice, multi-file edit reliability, hallucination) | Critical — in this market the product IS the pitch | 1 week + legal check | [Plan 03 T4](./plans/03-thinkable-bets.md) scoped, not built |
+| 1 | **Actual product behavior** on a real codebase (latency, model choice, multi-file edit reliability, hallucination) | Critical — in this market the product IS the pitch | 1 week + legal check | [Plan 03 T4](./plans/00-backlog.md) scoped, not built |
 | 2 | **Customer voice in private channels** (G2, Capterra, Gartner, Discord, full Reddit threads) | High — where real dissatisfaction lives | G2 is scraping-heavy | Reddit search + per-company subreddits ship (`core/feed-urls.mjs`, `watchers/adapters/reddit.mjs`); thread bodies and the gated review sites do not |
-| 3 | **Employment signals** (LinkedIn jobs, Glassdoor, Levels) | High — jobs leak roadmap months ahead | 2 days Proxycurl | [Plan 02 G3](./plans/02-good-builds.md), not built |
+| 3 | **Employment signals** (LinkedIn jobs, Glassdoor, Levels) | High — jobs leak roadmap months ahead | 2 days Proxycurl | [Plan 02 G3](./plans/00-backlog.md), not built |
 | 4 | **Social short-form** (Twitter/X, LinkedIn posts) | Medium — 30–40% of real-time signal lives here | 1–2 days + $100/mo Twitter API | Not planned |
-| 5 | **Real pricing + customer-logo diffing** | Medium — leading signal for wins/losses | 3 hours | [Plan 03 T6](./plans/03-thinkable-bets.md), not built |
+| 5 | **Real pricing + customer-logo diffing** | Medium — leading signal for wins/losses | 3 hours | [Plan 03 T6](./plans/00-backlog.md), not built |
 | 6 | ~~**Non-English coverage**~~ | Medium | Hours | **Closed (mechanism).** `CI_NEWS_LOCALES="de-DE:DE,ja-JP:JP"` adds one news feed per company and per category query in each locale. Opt-in by design — each locale multiplies ingest volume and classifier spend, so the default is still en-US only. Still open: nobody has *chosen* the locales |
 | 7 | **Investor network intel** (VC jet / yacht tracking) | Medium — leading indicator of rounds + M&A | 2 weeks OSINT | Sketched, never written up (see plans/README.md) |
-| 8 | **Customer 10-Q sentiment** (public customers talking about them) | Medium | 1 week | [Plan 03 T3](./plans/03-thinkable-bets.md), not built |
-| 9 | **Podcast appearances** beyond YouTube | Low-medium | 3 days | [Plan 02 G5](./plans/02-good-builds.md), not built |
+| 8 | **Customer 10-Q sentiment** (public customers talking about them) | Medium | 1 week | [Plan 03 T3](./plans/00-backlog.md), not built |
+| 9 | **Podcast appearances** beyond YouTube | Low-medium | 3 days | [Plan 02 G5](./plans/00-backlog.md), not built |
 
 ---
 
@@ -61,7 +61,7 @@ Ranked by expected impact for someone tracking the AI coding-agent market:
 | Capterra | Same | High | Same |
 | TrustRadius | Enterprise-slanted reviews | Medium | Same |
 | Gartner Peer Insights | Enterprise buyer voice | Medium | Login-gated; may need customer contact |
-| Reddit thread bodies | Search RSS and per-company subreddit feeds are collected; the comment tree under a post is not | Medium | [Plan 02 G7](./plans/02-good-builds.md) Reddit deep-mining — free API |
+| Reddit thread bodies | Search RSS and per-company subreddit feeds are collected; the comment tree under a post is not | Medium | [Plan 02 G7](./plans/00-backlog.md) Reddit deep-mining — free API |
 | Hacker News beyond keyword search | Launch HN posts that don't mention brand in first 200 chars | Medium | Monitor `/newstories` feed |
 | Indie Hackers | SMB founder discourse | Low | No API; RSS partial |
 | Product competitor-owned forums | Their own support communities | Low | Login often required |
@@ -71,7 +71,7 @@ Ranked by expected impact for someone tracking the AI coding-agent market:
 | Gap | Detail | Priority | Fix status |
 |---|---|---|---|
 | SEC Form D (private placements) | Funding events 15 days before press | Medium | Not scoped; free EDGAR full-text API |
-| SEC EDGAR (10-Q, 10-K, 8-K) | Material events reported by public companies | Medium | [Plan 03 T3](./plans/03-thinkable-bets.md) scoped |
+| SEC EDGAR (10-Q, 10-K, 8-K) | Material events reported by public companies | Medium | [Plan 03 T3](./plans/00-backlog.md) scoped |
 | UK Companies House | UK corporate filings — subsidiary and director changes for UK-registered vendors | Medium | Not scoped; free API |
 | Crunchbase API | Structured funding history | Medium | Not built; $49/mo |
 | PitchBook | Deep investor data | Low | Enterprise pricing |
@@ -81,25 +81,25 @@ Ranked by expected impact for someone tracking the AI coding-agent market:
 
 | Gap | Detail | Priority | Fix status |
 |---|---|---|---|
-| **Their behavior on a real repo** | model choice, latency, multi-file edit reliability, hallucination under adversarial prompts | **CRITICAL** | [Plan 03 T4](./plans/03-thinkable-bets.md) scoped |
-| API docs changelog | New endpoints = new product surface | Medium | [Plan 01 Q8](./plans/01-quick-wins.md), not built |
+| **Their behavior on a real repo** | model choice, latency, multi-file edit reliability, hallucination under adversarial prompts | **CRITICAL** | [Plan 03 T4](./plans/00-backlog.md) scoped |
+| API docs changelog | New endpoints = new product surface | Medium | [Plan 01 Q8](./plans/00-backlog.md), not built |
 | ~~TLS certificate transparency~~ | **Closed.** `npm run watch:certs` polls crt.sh per competitor domain and scores new subdomains against `config/subdomain-signals.*.mjs` | — | Shipped |
-| Customer-logo wall diff | First-order customer-win signal | Medium | [Plan 03 T6](./plans/03-thinkable-bets.md), not built |
-| App Store changelog | iOS / Android version bumps leak features | Low | [Plan 06 C16](./plans/06-crazy-ideas.md), not built |
-| Model-provider fingerprinting from HTML | Which frontier models they call leaks in SDK imports and network config | Medium | Part of [Plan 03 T4](./plans/03-thinkable-bets.md) |
+| Customer-logo wall diff | First-order customer-win signal | Medium | [Plan 03 T6](./plans/00-backlog.md), not built |
+| App Store changelog | iOS / Android version bumps leak features | Low | [Plan 06 C16](./plans/00-backlog.md), not built |
+| Model-provider fingerprinting from HTML | Which frontier models they call leaks in SDK imports and network config | Medium | Part of [Plan 03 T4](./plans/00-backlog.md) |
 | Service status pages | Their real uptime / incidents | Low | Manual check |
-| OG image changes | Leading indicator of rebrand / announcement | Low | [Plan 01 Q5](./plans/01-quick-wins.md), not built |
-| DNS MX / CNAME changes | Infra migrations leak ops shifts | Low | [Plan 01 Q7](./plans/01-quick-wins.md), not built |
+| OG image changes | Leading indicator of rebrand / announcement | Low | [Plan 01 Q5](./plans/00-backlog.md), not built |
+| DNS MX / CNAME changes | Infra migrations leak ops shifts | Low | [Plan 01 Q7](./plans/00-backlog.md), not built |
 
 ### 👥 Employment / team
 
 | Gap | Detail | Priority | Fix status |
 |---|---|---|---|
-| LinkedIn job postings | Roadmap leak via roles | High | [Plan 02 G3](./plans/02-good-builds.md) Proxycurl $49/mo |
+| LinkedIn job postings | Roadmap leak via roles | High | [Plan 02 G3](./plans/00-backlog.md) Proxycurl $49/mo |
 | Glassdoor reviews | Morale, leadership, comp signals | Medium | Scraping risky; no good API |
 | Levels.fyi | Comp bands | Low | Manual |
-| Team-page diffing | Who joined, who left | Medium | Extension of [Plan 01 Q1](./plans/01-quick-wins.md) |
-| Recruiter outreach signal | "Lovable recruiter DM'd one of our engineers" | Low | [Plan 06 C5](./plans/06-crazy-ideas.md) — opt-in reporting |
+| Team-page diffing | Who joined, who left | Medium | Extension of [Plan 01 Q1](./plans/00-backlog.md) |
+| Recruiter outreach signal | "Lovable recruiter DM'd one of our engineers" | Low | [Plan 06 C5](./plans/00-backlog.md) — opt-in reporting |
 | LinkedIn profile changes | Individual exec movements | Low | Proxycurl |
 
 ### 🌍 Geographic / language
@@ -125,7 +125,7 @@ Ranked by expected impact for someone tracking the AI coding-agent market:
 
 | Gap | Detail | Priority | Fix status |
 |---|---|---|---|
-| Apple Podcasts / Spotify exclusives | Founder guest spots on non-hosted shows | Medium | [Plan 02 G5](./plans/02-good-builds.md), not built |
+| Apple Podcasts / Spotify exclusives | Founder guest spots on non-hosted shows | Medium | [Plan 02 G5](./plans/00-backlog.md), not built |
 | Investor podcast mentions | "20VC talked about AI coding this week" | Low | Same plan |
 | Conference talks (SaaStr, Dreamforce, Enterprise Connect) | Recorded keynotes | Medium | Manual; YouTube catches some |
 
@@ -134,7 +134,7 @@ Ranked by expected impact for someone tracking the AI coding-agent market:
 | Gap | Detail | Priority | Fix status |
 |---|---|---|---|
 | Screenshot diffs on marketing pages | Visual changes beyond HTML | Low | Perceptual hash needed |
-| Pricing-page OG image changes | Pre-launch indicator | Low | [Plan 01 Q5](./plans/01-quick-wins.md) |
+| Pricing-page OG image changes | Pre-launch indicator | Low | [Plan 01 Q5](./plans/00-backlog.md) |
 | PDF case study content | Uploaded PDFs not parsed | Low | pdf-parse + LLM |
 | SpeakerDeck / SlideShare slides | Conference decks | Low | Scrape |
 

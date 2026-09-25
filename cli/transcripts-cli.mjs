@@ -7,14 +7,16 @@
 //   npm run transcripts -- "pricing"            # search across all transcripts
 //   npm run transcripts -- "soc 2" --company=claudecode
 //   npm run transcripts -- --id=mIE9tVJTots     # print one transcript
+//   npm run transcripts -- --sync               # write disk-only records into the store
 //
 // Platform-neutral: uses Node built-ins only. No grep / jq / find needed.
+//
+// Reads through core/artifacts.mjs, which merges the canonical database rows with a
+// sweep of the `data/transcripts/` mirror. That merge is the point: it lists a
+// deployment's archive (database only, no files) and a laptop's pre-adoption archive
+// (files only, no rows) with the same command.
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { TRANSCRIPTS_DIR } from '../runtime/paths.mjs';
-
-const TRANSCRIPT_ROOT = TRANSCRIPTS_DIR;
+import { listJsonArtifacts, writeJsonArtifact } from '../core/artifacts.mjs';
 
 /**
  * Transcript body. Current archives store `excerpt` (a bounded extract plus a link back
@@ -33,6 +35,8 @@ const RESET = process.stdout.isTTY ? '\x1b[0m' : '';
 
 const argv = process.argv.slice(2);
 const STATS = argv.includes('--stats');
+const SYNC = argv.includes('--sync');
+const DRY_RUN = argv.includes('--dry-run');
 const COMPANY = argv.find((a) => a.startsWith('--company='))?.split('=')[1];
 const VIDEO_ID = argv.find((a) => a.startsWith('--id='))?.split('=')[1];
 const CONTEXT = Number(argv.find((a) => a.startsWith('--context='))?.split('=')[1] || 60);
@@ -41,19 +45,16 @@ const QUERY = positionals.join(' ').trim();
 
 // ────────────────────────────── main dispatch ───────────────────────────────
 
-if (!fs.existsSync(TRANSCRIPT_ROOT)) {
+const archive = await loadArchive();
+if (!archive.length) {
   console.log(`No transcripts yet — run \`npm run watch:youtube\` or \`npm run backfill:transcripts\` first.`);
   process.exit(0);
 }
 
-const archive = loadArchive();
-if (!archive.length) {
-  console.log(`Archive is empty. Run \`npm run backfill:transcripts\` to populate.`);
-  process.exit(0);
-}
-
-if (VIDEO_ID) {
-  showOne(VIDEO_ID);
+if (SYNC) {
+  await syncDiskIntoStore(archive);
+} else if (VIDEO_ID) {
+  showOne(archive, VIDEO_ID);
 } else if (STATS) {
   showStats(archive);
 } else if (QUERY) {
@@ -127,8 +128,49 @@ function showSearch(items, query, contextChars) {
   else console.log(`${BOLD}${totalHits} total hit${totalHits === 1 ? '' : 's'} across ${filtered.length} transcript${filtered.length === 1 ? '' : 's'}.${RESET}`);
 }
 
-function showOne(videoId) {
-  const t = loadArchive().find((x) => x.videoId === videoId);
+/**
+ * Promote every disk-only record into the store.
+ *
+ * The listing already tells us which records the database has never seen (`_source`),
+ * so this writes exactly those and leaves the rest alone — re-running it is a no-op
+ * rather than a rewrite of the whole archive. Use it once on any machine that collected
+ * transcripts before the store became canonical; after that the watcher writes both.
+ */
+async function syncDiskIntoStore(items) {
+  const diskOnly = items.filter((t) => t._source === 'disk');
+  console.log(`${BOLD}${CYAN}Transcript sync — ${items.length} archived, ${diskOnly.length} not yet in the store${RESET}\n`);
+  if (!diskOnly.length) {
+    console.log(`${DIM}Nothing to do — every record is already canonical.${RESET}`);
+    return;
+  }
+  let written = 0;
+  let failed = 0;
+  for (const t of diskOnly) {
+    // `_key` and `_source` are listing metadata, not part of the record. Writing them
+    // back would bake a one-off provenance label into the stored payload for ever.
+    const { _key, _source, ...payload } = t;
+    process.stdout.write(`  · ${_key} — ${(payload.title || '').slice(0, 55)}... `);
+    if (DRY_RUN) { console.log(`${DIM}[DRY] would write${RESET}`); continue; }
+    try {
+      await writeJsonArtifact({
+        kind: 'transcript',
+        artifactKey: _key,
+        companyId: payload.companyId ?? null,
+        scope: payload.source ?? null,
+        value: payload,
+      });
+      written++;
+      console.log(`${GREEN}stored${RESET}`);
+    } catch (err) {
+      failed++;
+      console.log(`${MAGENTA}FAIL ${err?.message || err}${RESET}`);
+    }
+  }
+  console.log(`\n${BOLD}sync done — written=${written} failed=${failed}${DRY_RUN ? ' [DRY-RUN]' : ''}${RESET}`);
+}
+
+function showOne(items, videoId) {
+  const t = items.find((x) => x.videoId === videoId);
   if (!t) {
     console.error(`No transcript found for videoId="${videoId}"`);
     process.exit(2);
@@ -143,20 +185,15 @@ function showOne(videoId) {
 
 // ────────────────────────────── helpers ─────────────────────────────────────
 
-function loadArchive() {
-  const out = [];
-  for (const cid of fs.readdirSync(TRANSCRIPT_ROOT)) {
-    const dir = path.join(TRANSCRIPT_ROOT, cid);
-    if (!fs.statSync(dir).isDirectory()) continue;
-    for (const f of fs.readdirSync(dir)) {
-      if (!f.endsWith('.json')) continue;
-      try {
-        const j = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-        out.push(j);
-      } catch {}
-    }
-  }
-  return out;
+async function loadArchive() {
+  const items = await listJsonArtifacts('transcript', { companyId: COMPANY || null });
+  // `_key` is `<companyId>/<videoId>`. Records written before the store became canonical
+  // already carry both fields in the payload; derive them from the key only as a
+  // fallback so a hand-edited mirror missing them still lists.
+  return items.map((t) => {
+    const [keyCompany, keyVideo] = String(t._key || '').split('/');
+    return { ...t, companyId: t.companyId || keyCompany, videoId: t.videoId || keyVideo };
+  });
 }
 
 function findAll(haystack, needle) {

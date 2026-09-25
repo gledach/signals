@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-24 · **Status:** accepted, implemented
 **Inputs:** two independent reviews (grok, agy) —
-`.apsolut-agents/runs/2026-09-24-llm-failure-policy-consolidation.md`
+the multi-agent review that produced it (maintainer notes, not in this repo)
 
 ## Decision
 

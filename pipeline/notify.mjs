@@ -5,9 +5,29 @@
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import notifier from 'node-notifier';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// node-notifier is an OPTIONAL dependency, loaded on first toast rather than at import.
+//
+// It is 5.5 MB and exists for one feature — a desktop toast — that no server, container
+// or CI runner can use. Importing it at module scope made every headless deployment pay
+// for it, and made `npm ci` on a machine without it fail outright rather than simply
+// running without toasts. Everything else in this file is pure string work.
+//
+// Resolves to null exactly once when absent, and the caller degrades quietly: a missing
+// desktop notifier must never fail a collection run.
+let _notifier;
+async function loadNotifier() {
+  if (_notifier !== undefined) return _notifier;
+  try {
+    _notifier = (await import('node-notifier')).default;
+  } catch {
+    _notifier = null;
+    console.warn('[notify] node-notifier not installed — desktop toasts disabled (optional dependency)');
+  }
+  return _notifier;
+}
 
 // ── Threshold: only notify for impactScore ≥ CI_TOAST_THRESHOLD (default 80 — "critical").
 // Set to 0 to notify on every signal; set to 101 to disable.
@@ -57,7 +77,11 @@ export function notifySignal(signal, { companyName, force = false } = {}) {
   // Deep-link into Battle mode for this specific competitor so sales prep is one click away.
   const url = `${VIEWER_BASE_URL}/#mode=battle&vs=${encodeURIComponent(signal.companyId)}`;
 
-  notifier.notify(
+  // Fire-and-forget, as documented above — the lazy load resolves after this function
+  // has already returned true, which is the same contract the callback always had.
+  loadNotifier().then((notifier) => {
+    if (!notifier) return;
+    notifier.notify(
     {
       title,
       message,
@@ -87,7 +111,8 @@ export function notifySignal(signal, { companyName, force = false } = {}) {
         || response === url;
       if (clicked) openUrlInBrowser(url);
     },
-  );
+    );
+  });
   return true;
 }
 

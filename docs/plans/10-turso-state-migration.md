@@ -1,5 +1,9 @@
 # Plan 10 — Migrate watcher state from disk to Turso
 
+> **Status: SHIPPED.** Watcher state lives in Turso (`sitemap_snapshots`, `cert_snapshots`,
+> `tavily_state`, `trend_baselines`); `.railwayignore` excludes the old `data/` caches.
+> Kept as the record of why, not as work to do.
+>
 > Tier: **READY · GOOD** · Effort: ~3 hours · Cost: ~$0/mo (∼1 MB Turso footprint)
 
 Unblock deploying the crons to any ephemeral host (Railway, Coolify,
@@ -34,8 +38,14 @@ that's easy to forget and breaks silently when you move hosts. Turso-state
 is deploy-target-neutral: same code runs on Railway, Coolify, GitHub
 Actions, Fly, or your laptop with zero config difference.
 
-**What stays on disk:** YouTube transcripts (`data/transcripts/`),
-talk-tracks (`data/talk-tracks/`), llm-cost log (`data/llm-cost.jsonl`).
+**What stayed on disk (at the time of this plan):** YouTube transcripts
+(`data/transcripts/`), talk-tracks (`data/talk-tracks/`), llm-cost log
+(`data/llm-cost.jsonl`).
+
+> **Superseded for two of the three.** Talk-tracks moved into the `artifacts` table with
+> Plan 09, and transcripts followed on 2026-09-25 — being disk-only meant a Railway
+> redeploy erased them and the watcher re-fetched every video for ever. Only
+> `data/llm-cost.jsonl` is still disk-first, and it is dual-written to `llm_cost`.
 These are soft state — losing them doesn't corrupt the signal pipeline;
 at worst you re-run `npm run backfill:transcripts` on your laptop to
 refill the searchable archive.

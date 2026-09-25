@@ -90,7 +90,7 @@ The rule that makes it hold: **Surface never touches Turso; Engine never renders
 
 Seven watchers, seven bespoke shapes. Each is its own CLI, its own state handling, its own
 error behavior, its own logging. Adding an eighth source means writing all of that again —
-which is exactly the friction that makes the `.apsolut/ref/last30days` source list (Reddit,
+which is exactly the friction that makes a candidate source list (Reddit,
 X, TikTok, Polymarket, Techmeme, arXiv) feel expensive rather than cheap.
 
 Normalize on one interface:
@@ -139,11 +139,21 @@ This phase is what makes "double the brands and it still works" true, and it is 
 
 ## Phase 3 — Cost: batching and prompt caching (~1 day, pays for itself)
 
+> **Prompt caching half: SHIPPED (2026-09-25).** `withPromptCache()` in
+> `pipeline/openrouter.mjs` marks the system message and the end of the few-shot block as
+> cache breakpoints for `anthropic/*` models; the run footer reports the hit rate and says
+> so loudly when it is zero, because a breakpoint that never reads still pays the ~1.25×
+> write premium. Smoke section 22 asserts the varying message is never marked. Batching is
+> still open.
+
 `classifyByLlm()` re-sends `SYSTEM_PROMPT` + three few-shot exchanges — ~1,400–1,800 input
 tokens of fixed prefix — to classify a ~100-token item. At batch 10 the prefix amortizes and
 input tokens per signal drop ~80%+. Prompt caching on supported models compounds it.
 
-*(Being prototyped tonight as card T-02 — fold the measured result back here.)*
+Measured 2026-09-25, and it reframes the priority: the classifier's cost is dominated by
+**output**, not the input prefix — a reasoning model emitted 1,905 output tokens per signal
+against 4,043 input. Model choice for this role outranks both batching and caching. See
+`docs/cost.md` and the classifier notes in `.env.example`.
 
 Batching also matters for scale, not just cost: it cuts the *number* of requests, which is
 what rate limits actually count.
@@ -236,7 +246,7 @@ A human reading the dashboard applies skepticism: they see `🔥 CONVERGENCE · 
 and discount it. **An agent consuming the same row through MCP treats it as a fact** and
 propagates it into whatever it builds. There is no second pair of eyes downstream.
 
-Three independent reviews (codex, grok, agy — see `.apsolut-agents/runs/IDEAS-*.out`)
+Three independent reviews (codex, grok, agy — see the multi-agent review that produced it (maintainer notes, not in this repo))
 concluded that convergence today detects **co-occurrence and presents it as
 corroboration**: theme rules match any keyword in title+summary; `sourceKind` measures the
 ingestion route rather than publisher independence, so one press release found via RSS and

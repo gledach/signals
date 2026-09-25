@@ -10,6 +10,7 @@ import { framing, winThemeHeadings } from '../core/home-brand.mjs';
 import { readJsonArtifact, writeJsonArtifact, listJsonArtifacts, removeArtifact } from '../core/artifacts.mjs';
 import { loadLlmCost, loadIndex, loadSitemapSnapshot, loadCertSnapshot, listBriefs, loadBrief, saveBrief, getLastCronRun, getCronRuns, appendSignal, updateSignal, upsertFeedback, loadFeedbackFor, feedbackPrecision } from '../core/store.mjs';
 import { SIGNAL_TYPES as SIGNAL_TYPE_DEFS } from '../core/signal-taxonomy.mjs';
+import { isFetchableUrl } from '../core/url-guard.mjs';
 import { renderWeeklyReport as renderWeeklyReportMd } from '../cli/weekly-report-render.mjs';
 import { chatJson, synthesisModel, hasApiKey } from '../pipeline/openrouter.mjs';
 import { FEATURES, FEATURE_CATEGORIES, FEATURE_STATUS_VALUES } from '../core/features.mjs';
@@ -19,7 +20,7 @@ import { HOT_KEYWORDS as SUBDOMAIN_KEYWORDS, SITEMAP_HOT_PATHS as SITEMAP_HOT_PA
 // Paths come from the shared resolver, never from this file's own location — that is
 // what let moving serve.mjs silently break static serving while /api kept returning 200.
 import {
-  VIEWER_DIR, BATTLECARDS_DIR, TRANSCRIPTS_DIR,
+  VIEWER_DIR, BATTLECARDS_DIR,
 } from '../runtime/paths.mjs';
 // data/snapshots/ no longer read from disk as of Plan 10 — readSnapshots()
 // now pulls from the Turso sitemap_snapshots / cert_snapshots tables.
@@ -234,11 +235,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── YouTube transcript archive
+    // Reads through the artifact layer, not the filesystem: `data/transcripts/` is in
+    // .railwayignore, so the old direct-from-disk read returned 404 on every deployed
+    // request. readJsonArtifact falls back to disk, so a local archive still answers.
     const tx = pathname.match(/^\/api\/transcript\/([a-z0-9_-]+)\/([A-Za-z0-9_-]{11})$/i);
     if (tx) {
-      const file = path.join(TRANSCRIPTS_DIR, tx[1], `${tx[2]}.json`);
-      if (!fs.existsSync(file)) return send(res, 404, JSON.stringify({ error: 'transcript not archived' }), MIME['.json']);
-      return send(res, 200, fs.readFileSync(file, 'utf8'), MIME['.json']);
+      const payload = await readJsonArtifact('transcript', `${tx[1]}/${tx[2]}`);
+      if (!payload) return send(res, 404, JSON.stringify({ error: 'transcript not archived' }), MIME['.json']);
+      return sendJson(res, payload);
     }
 
     // ── Weekly report (printable HTML)
@@ -457,8 +461,12 @@ const server = http.createServer(async (req, res) => {
 
     send(res, 404, 'not found');
   } catch (err) {
+    // The detail goes to the operator's console, never down the wire. An exception
+    // message here can carry a file path, a SQL fragment or a competitor name, and this
+    // server is one `0.0.0.0` bind away from being public. Locally the console is right
+    // next to you; remotely it is the only place this belongs.
     console.error('[viewer] error:', err);
-    send(res, 500, `Internal error: ${err?.message || err}`);
+    send(res, 500, 'Internal error — see the server console for details.');
   }
 });
 
@@ -900,6 +908,13 @@ async function resolveOgImage(targetUrl) {
   // Pick a fallback favicon URL in case the OG fetch fails.
   const fallback = faviconFor(targetUrl);
   let image = fallback;
+
+  // Refused targets never reach fetch(). Cached like any other answer so a scripted
+  // probe cannot use this path to time the difference between refused and unreachable.
+  if (!isFetchableUrl(targetUrl)) {
+    OG_CACHE.set(targetUrl, { image: fallback, expires: now + OG_CACHE_TTL_MS });
+    return fallback;
+  }
 
   try {
     const ctrl = new AbortController();

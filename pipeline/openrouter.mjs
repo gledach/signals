@@ -15,11 +15,19 @@ const COST_LOG = LLM_COST_LOG;
 
 const BASE_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-const DEFAULT_CLASSIFIER_MODEL = process.env.CI_CLASSIFIER_MODEL || 'anthropic/claude-haiku-4.5';
-const DEFAULT_SYNTH_MODEL = process.env.CI_SYNTHESIS_MODEL || 'anthropic/claude-sonnet-4.5';
-// Opus for analyst /deep, /gap, /outside — reasoning depth over speed/cost.
-// Override via CI_DEEP_MODEL if the slug changes or a different frontier model is preferred.
-const DEFAULT_DEEP_MODEL = process.env.CI_DEEP_MODEL || 'anthropic/claude-opus-4.7';
+// Shipped defaults. Kept on one vendor deliberately: a clone should work predictably
+// before its owner has an opinion about models, and mixing vendors by default makes a
+// bad first classification look like a bug in this repo. `.env.example` lists the
+// cheaper cross-vendor swaps, with the numbers to justify each one.
+//
+// Rates below are OpenRouter's, checked 2026-09-25, per 1M input/output.
+const DEFAULT_CLASSIFIER_MODEL = process.env.CI_CLASSIFIER_MODEL || 'anthropic/claude-haiku-4.5';  // $1 / $5
+// Sonnet 5 supersedes Sonnet 4.5 and is CHEAPER — $2/$10 against $3/$15 — so this is a
+// strict upgrade, not a trade. There is no reason to pin 4.5.
+const DEFAULT_SYNTH_MODEL = process.env.CI_SYNTHESIS_MODEL || 'anthropic/claude-sonnet-5';         // $2 / $10
+// Frontier reasoning for analyst /deep, /gap, /outside. Opus 5 is priced identically to
+// the Opus 4.7 this used to pin ($5/$25), so again: newer at the same cost.
+const DEFAULT_DEEP_MODEL = process.env.CI_DEEP_MODEL || 'anthropic/claude-opus-5';                 // $5 / $25
 
 export function classifierModel() {
   return DEFAULT_CLASSIFIER_MODEL;
@@ -118,7 +126,10 @@ function logCost(entry) {
 // prints a one-line footer if spend is above the noise floor. Keeps the
 // operator honest about what each command just cost, without needing to
 // remember to run `npm run cost` afterwards.
-const runStats = { calls: 0, costUsd: 0, models: new Set(), startedAt: Date.now() };
+const runStats = {
+  calls: 0, costUsd: 0, models: new Set(), startedAt: Date.now(),
+  cacheReadTokens: 0, cacheWriteTokens: 0, promptTokens: 0,
+};
 const COST_FOOTER_THRESHOLD = 0.001;  // anything > 0.1¢ is worth surfacing
 let footerRegistered = false;
 function registerCostFooter() {
@@ -133,6 +144,21 @@ function registerCostFooter() {
     const models = [...runStats.models].map((m) => m.split('/').pop()).join(' + ');
     const dur = ((Date.now() - runStats.startedAt) / 1000).toFixed(1);
     console.log(`\n[cost] this run · ${runStats.calls} LLM call${runStats.calls === 1 ? '' : 's'} · ${models} · ${cost} · ${dur}s`);
+
+    // Prompt-cache verdict. A breakpoint that never reads is a silent LOSS — writes are
+    // billed above the normal input rate — so say so plainly rather than stay quiet.
+    const anthropicRan = [...runStats.models].some((m) => m.startsWith('anthropic/'));
+    if (anthropicRan && PROMPT_CACHE_ENABLED && runStats.promptTokens > 0) {
+      const read = runStats.cacheReadTokens;
+      const pct = ((read / runStats.promptTokens) * 100).toFixed(0);
+      if (read > 0) {
+        console.log(`[cost] prompt cache · ${read.toLocaleString()} of ${runStats.promptTokens.toLocaleString()} input tokens served from cache (${pct}%)`);
+      } else if (runStats.calls > 1) {
+        console.log('[cost] prompt cache · 0 cache reads across multiple calls — the prefix is changing between');
+        console.log('[cost]   requests, or is under the ~1024-token minimum. Cache writes cost MORE than');
+        console.log('[cost]   plain input, so investigate or set CI_PROMPT_CACHE=0.');
+      }
+    }
     console.log('[cost] full history: npm run cost  (log: data/llm-cost.jsonl)');
   });
 }
@@ -250,6 +276,66 @@ async function assertDailyCeiling() {
   }
 }
 
+// ─────────────────────────── prompt caching ─────────────────────────────────
+//
+// Every classify/synthesis call resends the same system prompt and the same few-shot
+// examples, and pays full input price for them each time. The ledger shows what that
+// costs: `bootstrap-battlecard` sends 11.4k input tokens per call, `analyst` 26.5k,
+// `bootstrap-research` 17.9k — almost all of it identical between calls.
+//
+// Anthropic prices a cache READ at roughly a tenth of the input rate (a cache WRITE
+// costs ~1.25x, so this only pays when the prefix is reused inside the TTL — which is
+// exactly what a loop over N signals does).
+//
+// SCOPE — deliberately narrow. `cache_control` is an Anthropic-specific field, so this
+// applies ONLY to `anthropic/*` models. DeepSeek does its own automatic context caching
+// server-side and needs nothing here; sending it an unknown field is a needless risk on
+// the highest-volume path in the system. Kill switch: CI_PROMPT_CACHE=0.
+const PROMPT_CACHE_ENABLED = process.env.CI_PROMPT_CACHE !== '0';
+
+/** A message whose whole content is one cacheable text block. */
+function markCacheable(msg) {
+  // Already structured — a caller that built its own blocks knows better than we do.
+  if (typeof msg.content !== 'string') return msg;
+  return {
+    ...msg,
+    content: [{ type: 'text', text: msg.content, cache_control: { type: 'ephemeral' } }],
+  };
+}
+
+/**
+ * Insert cache breakpoints on the stable prefix of a conversation.
+ *
+ * Caching is a PREFIX match: everything up to a breakpoint is cached, and any byte
+ * change before it invalidates the rest. Callers here are shaped
+ * `[system, ...fewshot, user]` where only the final user message varies — so two
+ * breakpoints cover it:
+ *
+ *   1. the system message, so the persona/prompt still caches even if few-shots change
+ *   2. the message immediately before the last one, i.e. the end of the few-shot block
+ *
+ * Exported for testing. `serve.mjs`-style import-time side effects are why this is a
+ * pure function rather than something buried in the request builder.
+ */
+export function withPromptCache(messages, model) {
+  if (!PROMPT_CACHE_ENABLED) return messages;
+  if (!String(model || '').startsWith('anthropic/')) return messages;
+  if (!Array.isArray(messages) || messages.length < 2) return messages;
+
+  const out = messages.slice();
+  const marks = new Set();
+
+  const sysIdx = out.findIndex((m) => m.role === 'system');
+  if (sysIdx !== -1) marks.add(sysIdx);
+
+  // The last message is the varying one; the one before it ends the stable prefix.
+  const boundary = out.length - 2;
+  if (boundary >= 0) marks.add(boundary);
+
+  for (const i of marks) out[i] = markCacheable(out[i]);
+  return out;
+}
+
 export async function chat({ model, messages, temperature = 0.2, maxTokens = 1024, responseFormat, meta, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
   const key = process.env.OPENROUTER_API_KEY;
   // Persistent by definition — a key that is absent now is absent for the whole run.
@@ -259,7 +345,7 @@ export async function chat({ model, messages, temperature = 0.2, maxTokens = 102
   const chosenModel = model || DEFAULT_CLASSIFIER_MODEL;
   const body = {
     model: chosenModel,
-    messages,
+    messages: withPromptCache(messages, chosenModel),
     temperature,
     max_tokens: maxTokens,
     // include usage accounting — OpenRouter returns prompt/completion tokens
@@ -368,6 +454,15 @@ export async function chat({ model, messages, temperature = 0.2, maxTokens = 102
       runStats.calls += 1;
       runStats.costUsd += (costUsd || 0);
       runStats.models.add(chosenModel);
+      // Cache accounting. A breakpoint that never produces a READ is worse than none —
+      // writes cost ~1.25x — and the failure is silent, so the footer reports it. Field
+      // name varies by provider path, hence the fallbacks.
+      runStats.cacheReadTokens += Number(
+        usage?.prompt_tokens_details?.cached_tokens
+        ?? usage?.cache_read_input_tokens ?? 0,
+      ) || 0;
+      runStats.cacheWriteTokens += Number(usage?.cache_creation_input_tokens ?? 0) || 0;
+      runStats.promptTokens += Number(usage.prompt_tokens ?? 0) || 0;
       registerCostFooter();
       return { content, finishReason, usage };
     } catch (err) {
@@ -454,20 +549,61 @@ function salvageJson(raw) {
  *   reliably produces unparseable output, that is a prompt bug and should surface
  *   as one rather than as a bill.
  */
+/** Hard ceiling for automatic max_tokens escalation. */
+const MAX_TOKENS_ESCALATION_CAP = 32000;
+
 export async function chatJson(opts) {
-  const retries = opts.jsonRetries ?? 1;
-  for (let i = 0; i < retries; i++) {
+  const cap = opts.maxTokensCap ?? MAX_TOKENS_ESCALATION_CAP;
+  let attempt = { ...opts };
+  let malformedLeft = opts.jsonRetries ?? 1;
+  let escalationsLeft = 1;
+
+  for (;;) {
     try {
-      return await chatJsonOnce(opts);
+      return await chatJsonOnce(attempt);
     } catch (err) {
-      // Only a formatting slip is worth another attempt. Truncation means the
-      // ceiling is too low and a retry hits it again; anything else is a real
-      // failure.
-      if (!/returned non-JSON/.test(String(err?.message))) throw err;
-      console.warn(`[openrouter] malformed JSON despite finish_reason=stop — retrying (${i + 1}/${retries})`);
+      const msg = String(err?.message || '');
+
+      // TRUNCATION — raise the ceiling and go again, once.
+      //
+      // This used to throw immediately, on the reasoning that "a retry hits it again".
+      // True only at the SAME ceiling, and nothing raised it — so a truncated battlecard
+      // discarded a fully generated, fully BILLED response and failed the run. The
+      // salvage path in chatJsonOnce catches the easy cases; when the JSON is too
+      // mangled to repair, the right move is more room, not surrender.
+      //
+      // Bounded to one escalation and a hard cap: if doubling is not enough, the prompt
+      // is producing runaway output and that should surface as a bug, not as a bill.
+      if (/truncated at max_tokens/.test(msg) && escalationsLeft > 0) {
+        const current = attempt.maxTokens ?? 1024;
+        const next = Math.min(current * 2, cap);
+        if (next > current) {
+          escalationsLeft -= 1;
+          // Scale the deadline with the ceiling. More room to write is more time spent
+          // writing, and a retry that aborts mid-generation is the same wasted spend
+          // with a less honest error message. Never shrink a caller's own timeout.
+          const currentTimeout = attempt.timeoutMs ?? REQUEST_TIMEOUT_MS;
+          const nextTimeout = Math.max(currentTimeout, Math.round(currentTimeout * (next / current)));
+          console.warn(`[openrouter] truncated at max_tokens=${current} — retrying once at ${next} (timeout ${Math.round(nextTimeout / 1000)}s)`);
+          attempt = { ...attempt, maxTokens: next, timeoutMs: nextTimeout };
+          continue;
+        }
+        console.warn(`[openrouter] truncated at max_tokens=${current}, already at the ${cap} cap — not retrying`);
+      }
+
+      // MALFORMED but complete — a formatting slip on a response that was billed.
+      // One deep-research response arrived 21,030 characters long and fully formed apart
+      // from a stray `]`. Refusing to retry does not save money; it guarantees paying
+      // for nothing.
+      if (/returned non-JSON/.test(msg) && malformedLeft > 0) {
+        malformedLeft -= 1;
+        console.warn('[openrouter] malformed JSON despite finish_reason=stop — retrying');
+        continue;
+      }
+
+      throw err;
     }
   }
-  return chatJsonOnce(opts);
 }
 
 async function chatJsonOnce(opts) {

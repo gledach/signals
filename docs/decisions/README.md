@@ -12,4 +12,4 @@ Short records of cross-cutting choices agents and humans must respect.
 | [roster.md](./roster.md) | Company roster conventions |
 
 When you make a new one-way door, add a file here **and** a one-line ping in  
-`.apsolut-agents/agent-log.md` (if that workspace is installed).
+the maintainer's working notes (not in this repo).

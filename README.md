@@ -4,12 +4,37 @@
 noise into scored and attributed signals, and exposes them as structured data an AI agent
 can actually consume — not a dashboard a human has to read.
 
+**→ See it: [signal-v1.gledach.de](https://signal-v1.gledach.de)** — a real snapshot of a
+running deployment. Every view, real data, nothing to install. It is a static export
+(`npm run demo:html`), so it is read-only and dated rather than live.
+
+![Live Feed — convergences ranked by business impact, each with its firing rule and evidence count](./docs/images/dashboard-live-feed.jpg)
+
+*Live Feed. A **convergence** is the unit that matters: a pattern several independent
+publishers corroborate, scored from its own evidence rather than a fixed floor, with the
+rule that fired it stated inline.*
+
+<details>
+<summary><b>More views</b> — Compare and Battle</summary>
+
+![Compare — anchor company beside a rival across positioning, segment, pricing, strengths and weaknesses](./docs/images/dashboard-compare.jpg)
+
+*Compare. The anchor company against up to three rivals, section by section. Claims carry
+`[unverified]` when the signal set does not support them — the tool is built to say so.*
+
+![Battle — kill shots and objections for one competitor, filtered by deal context](./docs/images/dashboard-battle.jpg)
+
+*Battle. Call prep for one competitor: kill shots and the objections you should expect back,
+ranked against deal context (codebase size, team size) rather than dumped as a list.*
+
+</details>
+
 It ships tracking thirteen AI coding agents and prompt-to-app builders across two segments:
 `claudecode`, `cursor`, `codex`, `windsurf` (pro-dev) and `lovable`, `bolt`, `v0`,
 `replit` (vibe-coding). Point it at your own market by editing one gitignored file.
 
 ```bash
-git clone https://github.com/apsolut/apsolut-signal.git && cd apsolut-signal
+git clone https://github.com/gledach/signals.git && cd signals
 npm install
 npm run db:migrate     # local database + demo data. No account. No API key.
 npm run doctor         # confirm it worked, and see what each missing key unlocks
@@ -17,7 +42,7 @@ npm run view           # a populated dashboard at 127.0.0.1:5180
 ```
 
 That works offline on a fresh clone. There is no build step, no framework, and five
-runtime dependencies (plus Playwright, dev-only, for screenshots).
+runtime dependencies — two more are optional and lazy-loaded (plus Playwright, dev-only, for screenshots).
 
 ## Who consumes it
 
@@ -58,7 +83,7 @@ scoring), `agent-policy` (what an MCP agent may do), `aeo-prompts`, and `feeds`.
 |---|---|
 | [docs/start.md](./docs/start.md) | Install guide assuming no prior git/Node knowledge |
 | [docs/howto.md](./docs/howto.md) | Task-oriented "how do I…" |
-| [docs/why.md](./docs/why.md) | Why this architecture — zero build step, 5 runtime deps |
+| [docs/why.md](./docs/why.md) | Why this architecture — zero build step, 3 runtime deps (+2 optional) |
 | [docs/cost.md](./docs/cost.md) | LLM spend, model ladder, budget guardrails |
 | [docs/mcp.md](./docs/mcp.md) | The MCP server — tools, resources, agent policy |
 | [docs/gmail.md](./docs/gmail.md) | Google Alerts via Gmail (Path A′ zones) — setup, env, hard rules |
@@ -145,7 +170,7 @@ runs instead, and with no hosted database the local file is used.
 3. **Scores** business impact on a 0–100 scale (re-weighted for CI — product launches > generic press).
 4. **Stores** in libSQL — a local file by default, a hosted Turso database when `TURSO_DATABASE_URL` points at one — keyed by content hash (`hashId PRIMARY KEY`) for idempotent dedup.
 5. **Correlates** signals into convergences — cross-axis patterns (e.g. a product launch + a hiring push + a cert change all pointing at healthcare) with a structured `evidence` citation graph.
-6. **Generates battlecards** — Claude Sonnet 4.5 synthesizes a v0 battlecard per competitor, grounded against the anchor company's card (`MAIN_COMPANY_ID`), with a human-editable section that survives refreshes. Voice comes from `core/home-brand.mjs`: partisan only when a company is marked `isUs`, third-person otherwise. Claude Opus 4.7 via `npm run research` for the deepest, fact-checked populations.
+6. **Generates battlecards** — Claude Sonnet 5 synthesizes a v0 battlecard per competitor, grounded against the anchor company's card (`MAIN_COMPANY_ID`), with a human-editable section that survives refreshes. Voice comes from `core/home-brand.mjs`: partisan only when a company is marked `isUs`, third-person otherwise. Claude Opus 5 via `npm run research` for the deepest, fact-checked populations.
 7. **Analyst CLI** — `npm run analyst -- --mode=<scan|deep|gap|outside|brief>` produces Obsidian-ready markdown briefs from the persona in `analyst/persona.md`.
 8. **Serves a viewer** at `http://localhost:5180` — the sidebar has two labelled axes: **VIEWS** across Feed / Battle / Compare / Market / Intel / Report / Briefs / Inbox, and **COMPANIES**, where a click opens that company's page (Overview · Signals · Infrastructure · Battlecard) from anywhere. Linear-style dense UI, number keys `1`-`8` plus a `g` leader for mode switching. Compare is N-way: an anchor plus up to three rivals, shareable as `#vs=a,b,c`.
 9. **Chrome extension** — side-panel UI for browsing signals, Intel Check (compare any webpage against your intel using on-device Gemini Nano), clip signals to Turso, and desktop notifications. See [`chrome-extension/README.md`](./chrome-extension/README.md).
@@ -183,7 +208,7 @@ See `npm run help` for the full cheat-sheet. Most common:
 ```bash
 npm run fetch                 # every 30 min via Task Scheduler, or manually
 npm run correlate             # build convergences
-npm run refresh               # weekly — refreshes all battlecards
+npm run refresh               # daily on cron — refreshes all battlecards
 npm run view                  # keep this tab pinned
 npm run brief                 # 200-word morning brief (Opus analyst persona)
 ```
@@ -210,6 +235,7 @@ Rule of thumb: anything under `npm run <x>` here is safe to run as-is.
 | `npm run demo:seed` | Load `demo/seed-signals.jsonl` into whatever database is configured. Refuses when a local roster is active unless you pass `--force` — demo rows carry the demo roster's company ids. `db:migrate` already does this on a first run; set `SIGNALS_NO_DEMO_SEED` to suppress it |
 | `npm run demo:export` | Snapshot the current database back into `demo/seed-signals.jsonl` |
 | `npm run demo:clear` | Delete exactly the hashIds in the seed file. Nothing you collected yourself |
+| `npm run demo:html` | Build a single self-contained HTML snapshot of the dashboard into `demo/signal-demo.html` — this is what [signal-v1.gledach.de](https://signal-v1.gledach.de) serves. It starts the real viewer, asks it the same questions the browser asks, and inlines the answers behind a `fetch` shim, so the snapshot cannot drift from the live dashboard. Degraded rows are excluded unless you pass `--include-degraded`. Override the published URL with `SIGNAL_DEMO_URL` |
 
 ### Daily pipeline — ingest
 
@@ -222,7 +248,7 @@ Rule of thumb: anything under `npm run <x>` here is safe to run as-is.
 | `npm run watch:sites:dry` | Preview diffs, write nothing | — |
 | `npm run watch:certs` | Pull cert-transparency (crt.sh) entries per competitor domain, emit signals for new subdomains (leading indicator for vertical launches) | every 6 h |
 | `npm run watch:certs:dry` | Preview, write nothing | — |
-| `npm run watch:youtube` | Fetch each tracked channel's `/videos` page, get captions via `youtube-transcript`, classify transcripts, write signals + archive transcripts to `data/transcripts/` | daily |
+| `npm run watch:youtube` | Fetch each tracked channel's `/videos` page, get captions via `youtube-transcript`, classify transcripts, write signals + archive transcript excerpts to the store (mirrored at `data/transcripts/`) | daily |
 | `npm run watch:youtube -- --company=claudecode` | One competitor only | — |
 | `npm run watch:youtube -- --limit=3` | Only 3 most-recent per channel (cheap test) | — |
 | `npm run watch:youtube -- --force-reclassify` | Re-classify videos even if hashId already seen | — |
@@ -256,9 +282,9 @@ Rule of thumb: anything under `npm run <x>` here is safe to run as-is.
 | Command | What it does |
 |---|---|
 | `npm run self-bootstrap` | Generate / refresh `battlecards/<your-id>.md` — the home vendor's own positioning, features matrix, USPs. Only meaningful when a company is marked `isUs`; in market-watch mode there is no self-card |
-| `npm run bootstrap -- --company=<id>` | Generate one competitor battlecard from the signal set, grounded against the anchor's card (`MAIN_COMPANY_ID`). Sonnet 4.5, ~8-12k tokens, ~$0.08 |
-| `npm run refresh` | Re-generate the AUTO section of all 13 battlecards in sequence (plus the self-card, if a company is marked `isUs`). Weekly cadence. Operator-written HUMAN text is never overwritten — an all-placeholder scaffold is rewritten to match the anchor mode, and `npm run research` appends its own block inside HUMAN |
-| `npm run research -- --company=<id>` | **Deep research via Opus 4.7** — populates the HUMAN section with fact-checked overview, verified facts, objections to expect, deep weaknesses, recent moves, rumor watch, operator todos. 180-day signal window. ~$0.50 per run |
+| `npm run bootstrap -- --company=<id>` | Generate one competitor battlecard from the signal set, grounded against the anchor's card (`MAIN_COMPANY_ID`). Sonnet 5, ~8-12k tokens, ~$0.09 |
+| `npm run refresh` | Re-generate the AUTO section of all 13 battlecards in sequence (plus the self-card, if a company is marked `isUs`). Runs on the cron's **daily** tier; weekly is the cheaper choice if the cards rarely move. Operator-written HUMAN text is never overwritten — an all-placeholder scaffold is rewritten to match the anchor mode, and `npm run research` appends its own block inside HUMAN |
+| `npm run research -- --company=<id>` | **Deep research via Opus 5** — populates the HUMAN section with fact-checked overview, verified facts, objections to expect, deep weaknesses, recent moves, rumor watch, operator todos. 180-day signal window. ~$0.50 per run |
 | `npm run research:dry -- --company=<id>` | Preview Opus input without calling the model. `--company=` is required — without it the script exits 2 with a usage error |
 
 ### Analyst persona (briefs)
@@ -284,7 +310,7 @@ Obsidian-ready markdown in `briefs/YYYY-MM-DD-<mode>.md` (gitignored).
 
 | Command | What it does |
 |---|---|
-| `npm run transcripts` | List all archived transcripts in `data/transcripts/` |
+| `npm run transcripts` | List all archived transcripts (store rows merged with the `data/transcripts/` mirror) |
 | `npm run transcripts -- --stats` | Word counts per competitor |
 | `npm run transcripts -- "pricing"` | Case-insensitive substring search, highlighted, with ≤3 snippets per hit |
 | `npm run transcripts -- "SOC 2" --company=claudecode` | Scope search to one competitor |
@@ -292,8 +318,10 @@ Obsidian-ready markdown in `briefs/YYYY-MM-DD-<mode>.md` (gitignored).
 | `npm run transcripts -- "enterprise" --context=100` | Wider snippet window |
 | `npm run backfill:transcripts` | Walk every `sourceKind='youtube'` signal in Turso; fetch + save any missing transcripts. Safe to re-run. This is where local Whisper runs (if `CI_WHISPER_ENABLED=true`). Whisper additionally requires `yt-dlp` and `ffmpeg` on PATH (`pipx install yt-dlp`) — audio is downloaded with yt-dlp, not an npm package |
 | `npm run backfill:transcripts -- --dry-run` | Preview what would be fetched |
+| `npm run transcripts:sync` | Promote any disk-only transcript into the store. One-off, for an archive collected before the store was canonical |
+| `npm run transcripts:sync:dry` | Preview what would be promoted |
 
-**YouTube pipeline in one breath:** `watch:youtube` fetches captions via HTTP (no audio download, no transcription — free for ~80% of videos), saves transcript to `data/transcripts/<co>/<id>.json`, classifies the first 6000 chars via Haiku, writes one signal row to Turso. Whisper is opt-in, only fires for caption-less videos when you explicitly enable it — otherwise the video still gets a `noise` signal noting that captions weren't available.
+**YouTube pipeline in one breath:** `watch:youtube` fetches captions via HTTP (no audio download, no transcription — free for ~80% of videos), archives a bounded excerpt to the `artifacts` table (mirrored at `data/transcripts/<co>/<id>.json`), classifies the first 6000 chars via Haiku, writes one signal row to Turso. Whisper is opt-in, only fires for caption-less videos when you explicitly enable it — otherwise the video still gets a `noise` signal noting that captions weren't available.
 
 ### Re-classification
 
@@ -392,8 +420,8 @@ overrides are listed here. Nothing in this table is needed for the quickstart:
 | `TAVILY_API_KEY` | optional | Enables `watch:tavily` (free tier: 1000 cr/mo) |
 | `GITHUB_TOKEN` | optional | Raises the GitHub API limit for `watch:github` from 60/hr to 5,000/hr. `GH_TOKEN` is accepted too |
 | `CI_CLASSIFIER_MODEL` | optional | Per-signal triage (high volume). Default `anthropic/claude-haiku-4.5`. Qwen / Kimi alternatives in `.env.example`. **Never Opus — a single fetch is 200+ calls.** |
-| `CI_SYNTHESIS_MODEL` | optional | Battlecard synthesis (medium volume). Default `anthropic/claude-sonnet-4.5` |
-| `CI_DEEP_MODEL` | optional | Analyst `/deep`, `/gap`, `/outside`, `research` (low volume, max reasoning). Default `anthropic/claude-opus-4.7` |
+| `CI_SYNTHESIS_MODEL` | optional | Battlecard synthesis (medium volume). Default `anthropic/claude-sonnet-5` |
+| `CI_DEEP_MODEL` | optional | Analyst `/deep`, `/gap`, `/outside`, `research` (low volume, max reasoning). Default `anthropic/claude-opus-5` |
 | `CI_WHISPER_ENABLED` | optional | Set `true` to enable local Whisper fallback for caption-less YouTube videos. Disabled by default. Also requires `yt-dlp` and `ffmpeg` on PATH (`pipx install yt-dlp`) — audio is downloaded with yt-dlp, not an npm package |
 | `CI_WHISPER_MODEL` | optional | Whisper model name, default `base.en` |
 | `CI_TOAST_THRESHOLD` | optional | Min impact score for Windows toasts (0-100, 101 disables). Default 80 |
@@ -420,8 +448,8 @@ via env vars; full alternatives live commented in [.env.example](./.env.example)
 | Knob | Workload | Volume | Default | Why this default |
 |---|---|---|---|---|
 | `CI_CLASSIFIER_MODEL` | Per-signal triage (fetch / watch:hn / watch:tavily / reclassify) | **Thousands of calls per run** | `anthropic/claude-haiku-4.5` | Reliable JSON output via OpenRouter `response_format`; fast; cheap enough that a 500-signal fetch is under $0.10 |
-| `CI_SYNTHESIS_MODEL` | Battlecards + self-card synthesis | Dozens per week | `anthropic/claude-sonnet-4.5` | Best balance of structured-output instruction-following + cost. ~$0.08–0.12 per battlecard |
-| `CI_DEEP_MODEL` | Analyst modes + `npm run research` | 1-10 per day | `anthropic/claude-opus-4.7` | Max reasoning depth; Opus handles the "red-team my CI pipeline" (/gap) and "predict roadmap" kind of thinking that cheaper models get shallow on. ~$0.50 per research run, ~$0.08 per /scan |
+| `CI_SYNTHESIS_MODEL` | Battlecards + self-card synthesis | Dozens per week | `anthropic/claude-sonnet-5` | Best balance of structured-output instruction-following + cost. ~$0.08–0.12 per battlecard |
+| `CI_DEEP_MODEL` | Analyst modes + `npm run research` | 1-10 per day | `anthropic/claude-opus-5` | Max reasoning depth; Opus handles the "red-team my CI pipeline" (/gap) and "predict roadmap" kind of thinking that cheaper models get shallow on. ~$0.50 per research run, ~$0.08 per /scan |
 
 **Cheap swap for the classifier:** `qwen/qwen3-coder` or `qwen/qwen3.6-plus-04-02` or `moonshotai/kimi-k2.5-0127` — all strong JSON output at a fraction of Haiku's price. Verify with `npm run cost -- --by=model` after a week.
 
@@ -461,8 +489,8 @@ but here's the fallback ladder if you ever hit sustained downtime:
 - Analyst persona (`analyst/persona.md`) — in git
 - Schema (`sql/*.sql`) — in git
 - Cost log (`data/llm-cost.jsonl`) — local disk, gitignored but survives turso outages
-- YouTube transcripts (`data/transcripts/`) — local disk
-- Saved talk-tracks (`data/talk-tracks/`) — local disk
+- YouTube transcripts (`data/transcripts/`) — disk mirror of the `artifacts` rows
+- Saved talk-tracks (`data/talk-tracks/`) — disk mirror of the `artifacts` rows
 
 Only things in Turso can be lost in a Turso-account incident: signals + watcher baselines. Both are regenerable (signals by re-running fetch, baselines by letting the first post-restore run capture a new baseline).
 
@@ -577,4 +605,3 @@ Signal/
 
 - [docs/roadmap.md](./docs/roadmap.md) — master roadmap
 - [docs/plans/](./docs/plans/) — tiered plans (quick wins → crazy ideas)
-- [reference/README.md](./reference/README.md) — pointer to the original news-into-intelligence repo for modules worth porting later

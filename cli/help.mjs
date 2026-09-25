@@ -236,7 +236,6 @@ const DATA_PATHS = [
   { path: 'signal-taxonomy.mjs', note: 'Signal types + business-impact weights.' },
   { path: 'PLAN.md', note: 'Top-level roadmap — points into plans/*.md.' },
   { path: 'plans/', note: 'Tiered plans (quick / good / thinkable / hard / crazy).' },
-  { path: 'reference/README.md', note: 'Pointer to the originating news-into-intelligence repo.' },
 ];
 
 const KEY_ENV = [
@@ -333,7 +332,6 @@ function printDocs() {
   console.log(`  ${CYAN}README.md${RESET}              ${DIM}# module overview${RESET}`);
   console.log(`  ${CYAN}PLAN.md${RESET}                ${DIM}# master roadmap${RESET}`);
   console.log(`  ${CYAN}plans/${RESET}                 ${DIM}# tiered plans (quick / good / thinkable / hard / crazy)${RESET}`);
-  console.log(`  ${CYAN}reference/README.md${RESET}    ${DIM}# pointer to the originating news-into-intelligence repo${RESET}`);
   console.log('');
 }
 

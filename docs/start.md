@@ -105,8 +105,8 @@ later when you want to run Signal.
 In the same PowerShell window:
 
 ```powershell
-git clone https://github.com/apsolut/apsolut-signal.git
-cd apsolut-signal
+git clone https://github.com/gledach/signals.git
+cd signals
 ```
 
 If git asks you to log in to GitHub, use your GitHub account. If you don't
@@ -116,7 +116,7 @@ have one, create one at <https://github.com/> first (free).
 
 ## Step 5 — Install the project's dependencies
 
-Inside the `apsolut-signal` folder:
+Inside the `signals` folder:
 
 ```powershell
 npm install
@@ -221,7 +221,7 @@ Once a day (or whenever you want fresh signals), open a **new** PowerShell
 window, navigate to the project, and run:
 
 ```powershell
-cd C:\sites\d\apsolut-signal
+cd C:\sites\d\signals
 npm run fetch           # pulls new RSS signals (~1 minute)
 npm run correlate       # rebuilds convergences (~10 seconds)
 ```
@@ -258,7 +258,7 @@ npm run refresh
 When Aleksandar pushes new changes, pull them:
 
 ```powershell
-cd C:\sites\d\apsolut-signal
+cd C:\sites\d\signals
 git pull
 npm install      # only if dependencies changed; safe to always run
 ```

@@ -176,6 +176,6 @@ Either order works. The watcher itself is independent of both.
 ## See also
 
 - [blindspots.md](../blindspots.md) — #3 employment + open-source pressure axis
-- [plans/02-good-builds.md](./02-good-builds.md) — G3 LinkedIn (the paid equivalent)
+- [plans/00-backlog.md](./00-backlog.md) — G3 LinkedIn (the paid equivalent)
 - [plans/08-knowledge-graph.md](./08-knowledge-graph.md) — where `team_move` signals eventually want to live
 - [analyst/persona.md](../../analyst/persona.md) — DOMAIN AXES this watcher feeds

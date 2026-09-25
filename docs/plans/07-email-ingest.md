@@ -2,7 +2,7 @@
 
 > Tier: **GOOD** · Effort: Phase 1 shipped · remaining parsers ~30 min each · Cost: $0–12/mo  
 > **Status:** **Phase 1 SHIPPED (2026-08-08) as Path A′** — Gmail API `gmail.readonly` + three zones.  
-> Operator runbook: **[docs/gmail.md](../gmail.md)**. Security SoT: `.apsolut/ideas/gmaillocalingestion.html`.
+> Operator runbook: **[docs/gmail.md](../gmail.md)**. Security SoT: `docs/decisions/gmail-ingest.md`.
 
 Ingest any intel delivered via email — Google Alerts first, later Talkwalker, Crunchbase digests, newsletters — as Signal signals. Generalizes the "some service only outputs email" problem once.
 
@@ -373,9 +373,9 @@ Once Phase 1 is shipped, the pattern for adding each: write parser, add to regis
 
 ## See also
 
-- [Plan 03 T1 Correlation Engine](./03-thinkable-bets.md) — already built; ingested email signals participate in convergence detection automatically
+- [Plan 03 T1 Correlation Engine](./00-backlog.md) — already built; ingested email signals participate in convergence detection automatically
 - [Plan 08 Knowledge Graph](./08-knowledge-graph.md) — complementary; email signals feed the same extraction pipeline
-- [plans/02-good-builds.md](./02-good-builds.md) G4 (Weekly digest email) — parallel feature: emails LEAVING Signal; uses different library (Resend)
+- [plans/00-backlog.md](./00-backlog.md) G4 (Weekly digest email) — parallel feature: emails LEAVING Signal; uses different library (Resend)
 - [blindspots.md](../blindspots.md) — blind-spot catalog; email ingest partially closes "email-only intel sources" gap
 
 ---
@@ -386,8 +386,8 @@ Once Phase 1 is shipped, the pattern for adding each: write parser, add to regis
 |---|---|---|
 | 2026-04-16 | Plan scoped as email-ingest-pipeline (not Google-Alerts-integration) | User asked "how hard is Gmail hookup" — reframed to reusable pipeline where Google Alerts is one parser among many |
 | 2026-04-16 | Path A (IMAP) chosen for Phase 1 | Simpler setup; Cloudflare Path B deferred to Phase 3 |
-| 2026-08-08 | **Amend Path A with hard safety rails; optional Path 0 RSS first** | Multi-agent session (grok synthesis in `.apsolut-agents/runs/2026-08-08-gmail-stability-synthesis.md`). For ~100 alerts/day: dedicated Gmail only, **label/folder scan not full INBOX**, readonly/mark-read-after-store, env caps on messages+classify/day, no raw MIME in Turso, generic parser **off by default**, offline `.eml` fixtures before cron wire. Prefer starting ~20 **Google Alerts RSS** URLs (zero mailbox secret) to measure noise, then IMAP. Path B still blocked on authenticated public ingest. |
-| 2026-08-08 | **Supersede IMAP/app-password Path A as default** | Operator source: `.apsolut/ideas/gmaillocalingestion.html`. Recommended path is **Gmail REST API `gmail.readonly`** (own GCP OAuth desktop client) → local ingest daemon (Zone 1, token, no LLM) → sanitised local store → agents/Signal pipeline read store only (Zone 2, no token, no mailbox tools). App password + IMAP **rejected** (full mailbox scope, no revocation granularity). Hosted aggregators / gmail.modify MCP disqualified. Optional RSS remains zero-secret Phase 0. Multi-agent cards T-13/T-14 in flight. |
+| 2026-08-08 | **Amend Path A with hard safety rails; optional Path 0 RSS first** | Multi-agent session (grok synthesis in the multi-agent review that produced it (maintainer notes, not in this repo)). For ~100 alerts/day: dedicated Gmail only, **label/folder scan not full INBOX**, readonly/mark-read-after-store, env caps on messages+classify/day, no raw MIME in Turso, generic parser **off by default**, offline `.eml` fixtures before cron wire. Prefer starting ~20 **Google Alerts RSS** URLs (zero mailbox secret) to measure noise, then IMAP. Path B still blocked on authenticated public ingest. |
+| 2026-08-08 | **Supersede IMAP/app-password Path A as default** | Operator source: `docs/decisions/gmail-ingest.md`. Recommended path is **Gmail REST API `gmail.readonly`** (own GCP OAuth desktop client) → local ingest daemon (Zone 1, token, no LLM) → sanitised local store → agents/Signal pipeline read store only (Zone 2, no token, no mailbox tools). App password + IMAP **rejected** (full mailbox scope, no revocation granularity). Hosted aggregators / gmail.modify MCP disqualified. Optional RSS remains zero-secret Phase 0. Multi-agent cards T-13/T-14 in flight. |
 | 2026-08-08 | **Phase 1 code landed (Path A′)** | `ingest/gmail/*` + `ingest/gmail-ingest.mjs` (Zone 1), `pipeline/email-promote.mjs` (Zone 2), `ops/gmail-oauth-setup.mjs`, fixtures under `test/fixtures/email/`. Scripts: `watch:gmail`, `watch:gmail:dry`, `email:promote`, `gmail:oauth`. **Not** wired into `ops/cron-entry.mjs` or Railway. Local store only (`data/email/inbox.db`). |
 | TBD | Phase 1 operator live (OAuth + label + first 20 alerts) | |
 | TBD | Phase 2 parsers added | |

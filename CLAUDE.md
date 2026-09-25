@@ -1,19 +1,3 @@
-<!-- apsolut-seshat-davinci-start -->
-## Operator vault (apsolut-seshat · davinci)
-
-`.apsolut/` is a **davinci** notebook vault ([apsolut-seshat](https://github.com/apsolut/apsolut-seshat)).
-
-Pointers only — load one file on demand, never the whole vault:
-
-- Profile: `.apsolut/PROFILE.md`
-- Inbox → ideas → plan: `.apsolut/01-inbox/` (subfolders: important/, updates/, spam/, …) · `02-ideas/` · `03-plan/`
-- Library / decisions / knowledge: `04-library/` · `05-decisions/` · `06-knowledge/`
-- Binaries: read `07-files/000-template.md` or `08-screenshots/000-template.md` **first**, open one file
-- Pre-existing: `ideas/` (Gmail HTML runbooks), `concepts/` (UI experiments) — leave them
-- Product docs remain under `docs/`; multi-agent talk under `.apsolut-agents/`
-- Do not dump architecture into this file — put it in `.apsolut/06-knowledge/` or `docs/`
-<!-- apsolut-seshat-davinci-end -->
-
 <!-- turso-db-start -->
 This project uses [Turso](https://turso.tech/) (hosted libSQL) as its signal store.
 
@@ -28,8 +12,8 @@ Turso is canonical. The pre-Turso implementation is not recoverable from this re
 Google Alerts land via Gmail API `gmail.readonly` in a **separate Zone 1 process**
 (`ingest/gmail-ingest.mjs` → local `data/email/inbox.db`), then Zone 2
 (`pipeline/email-promote.mjs`) promotes into the signal store. Agents read signals
-only — never the mailbox. Operator docs: `docs/gmail.md`. Security SoT:
-`.apsolut/ideas/gmaillocalingestion.html`. Do not implement IMAP app passwords;
+only — never the mailbox. Operator docs: `docs/gmail.md`; the accepted decision and its rationale are in
+`docs/decisions/gmail-ingest.md`. Do not implement IMAP app passwords;
 do not wire Zone 1 into Railway `cron-entry` without an explicit human decision.
 <!-- gmail-path-a-end -->
 
@@ -38,34 +22,3 @@ When the operator asks for competitive analysis, adopt the persona defined in `a
 
 Modes: `/scan`, `/deep`, `/gap`, `/outside`, `/brief`. `/gap` specifically red-teams the operator's CI pipeline (feeds, rules, coverage), not market signals — treat its "target" differently. Run as CLI via `npm run analyst -- --mode=<mode>` or shorthand `npm run brief` / `npm run scan`.
 <!-- analyst-persona-end -->
-
-<!-- apsolut-agents:begin -->
-## Multi-agent workspace (read first, every session)
-
-This repo uses a shared multi-agent workspace in `.apsolut-agents/`.
-If `.apsolut-agents/.primary` exists, the path inside it is the REAL workspace —
-use it for every coordination read and write; the local copy is a snapshot.
-
-Before doing anything, in order:
-1. Read `.apsolut-agents/README.md` and `.apsolut-agents/PROJECT.md`.
-2. Read `.apsolut-agents/state/PROJECT_STATE.md` and the tail of `.apsolut-agents/agent-log.md`.
-3. Run `git log -12 --oneline`.
-4. If `.apsolut-agents/scripts/status.sh` exists, run `sh .apsolut-agents/scripts/status.sh`.
-5. First session ever: create `.apsolut-agents/agents/agent-<you>.md` from the template
-   and add your roster row in `.apsolut-agents/PROJECT.md` before your first task.
-
-You may drive other agents: if `.apsolut-agents/scripts/delegate.sh` exists you can hand a
-task card to any other roster agent's CLI (`delegate.sh run <agent> <id> --detach`), track
-it (`status`, `tail`), send correction rounds (`run … --note "…"`), or `stop` it — you stay
-accountable for its output. Read `.apsolut-agents/DELEGATION.md` before the first dispatch.
-
-Rules: talk only in `agent-log.md` (append-only, never rewrite others' entries).
-Respect HOLD — only the human lifts it. Committed ≠ done (not done until pushed or
-the log says HOLD). If another agent was active today, say in the log what you're
-editing (Tier 2: `INTENT:` line). Human-gate the one-way doors listed in `PROJECT.md`.
-Subagent fan-outs: file the surviving output in `.apsolut-agents/runs/` + one log entry.
-
-End every session with a heading `### <you> — <date> — PUSHED|HOLD|FAILED` in
-`agent-log.md`, then run `sh .apsolut-agents/scripts/session-end.sh <you> <TOKEN>`.
-Do not push unless allowed.
-<!-- apsolut-agents:end -->

@@ -308,7 +308,23 @@ For featureMatrix, emit ONE entry per registry feature id — prefer "unknown" o
   const json = await chatJson({
     model: synthesisModel(),
     temperature: 0.35,
-    maxTokens: 12000,
+    // 12000 was too tight and truncated repeatedly in production on 2026-09-25. Measured
+    // output for one battlecard on the configured synthesis model is ~7,400 tokens, and
+    // `featureMatrix` emits one entry per registry feature — so the length scales with
+    // the feature list and the roster, not with a constant. 1.6x headroom over the
+    // average is not headroom.
+    //
+    // A too-low ceiling is the expensive failure mode: the response is generated and
+    // BILLED in full, then thrown away. chatJson escalates once on truncation, but
+    // paying twice is worse than starting with room.
+    maxTokens: 20000,
+    // MUST be raised with maxTokens, not after. These calls already averaged 99.9s
+    // against the shared 120s default at the old 12000 ceiling — that default is sized
+    // for high-volume classification, where a hung call must not stall a 200-call fetch.
+    // Giving the model room to finish without giving it time to finish just converts a
+    // truncation into an AbortError, which is the same wasted spend with a worse error.
+    // `bootstrap-research` hit this exact trap first; see its note.
+    timeoutMs: 600_000,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userMsg },

@@ -36,13 +36,21 @@ npm-debug.log
 # top-level screenshots/ directories clean.
 screenshots/
 
-# Analyst briefs — committed to git per Plan 13 Phase 5. Durability comes from
-# three layers now: (1) Turso brief row, (2) local markdown under briefs/,
-# (3) git history for long-term archive. Scheduled cron runs use --force so
-# daily/weekly briefs UPSERT a single file per day instead of accumulating
-# time-suffixed variants and blowing up the folder. Ad-hoc runs without
-# --force still get time-suffixed filenames (intentional: don't clobber a
-# brief you're about to pin).
+# Analyst briefs. This comment used to claim they were "committed to git … (3) git
+# history for long-term archive" while the `briefs/*.md` rule below ignored them and
+# zero were ever tracked. Corrected 2026-09-25: there are TWO durability layers, not
+# three — the `briefs` table in the signal store (canonical) and the local markdown
+# mirror under `briefs/`.
+#
+# They stay out of git deliberately, for the same reason as `battlecards/*.md`: a brief
+# is generated analysis naming real competitors, and a public repo should carry the
+# engine and the demo roster, never a deployment's conclusions about named companies.
+# A private fork that wants git as a third layer can delete the `briefs/*.md` rule below.
+#
+# Scheduled cron runs use --force so daily/weekly briefs UPSERT a single file per day
+# instead of accumulating time-suffixed variants and blowing up the folder. Ad-hoc runs
+# without --force still get time-suffixed filenames (intentional: don't clobber a brief
+# you're about to pin).
 
 # The local libSQL database. `store.mjs` defaults to data/signals.db so a fresh clone
 # works with no account — that file is a user's own signal store, never repo content.
@@ -93,3 +101,36 @@ briefs/*.md
 # working copy usable without re-committing it.
 .apsolut-agents/
 .gstack/
+
+# The static dashboard snapshot from `npm run demo:html` — ~4 MB, regenerated on demand
+# and fully derived from the store. Committing it would add a multi-megabyte binary-ish
+# blob to history on every refresh, and it carries whatever roster the store held at
+# build time. Publish it as a release asset or host it; do not version it.
+demo/signal-demo.html
+
+# The current handoff note. Live operations detail — deploy state, credential incidents,
+# spend, Gmail volumes — and it points at .apsolut-agents/ paths a public clone has no
+# copy of. Kept on disk because the vault-docs skill writes it here by contract; kept out
+# of git because it is an internal status report, not documentation.
+HANDOFF.md
+
+# Internal restructure status doc. Names unpublished companion repos and cites maintainer
+# notes that are not in this repository. Useful to the maintainer, confusing to everyone else.
+docs/plans/REORG.md
+
+# Empty lockfile for an external skills manager; nothing in this repo reads it.
+skills-lock.json
+
+# Operator runbook skills — NOT product skills. These encode one deployment's incident
+# history (a specific dead credential, specific bad-row counts and dates), its Railway
+# setup, and paths into the maintainer's private notes. `/signal-scan` and friends stay
+# tracked because they describe how the PRODUCT works; these describe how this
+# INSTALLATION is run, which is useless to a clone and discloses more than it teaches.
+.claude/skills/signal-publish-prep/
+.claude/skills/signal-key-restore/
+.claude/skills/signal-repo-hygiene/
+.claude/skills/signal-viewer-gate/
+.agents/skills/signal-publish-prep/
+.agents/skills/signal-key-restore/
+.agents/skills/signal-repo-hygiene/
+.agents/skills/signal-viewer-gate/

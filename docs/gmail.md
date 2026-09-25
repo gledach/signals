@@ -3,10 +3,10 @@
 **Status:** Phase 1 **shipped** (2026-08-08). Local Zone 1 + Zone 2 promote.  
 **Not** on Railway / `ops/cron-entry.mjs`. App-password IMAP is **rejected**.
 
-Security source of truth: [`.apsolut/ideas/gmaillocalingestion.html`](../.apsolut/ideas/gmaillocalingestion.html)  
+Security source of truth: [`docs/decisions/gmail-ingest.md`](./decisions/gmail-ingest.md)  
 Plan file: [plans/07-email-ingest.md](./plans/07-email-ingest.md)  
-Multi-agent consensus: `.apsolut-agents/runs/2026-08-08-joint-consensus.md`  
-Consolidate + P0 fixes: `.apsolut-agents/runs/2026-08-08-consolidate-gmail-ship.md`
+Multi-agent consensus: the multi-agent review that produced it (maintainer notes, not in this repo)  
+Consolidate + P0 fixes: the multi-agent review that produced it (maintainer notes, not in this repo)
 
 ---
 
@@ -96,7 +96,7 @@ Zone 1 runs **locally**, never on Railway — the token process must not sit nex
 LLM tooling. `npm run doctor` asserts that `cron-entry` contains no Gmail call, so this
 stays true by test rather than by memory. Background on the hybrid (Railway for the main
 cron, local for Gmail) and what putting the token on Railway would cost:
-`.apsolut/ideas/gmail-next-steps.html`.
+`docs/gmail.md` (Automation section).
 
 Two helpers already exist; they log to `.logs/` and are the intended task targets:
 
@@ -139,7 +139,7 @@ Both scripts append to `.logs/` and no alert fires on failure. A pipeline whose 
 failure signal is a file nobody opens can decay unnoticed — this repo went 50 days
 between 2026-08-05 and 2026-09-24 with no LLM call and no ingest, and nothing said so.
 Wiring a non-zero exit to the notify path is not built; firing alerts at the operator is
-a human gate (see `.apsolut-agents/PROJECT.md`).
+a human gate (see the maintainer's human-gate list (not in this repo)).
 
 Also check `CI_EMAIL_MAX_SIGNALS_PER_DAY` (default 150) against real volume. Alerts
 producing ~217 hits/day against a 150 ceiling grow a permanent pending backlog.

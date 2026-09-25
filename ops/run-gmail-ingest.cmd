@@ -1,5 +1,5 @@
 @echo off
-REM Zone 1 — Gmail ingest (local Task Scheduler). See .apsolut/ideas/gmail-next-steps.html
+REM Zone 1 — Gmail ingest (local Task Scheduler). See docs/gmail.md (Automation section)
 cd /d "%~dp0.."
 if not exist .logs mkdir .logs
 echo ===== %date% %time% gmail-ingest =====>> .logs\gmail-ingest.log

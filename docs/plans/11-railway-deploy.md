@@ -1,5 +1,9 @@
 # Plan 11 — Deploy crons to Railway
 
+> **Status: SHIPPED.** The cron runs on Railway from `main` via `ops/cron-entry.mjs`.
+> Its "viewer stays local" decision still stands for the viewer as written — see
+> `dashboard/serve.mjs` and smoke section 21 before reconsidering it.
+>
 > Tier: **READY · GOOD** · Effort: ~30 min first time · Cost: ~$5/mo (hobby plan)
 
 Run the 9 ingest/correlation/refresh watchers on Railway so signals keep
@@ -68,7 +72,7 @@ Already done as of commit `<this plan's commit>`:
 ### 1. Create the Railway project
 
 1. Log in to <https://railway.app>
-2. **New Project → Deploy from GitHub repo** → pick `apsolut/apsolut-signal`
+2. **New Project → Deploy from GitHub repo** → pick `gledach/signals`
 3. Railway auto-detects Node via Nixpacks (uses `engines.node` from package.json → Node 22)
 4. When asked for a **Start command**, enter **`sleep infinity`** — this prevents Railway from treating it as a web service. Crons will override the command per schedule.
 
@@ -87,8 +91,8 @@ Optional overrides (same ones as `.env.example`):
 
 ```
 CI_CLASSIFIER_MODEL=anthropic/claude-haiku-4.5
-CI_SYNTHESIS_MODEL=anthropic/claude-sonnet-4.5
-CI_DEEP_MODEL=anthropic/claude-opus-4.7
+CI_SYNTHESIS_MODEL=anthropic/claude-sonnet-5
+CI_DEEP_MODEL=anthropic/claude-opus-5
 CI_TAVILY_MONTHLY_BUDGET=800
 ```
 

@@ -1,0 +1,51 @@
+# The gate. `npm test` is the whole suite — smoke plus the fixture parsers — and it is
+# deliberately OFFLINE: no API key, no database, no network. That is what makes it usable
+# as a required check on a public repo, where a fork's pull request must never see a
+# secret. If a test here ever needs a credential, the test is wrong, not this workflow.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A fork PR gets read-only access and no secrets. Stated explicitly rather than inherited,
+# so loosening it has to be a deliberate edit.
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22' # matches "engines" in package.json
+          cache: npm
+
+      # `npm ci` honours the lockfile exactly. --ignore-scripts because the optional
+      # whisper dependency downloads model binaries on postinstall and the suite never
+      # touches them.
+      - run: npm ci --ignore-scripts
+
+      - run: npm test
+
+      # The promise the README opens with: clone, migrate, get a populated dashboard with
+      # no account and no key. It is the first thing a stranger does, so it is worth more
+      # than any unit test here — and it breaks silently, because every piece of it works
+      # on its own.
+      - name: clone-and-run promise (no key, no account)
+        run: |
+          npm run db:migrate
+          node --input-type=module -e "
+            const { totalCount } = await import('./core/store.mjs');
+            const n = await totalCount();
+            console.log('signals after a bare db:migrate:', n);
+            if (n < 1) { console.error('FAIL: a fresh clone opens an EMPTY dashboard'); process.exit(1); }
+          "

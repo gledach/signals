@@ -329,7 +329,7 @@ A competitor whose card has a `_Last refreshed:` stamp newer than its newest sig
 **skipped** — regenerating it would be pure spend for identical output. Pass `--force` to
 synthesise anyway, or `--dry-run` to see what it would do without spending anything.
 
-Each synthesis call uses `CI_SYNTHESIS_MODEL` (default Claude Sonnet 4.5) via OpenRouter,
+Each synthesis call uses `CI_SYNTHESIS_MODEL` (default Claude Sonnet 5) via OpenRouter,
 ~$0.03/battlecard. Total cost scales with roster size, and the staleness skip usually makes
 a real weekly run far cheaper than the worst case. Check what you actually spent with
 `npm run cost`.
@@ -595,7 +595,7 @@ Not wired into the cron entrypoint — schedule it yourself if you want it.
 ### How to ingest Google Alerts via Gmail
 
 Canonical reference: **[docs/gmail.md](./gmail.md)** (env table, file map, hard rules).  
-Security design: `.apsolut/ideas/gmaillocalingestion.html` · Plan: [plans/07-email-ingest.md](./plans/07-email-ingest.md).
+Security design: `docs/decisions/gmail-ingest.md` · Plan: [plans/07-email-ingest.md](./plans/07-email-ingest.md).
 
 ```bash
 # Offline (no account)
@@ -620,7 +620,7 @@ npm run doctor                         # OAuth / inbox / MCP invariants
 
 **Hard rules:** Zone 1 never classifies or calls OpenRouter. MCP never talks to Gmail. Do **not** put the refresh token on Railway in v1. App passwords / IMAP are **rejected**. Caps: `CI_GMAIL_MAX_MESSAGES_PER_RUN`, `CI_GMAIL_MAX_HITS_PER_RUN`, `CI_EMAIL_MAX_CLASSIFY_PER_RUN`, `CI_EMAIL_MAX_SIGNALS_PER_DAY`.
 
-**Schedule:** open **`.apsolut/ideas/gmail-next-steps.html`** (auto-run local vs Railway free hybrid). Scripts: `ops/run-gmail-ingest.cmd`, `ops/run-gmail-promote.cmd`. **Not** on `ops/cron-entry.mjs` until a human re-approves token custody on Railway.
+**Schedule:** open **[docs/gmail.md → Automation](./gmail.md#automation-windows-task-scheduler)** (auto-run local vs Railway free hybrid). Scripts: `ops/run-gmail-ingest.cmd`, `ops/run-gmail-promote.cmd`. **Not** on `ops/cron-entry.mjs` until a human re-approves token custody on Railway.
 
 Promoted rows use `sourceKind: email-google-alert` and `hashId: email:ga:<messageId>:<i>` — filter them in the Live Feed / MCP `search_signals`.
 
@@ -787,7 +787,7 @@ For each new video:
 1. Scrape the channel's `/videos` page (more reliable than RSS feeds on corporate networks)
 2. Fetch captions via `youtube-transcript` library
 3. If no captions + `CI_WHISPER_ENABLED=true` → local Whisper fallback ([see below](#how-to-enable-local-whisper-transcription))
-4. Save full transcript to `data/transcripts/<company>/<videoId>.json`
+4. Archive a bounded excerpt as an `artifacts` row (kind `transcript`), mirrored to `data/transcripts/<company>/<videoId>.json`
 5. LLM-classify → signal in Turso → Windows toast if critical
 
 Cost: ~$0.003/video via Haiku.
@@ -835,7 +835,7 @@ npm run backfill:transcripts              # fetch everything
 npm run backfill:transcripts -- --dry-run # preview
 ```
 
-Loads all `sourceKind=youtube` signals from Turso, checks which ones don't have a transcript file on disk, fetches + saves the missing ones. Safe to re-run.
+Loads all `sourceKind=youtube` signals from Turso, checks which ones are not yet archived (store first, disk mirror second), fetches + saves the missing ones. Safe to re-run.
 
 ---
 
@@ -881,7 +881,7 @@ Whichever you pick, the **recommended cadence table** is the same:
 | `npm run watch:tavily` | Daily (budget-gated) | Uses paid credits; the watcher's own 12h cooldown prevents over-spend |
 | `npm run watch:trends` | 4× per week (e.g. Sun/Tue/Thu/Sat 03:00) | Batched — 8 queries per run rotates through all 32 weekly |
 | `npm run correlate` | Nightly 02:00 | Pure compute; runs after the day's ingest has settled |
-| `npm run refresh` | Weekly — Mondays 09:00 | LLM spend; weekly balances freshness vs cost |
+| `npm run refresh` | Daily on Railway (06:00 UTC tier); weekly is a fine local cadence | LLM spend — one synthesis call per tracked company, so cadence is the main cost dial. It sat on the every-6h tier until 2026-09-25, which cost ~4× for no added freshness |
 
 #### Option A — Windows Task Scheduler
 
@@ -984,7 +984,7 @@ Set in `.env`:
 
 ```
 CI_CLASSIFIER_MODEL=anthropic/claude-haiku-4.5     # default — fast, cheap
-CI_SYNTHESIS_MODEL=anthropic/claude-sonnet-4.5     # default — battlecard quality
+CI_SYNTHESIS_MODEL=anthropic/claude-sonnet-5       # default — battlecard quality
 ```
 
 Alternative picks that work through OpenRouter (same env-var, change the string):
@@ -992,7 +992,7 @@ Alternative picks that work through OpenRouter (same env-var, change the string)
 | Task | Cheap option | Balanced | Premium |
 |---|---|---|---|
 | Classifier | `deepseek/deepseek-chat` | `anthropic/claude-haiku-4.5` (default) | `google/gemini-2.5-flash` |
-| Synthesis | `deepseek/deepseek-chat-v3` | `anthropic/claude-sonnet-4.5` (default) | `anthropic/claude-opus-4.6` |
+| Synthesis | `anthropic/claude-haiku-4.5` | `anthropic/claude-sonnet-5` (default) | `anthropic/claude-opus-5` |
 
 Switch, run once, compare battlecard quality. Keep whatever you prefer.
 
@@ -1228,8 +1228,8 @@ cheat-sheet of the common ones with costs and when to use them.
 | `TAVILY_API_KEY` | ❌ | — | Enables `watch:tavily` mention discovery (free tier: 1000 cr/mo) |
 | `GITHUB_TOKEN` / `GH_TOKEN` | ❌ | — | Raises `watch:github` from 60 to 5,000 req/hr |
 | `CI_CLASSIFIER_MODEL` | ❌ | `anthropic/claude-haiku-4.5` | Classifier model |
-| `CI_SYNTHESIS_MODEL` | ❌ | `anthropic/claude-sonnet-4.5` | Battlecard synthesis model |
-| `CI_DEEP_MODEL` | ❌ | `anthropic/claude-opus-4.7` | Analyst `/deep`, `/gap`, `/outside` + `research` |
+| `CI_SYNTHESIS_MODEL` | ❌ | `anthropic/claude-sonnet-5` | Battlecard synthesis model |
+| `CI_DEEP_MODEL` | ❌ | `anthropic/claude-opus-5` | Analyst `/deep`, `/gap`, `/outside` + `research` |
 | `CI_CLASSIFY_BATCH_SIZE` | ❌ | `10` | Signals per classifier call. `1` restores one call per signal |
 | `CI_RECLASSIFY_CONCURRENCY` | ❌ | `4` | Parallel calls during `npm run reclassify` |
 | `CI_RECLASSIFY_ABORT_AFTER` | ❌ | `3` | Consecutive keyword-fallback batches before `reclassify` gives up |
@@ -1471,8 +1471,11 @@ root, because MCP clients launch it by path. See `docs/plans/REORG.md`.
 **Why JSON files for transcripts, not the database?**
 Cheap, grep-friendly, no bandwidth cost. Transcripts can be 20K+ chars; putting
 them through the database on every query wastes row-read budget. They're
-purely local reference material — the DB stores the fact of the video +
-classification, the transcript lives on disk. Note this does *not* apply to sitemap/cert
+purely reference material — the DB stores the fact of the video + its
+classification, and since 2026-09-25 the bounded transcript excerpt as well (an `artifacts`
+row, kind `transcript`), with `data/transcripts/` demoted to a mirror. It was disk-only
+before that, which meant every Railway redeploy erased the archive. Note this does *not*
+apply to sitemap/cert
 snapshots or trend baselines any more: those moved into the database so a watcher behaves
 identically on any host.
 
@@ -1497,4 +1500,3 @@ Corporate proxies commonly block `https://www.youtube.com/feeds/videos.xml`. The
 - [mcp.md](./mcp.md) — driving Signal from an AI agent over MCP
 - [plans/](./plans/) — tiered plan files (01, 02, 03, 06–14, plus REORG.md)
 - [decisions/](./decisions/) — why the data layer, roster, agent surface and demo data are shaped the way they are
-- [../reference/README.md](../reference/README.md) — pointer to the originating news-into-intelligence repo for modules worth porting later (correlation engine, OpenSky ingest, AIS relay for yacht tracking)

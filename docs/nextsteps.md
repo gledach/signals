@@ -14,7 +14,9 @@ Signal should be two things layered:
 
 Today Signal is **~60% news collector, ~30% synthesis, ~10% knowledge base.**
 
-The gap: every battlecard synthesis re-invents what it "knows" from raw signals. `[unverified]` tags litter the content because the LLM has no persistent source of truth. There's no memory that accumulates. No feedback loop when claims turn out wrong.
+The gap: every battlecard synthesis re-invents what it "knows" from raw signals. `[unverified]` tags litter the content because the LLM has no persistent source of truth. There's no memory that accumulates.
+
+> **Partly closed since this was written (2026-08-05).** "No feedback loop when claims turn out wrong" no longer holds: operator verdicts are stored in `signal_feedback` and `npm run report:weekly` reports precision per correlation rule. The persistent knowledge layer — the larger claim here — is still unbuilt.
 
 The unlock: add a persistent knowledge layer between collection and synthesis. Synthesis grounds in verified facts with receipts, not press-release summaries.
 

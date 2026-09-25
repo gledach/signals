@@ -759,5 +759,5 @@ open http://localhost:5180/#mode=knowledge
 - [nextsteps.md](../nextsteps.md) — architectural vision + why
 - [blindspots.md](../blindspots.md) — the meta gaps this closes
 - [roadmap.md](../roadmap.md) — where this slots into the full roadmap
-- [plans/03-thinkable-bets.md](./03-thinkable-bets.md) — T1 correlation engine (built); thinking layer that feeds this one
+- [plans/00-backlog.md](./00-backlog.md) — T1 correlation engine (built); thinking layer that feeds this one
 - [plans/07-email-ingest.md](./07-email-ingest.md) — complementary: more sources feeding the graph

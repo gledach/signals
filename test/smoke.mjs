@@ -18,6 +18,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import { ROOT, SQL_DIR, CONFIG_DIR, VIEWER_DIR, ANALYST_DIR, FIXTURES_DIR } from '../runtime/paths.mjs';
 
 let FAIL = 0;
@@ -1598,6 +1599,330 @@ section('19. LLM failure never fabricates a stored verdict');
   if (/loadLlmCost\(\{ limit: 1 \}\)/.test(dSrc)) {
     ok('doctor reads the spend ledger — a dead key no longer looks like a healthy pipeline');
   } else bad('doctor cannot detect a dead OPENROUTER_API_KEY');
+}
+
+// ───────── 20. no state survives only on disk ───────────────────────────────
+// The transcript archive was disk-only for its whole life, and `data/transcripts/` is
+// in BOTH .gitignore and .railwayignore. On the deployment that meant the archive was
+// erased by every redeploy, `GET /api/transcript/...` could never return anything, and
+// the `hasTranscript` skip-guard then re-fetched every video from YouTube again — three
+// silent failures from one missing database write. These assertions are generic on
+// purpose: the rule is "the store is canonical, disk is a mirror", not "transcripts are
+// special". Anything new that persists must arrive through core/artifacts.mjs.
+
+section('20. Disk is a mirror, never the only copy');
+{
+  const tSrc = fs.readFileSync(path.join(ROOT, 'pipeline', 'transcript.mjs'), 'utf8');
+
+  // The archive writes through the artifact layer, and nothing writes the file directly.
+  if (/writeJsonArtifact\(/.test(tSrc)) ok('transcript archive writes through core/artifacts.mjs');
+  else bad('transcript archive can still persist to disk only');
+
+  // saveTranscript used to be the sole writer AND a direct fs.writeFileSync call.
+  const archiveSection = tSrc.slice(tSrc.indexOf('export function transcriptPath'));
+  if (!/writeFileSync/.test(archiveSection)) ok('no direct file write left in the archive path');
+  else bad('a direct writeFileSync bypasses the store and loses data on redeploy');
+
+  // Reads must not be filesystem existence checks, or a deployment reports an empty
+  // archive while the rows sit in the store.
+  if (!/existsSync\(transcriptPath/.test(tSrc)) ok('archive reads do not depend on a file existing');
+  else bad('hasTranscript still answers from the filesystem alone');
+
+  // The artifact layer has to know where this kind mirrors, or writeArtifact silently
+  // skips the mirror and the local workflow degrades without a word.
+  const aSrc = fs.readFileSync(path.join(ROOT, 'core', 'artifacts.mjs'), 'utf8');
+  for (const kind of ['battlecard', 'brief', 'talktrack', 'transcript']) {
+    if (new RegExp(`${kind}:`).test(aSrc)) ok(`artifacts.mjs maps a mirror for '${kind}'`);
+    else bad(`artifacts.mjs has no mirror path for '${kind}' — writes are database-only`);
+  }
+
+  // The route that was dead on every deployment. Asserted on the whole file rather than
+  // a slice around the route: the path literal there is a regex (`\/api\/transcript\/`),
+  // so anchoring on the plain string finds nothing and the check passes vacuously.
+  const sSrc = fs.readFileSync(path.join(ROOT, 'dashboard', 'serve.mjs'), 'utf8');
+  if (/readJsonArtifact\('transcript'/.test(sSrc)) ok('/api/transcript reads the store');
+  else bad('/api/transcript no longer reads the transcript archive from the store');
+  if (!/TRANSCRIPTS_DIR/.test(sSrc)) ok('serve.mjs touches no directory .railwayignore excludes');
+  else bad('serve.mjs still reads TRANSCRIPTS_DIR — 404 on every deployed request');
+
+  // Async contract: every caller must await, or saveTranscript's return value is a
+  // Promise and the "already archived" guard silently passes for everything.
+  for (const rel of [['watchers', 'youtube-watch.mjs'], ['cli', 'backfill-transcripts.mjs']]) {
+    const src = fs.readFileSync(path.join(ROOT, ...rel), 'utf8');
+    if (!/(?<!await )\bsaveTranscript\(/.test(src.replace(/^import .*$/gm, ''))) {
+      ok(`${rel[1]} awaits saveTranscript`);
+    } else bad(`${rel[1]} calls saveTranscript without await — the write may never land`);
+  }
+
+  // A recovery route has to exist for archives that predate the store being canonical.
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  if (pkg.scripts['transcripts:sync']) ok('npm run transcripts:sync can promote a disk-only archive');
+  else bad('no way to rescue transcripts written before the store became canonical');
+}
+
+// ───────── 21. no caller chooses where the server fetches ───────────────────
+// `GET /api/og-image?url=` fetched whatever it was handed, `redirect: 'follow'`, no
+// validation — server-side request forgery, reachable unauthenticated. It survived an
+// audit of this file because that audit enumerated the MUTATING routes; the sharp one is
+// a GET, so a "block every non-GET" public-demo gate would not have touched it and would
+// have looked correct while it stayed open. Asserted behaviourally, not by regex: a
+// security control only checked with a source pattern is one nobody has run.
+
+section('21. Server-side fetch targets are validated');
+{
+  const { isFetchableUrl } = await import('../core/url-guard.mjs');
+
+  // Must refuse: the network positions a hosted viewer would hand an attacker.
+  const denied = [
+    'http://169.254.169.254/latest/meta-data/',   // cloud metadata — the point of SSRF
+    'http://127.0.0.1:5180/api/signals',          // loopback: the viewer's own private routes
+    'http://localhost/admin',
+    'http://[::1]:8080/',
+    'http://10.0.0.5/',
+    'http://172.16.0.1/', 'http://172.31.255.254/',
+    'http://192.168.1.1/',
+    'http://0.0.0.0/',
+    'file:///etc/passwd',                         // scheme confusion
+    'gopher://evil/_data',
+    'ftp://internal/secrets',
+    'not a url at all',
+    '',
+  ];
+  for (const u of denied) {
+    if (isFetchableUrl(u) === null) ok(`og-image refuses ${u.slice(0, 44) || '(empty)'}`);
+    else bad(`og-image would FETCH ${u} — server-side request forgery`);
+  }
+
+  // Must still allow ordinary public targets, or the dashboard loses every preview.
+  for (const u of ['https://cursor.com/blog/post', 'http://example.com/', 'https://172.32.0.1/', 'https://11.0.0.1/']) {
+    if (isFetchableUrl(u)) ok(`og-image still allows ${u}`);
+    else bad(`og-image now refuses a legitimate public URL: ${u}`);
+  }
+
+  // The route must actually consult the guard, and the guard must live somewhere testable.
+  const sSrc = fs.readFileSync(path.join(ROOT, 'dashboard', 'serve.mjs'), 'utf8');
+  if (/isFetchableUrl\(/.test(sSrc)) ok('serve.mjs routes og-image through the guard');
+  else bad('serve.mjs fetches a caller-supplied URL without consulting url-guard.mjs');
+
+  // Any OTHER server-side fetch of a caller-supplied value would reopen the same hole.
+  // Comments are stripped first — prose about fetch() is not a call, and counting it
+  // makes this assertion fire on its own documentation.
+  const code = sSrc.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+  const fetchCalls = (code.match(/\bfetch\(/g) || []).length;
+  if (fetchCalls <= 1) ok(`serve.mjs makes ${fetchCalls} outbound fetch call — the guarded one`);
+  else bad(`serve.mjs makes ${fetchCalls} outbound fetch calls; each needs isFetchableUrl()`);
+}
+
+// ───────── 22. prompt cache breakpoints land on the STABLE prefix ───────────
+// Caching is a prefix match, so a breakpoint placed after anything that varies caches
+// nothing and still pays the ~1.25x write premium — a silent net loss. The ledger says
+// this matters: `analyst` sends 26.5k input tokens per call, `bootstrap-battlecard`
+// 11.4k, almost all of it identical between calls.
+
+section('22. Prompt cache marks only the stable prefix');
+{
+  const { withPromptCache } = await import('../pipeline/openrouter.mjs');
+  const convo = () => ([
+    { role: 'system', content: 'PERSONA' },
+    { role: 'user', content: 'example in' },
+    { role: 'assistant', content: 'example out' },
+    { role: 'user', content: 'the varying signal' },
+  ]);
+  const cached = (m) => Array.isArray(m.content) && m.content.some((b) => b.cache_control);
+
+  const out = withPromptCache(convo(), 'anthropic/claude-haiku-4.5');
+  if (cached(out[0])) ok('system message is a cache breakpoint');
+  else bad('system prompt is resent uncached on every call');
+  if (cached(out[2])) ok('end of the few-shot block is a cache breakpoint');
+  else bad('few-shot examples are resent uncached on every call');
+  // THE ONE THAT MUST NEVER REGRESS: caching the varying message caches nothing and
+  // bills a write every single call.
+  if (!cached(out[3])) ok('the varying final message is NOT marked cacheable');
+  else bad('cache breakpoint on the varying message — pays the write premium, never reads');
+  if (out[0].content[0].text === 'PERSONA') ok('content survives the rewrite intact');
+  else bad('markCacheable altered the message text');
+
+  // Anthropic-only. DeepSeek is the highest-volume path and caches server-side already.
+  const ds = withPromptCache(convo(), 'deepseek/deepseek-v4-pro');
+  if (ds.every((m) => typeof m.content === 'string')) ok('non-Anthropic models are left untouched');
+  else bad('cache_control sent to a provider that did not ask for it');
+
+  // Degenerate inputs must not throw on a paid path.
+  for (const [label, arg] of [['empty', []], ['single', [{ role: 'user', content: 'x' }]], ['null', null]]) {
+    try { withPromptCache(arg, 'anthropic/claude-opus-5'); ok(`survives a ${label} message list`); }
+    catch { bad(`withPromptCache throws on a ${label} message list`); }
+  }
+
+  // A caller that already built content blocks knows better than this helper does.
+  const blocks = [{ role: 'system', content: [{ type: 'text', text: 'X' }] }, { role: 'user', content: 'y' }];
+  const kept = withPromptCache(blocks, 'anthropic/claude-opus-5');
+  if (Array.isArray(kept[0].content) && kept[0].content[0].text === 'X') ok('pre-built content blocks are preserved');
+  else bad('withPromptCache clobbered caller-supplied content blocks');
+}
+
+// ───────── 23. per-company LLM work is not in the every-6h block ────────────
+// Measured 2026-09-25: battlecard refresh sat in the every-run block and made one
+// synthesis call per tracked company, four times a day — $1.74 a run, ~$209/month, on a
+// system budgeted at $15-25. The output barely moved between runs. The cost of this
+// mistake is invisible in code review (one line, in the right-looking place) and shows
+// up a month later on a bill, which is exactly what an assertion is for.
+
+section('23. Cron tiering keeps per-company LLM work off the 6h path');
+{
+  const src = fs.readFileSync(path.join(ROOT, 'ops', 'cron-entry.mjs'), 'utf8');
+  const dailyAt = src.indexOf('const isDailyRun');
+  const everyRunBlock = dailyAt > 0 ? src.slice(0, dailyAt) : src;
+
+  // Anything that fans out over the roster belongs behind a daily/weekly gate.
+  const perCompany = [
+    ['refresh-battlecards.mjs', 'battlecard refresh'],
+    ['--all-competitors', 'deep analysis'],
+    ['aeo-watch.mjs', 'answer-engine visibility'],
+  ];
+  for (const [needle, label] of perCompany) {
+    if (!everyRunBlock.includes(needle)) ok(`${label} is not in the every-6h block`);
+    else bad(`${label} runs every 6h — one LLM call per company, four times a day`);
+  }
+
+  // It must still run SOMEWHERE, or this "saving" is really a silent feature removal.
+  if (src.includes('refresh-battlecards.mjs')) ok('battlecard refresh still runs on a slower tier');
+  else bad('battlecard refresh was dropped from the cron entirely, not rescheduled');
+
+  // The gates themselves must survive.
+  if (/isDailyRun\s*=\s*hour\s*>=/.test(src)) ok('daily gate intact');
+  else bad('daily gate is gone — everything below it now runs every 6h');
+  if (/isWeeklyRun\s*=\s*isDailyRun\s*&&/.test(src)) ok('weekly gate is nested inside the daily gate');
+  else bad('weekly gate no longer depends on the daily window');
+}
+
+// ───────── 24. .env.example agrees with the shipped model defaults ──────────
+// Found 2026-09-25: `.env.example` labelled `claude-sonnet-4.5` as the synthesis DEFAULT
+// while openrouter.mjs shipped it, then both drifted — the file also advertised a
+// `moonshotai/kimi-k2.5-0127` slug that no longer exists on OpenRouter. Documentation
+// that confidently states the wrong default is worse than none: it is the file people
+// copy to `.env`, so a stale line becomes a live misconfiguration.
+
+section('24. Shipped model defaults match .env.example');
+{
+  const envEx = fs.readFileSync(path.join(ROOT, '.env.example'), 'utf8');
+
+  // Read the SHIPPED defaults out of the source, not through the accessors.
+  // `openrouter.mjs` calls loadEnv() at import, so importing it here pulls in the
+  // operator's own .env — which made the first version of this check skip itself on
+  // every developer machine and only run in CI. The literal in the `||` fallback is the
+  // default a fresh clone gets, regardless of who is running the test.
+  const orSrc = fs.readFileSync(path.join(ROOT, 'pipeline', 'openrouter.mjs'), 'utf8');
+  const shippedDefault = (envVar) => {
+    const m = orSrc.match(new RegExp(`process\\.env\\.${envVar}\\s*\\|\\|\\s*'([^']+)'`));
+    return m ? m[1] : null;
+  };
+
+  for (const key of ['CI_CLASSIFIER_MODEL', 'CI_SYNTHESIS_MODEL', 'CI_DEEP_MODEL']) {
+    const shipped = shippedDefault(key);
+    if (!shipped) { bad(`could not read the shipped default for ${key} from openrouter.mjs`); continue; }
+    const line = envEx.split('\n').find((l) => l.includes(key + '=' + shipped));
+    if (!line) bad(`${key} ships '${shipped}' but .env.example never lists that slug`);
+    else if (!/DEFAULT/i.test(line)) bad(`.env.example lists '${shipped}' but does not mark it DEFAULT`);
+    else ok(`${key} ships '${shipped}', documented and marked DEFAULT`);
+  }
+
+  // Exactly one DEFAULT marker per role, or the file is ambiguous about what you get.
+  for (const key of ['CI_CLASSIFIER_MODEL', 'CI_SYNTHESIS_MODEL', 'CI_DEEP_MODEL']) {
+    const n = envEx.split('\n').filter((l) => l.includes(key + '=') && /DEFAULT/i.test(l)).length;
+    if (n === 1) ok(`${key} has exactly one DEFAULT line`);
+    else bad(`${key} has ${n} lines marked DEFAULT — ambiguous`);
+  }
+
+  // Models retired from the shipped defaults must not still be advertised as current.
+  for (const stale of ['claude-sonnet-4.5', 'claude-opus-4.7']) {
+    const asDefault = envEx.split('\n').some((l) => l.includes(stale) && /DEFAULT/i.test(l));
+    if (!asDefault) ok(`superseded '${stale}' is not presented as a default`);
+    else bad(`.env.example still calls '${stale}' a default`);
+  }
+}
+
+// ───────── 25. a billed response is never thrown away ───────────────────────
+// Truncation is the most expensive failure mode in the system: the model generates the
+// whole answer, OpenRouter BILLS it, and then the caller discards it and fails the run.
+// It hit `bootstrap-battlecard` repeatedly on 2026-09-25 at maxTokens=12000.
+//
+// The paired trap: raising maxTokens without raising timeoutMs converts truncation into
+// an AbortError — same wasted spend, worse error. `bootstrap-research` already carries a
+// comment about discovering this the hard way, and the battlecard path then repeated it.
+
+section('25. Long-output calls have room AND time to finish');
+{
+  const orSrc = fs.readFileSync(path.join(ROOT, 'pipeline', 'openrouter.mjs'), 'utf8');
+
+  // chatJson must escalate on truncation rather than surrender.
+  if (/truncated at max_tokens/.test(orSrc) && /escalationsLeft/.test(orSrc)) {
+    ok('chatJson raises max_tokens and retries once on truncation');
+  } else bad('a truncated — and fully billed — response is discarded with no retry');
+  if (/nextTimeout|timeoutMs: nextTimeout/.test(orSrc)) {
+    ok('the escalated retry extends the deadline too');
+  } else bad('escalated retry keeps the old timeout — it will abort instead of truncating');
+  if (/MAX_TOKENS_ESCALATION_CAP/.test(orSrc)) ok('escalation is bounded by a hard cap');
+  else bad('unbounded max_tokens escalation — a runaway prompt becomes a runaway bill');
+
+  // Every caller asking for a long response must also buy the time to produce it.
+  const LONG_OUTPUT_MIN = 10000;
+  for (const rel of [['cli', 'bootstrap-battlecard.mjs'], ['cli', 'bootstrap-research.mjs']]) {
+    const src = fs.readFileSync(path.join(ROOT, ...rel), 'utf8');
+    const mt = Number((src.match(/maxTokens:\s*(\d+)/) || [])[1] || 0);
+    const to = Number((src.match(/timeoutMs:\s*([\d_]+)/) || [])[1]?.replace(/_/g, '') || 0);
+    if (mt < LONG_OUTPUT_MIN) { ok(`${rel[1]} is not a long-output caller (maxTokens=${mt})`); continue; }
+    if (to > 120000) ok(`${rel[1]} raises timeoutMs (${to / 1000}s) to match maxTokens=${mt}`);
+    else bad(`${rel[1]} asks for ${mt} tokens on the 120s default — it will abort, not truncate`);
+  }
+}
+
+// ───────── 26. no tracked file points at the maintainer's private dirs ──────
+// `.apsolut/` and `.apsolut-agents/` are gitignored wholesale, so a clone never has them.
+// A tracked file that instructs an agent to "read .apsolut-agents/PROJECT.md first" sends
+// every contributor and every AI assistant chasing a path that does not exist — and it
+// leaks the shape of an internal workspace into a public repo.
+//
+// This regresses on its own: both files carry generated marker blocks that the vault and
+// multi-agent tooling re-insert on their next run. Stripping them once is not enough;
+// this assertion is what makes the removal stick.
+
+section('26. Tracked files do not reference private workspaces');
+{
+  const PRIVATE = [/\.apsolut-agents\b/, /\.apsolut\//, /apsolut-agents:begin/, /apsolut-seshat-davinci-start/];
+
+  // EVERY tracked file, not a hand-picked list. The first version of this check named four
+  // files and passed; a repo-wide grep then found the same dangling references in NINETEEN
+  // more — docs, plan files, even the Gmail .cmd scripts. A allowlist-of-files assertion
+  // only ever proves the files you already thought of.
+  //
+  // `SCREENSHOTS_DIR` is the one legitimate use: it is a real directory the code creates,
+  // not a pointer at a document a clone will not have.
+  // Allowed: files that name `.apsolut/screenshots` as a real directory the code creates
+  // or documents, rather than pointing at a document a clone will not have.
+  const ALLOWED = new Set(['runtime/paths.mjs', 'tools/shot.mjs', 'docs/images/README.md']);
+  const tracked = execSync('git ls-files', { cwd: ROOT, encoding: 'utf8' })
+    .split('\n').map((s) => s.trim()).filter(Boolean)
+    .filter((f) => /\.(md|mjs|js|json|yml|yaml|html|cmd|sh|example)$/.test(f))
+    .filter((f) => !ALLOWED.has(f) && f !== 'test/smoke.mjs' && f !== '.gitignore');
+
+  const offenders = [];
+  for (const f of tracked) {
+    let src;
+    try { src = fs.readFileSync(path.join(ROOT, f), 'utf8'); } catch { continue; }
+    if (PRIVATE.some((re) => re.test(src))) offenders.push(f);
+  }
+  if (!offenders.length) ok(`no private-workspace reference in ${tracked.length} tracked files`);
+  else bad(`${offenders.length} tracked file(s) point at a private path: ${offenders.slice(0, 6).join(', ')}`);
+
+  // HANDOFF.md is a live operations report; it must stay out of the tree.
+  if (!fs.existsSync(path.join(ROOT, '.gitignore'))) bad('no .gitignore');
+  else {
+    const ig = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
+    for (const entry of ['HANDOFF.md', '.apsolut/', '.apsolut-agents/', 'demo/signal-demo.html']) {
+      if (ig.split('\n').some((l) => l.trim() === entry)) ok(`.gitignore excludes ${entry}`);
+      else bad(`.gitignore no longer excludes ${entry}`);
+    }
+  }
 }
 
 // ────────────────────────────────── verdict ─────────────────────────────────

@@ -330,7 +330,7 @@ against existing OpenRouter spend.
   extraction against document chunks is the richest possible source.
   "Claude Code customer list from their investor deck page 12" becomes a
   verified `customer_relationship` entity with provenance.
-- **[Plan 03 — thinkable bets](./03-thinkable-bets.md)** — demo-call
+- **[Plan 03 — thinkable bets](./00-backlog.md)** — demo-call
   recording is the voice/audio analogue of this plan. Same pattern
   (ingest → parse → chunks → signal → citation), different source
   modality.

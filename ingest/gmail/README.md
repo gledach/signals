@@ -3,7 +3,7 @@
 **Token-holding process only.** No LLM. No OpenRouter. No MCP. No `core/store.mjs` signal writes.
 
 Canonical operator guide: **[docs/gmail.md](../../docs/gmail.md)**  
-Security SoT (if present): `.apsolut/ideas/gmaillocalingestion.html`
+Security SoT (if present): `docs/decisions/gmail-ingest.md`
 
 ---
 

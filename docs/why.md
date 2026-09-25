@@ -2,7 +2,7 @@
 
 Signal is a single-tenant competitive intelligence system built with vanilla
 Node.js, vanilla JavaScript, and a hosted SQLite database (Turso). No React,
-no Next.js, no Supabase, no build step, **five runtime dependencies**.
+no Next.js, no Supabase, no build step, **three runtime dependencies**.
 
 This document explains why — and where it wins vs. the "full-scale SaaS
 dashboard" stack.
@@ -18,12 +18,16 @@ A typical Next.js dashboard with Tailwind + TypeScript + ESLint + Prettier
 has a 30–90 second cold build, a dev server eating 500 MB+ RAM, and a
 `node_modules` that weighs gigabytes.
 
-**Signal has five runtime dependencies. A typical Next.js dashboard has
+**Signal has three runtime dependencies. A typical Next.js dashboard has
 200–400.**
 
-Those five are `@libsql/client`, `google-trends-api`, `node-notifier`,
-`nodejs-whisper` and `youtube-transcript`, plus `playwright` as a
-devDependency. The whole installed tree is 83 packages.
+Those three are `@libsql/client`, `google-trends-api` and `youtube-transcript`,
+plus `playwright` as a devDependency.
+
+Two more are **optional** and load lazily, so a server, container or CI runner
+never pays for them: `node-notifier` (5.5 MB — desktop toasts, which no headless
+host can display) and `nodejs-whisper` (21 MB — the opt-in local transcription
+fallback). Both degrade quietly when absent.
 
 That's not a flex — that's attack surface, upgrade debt, and breaking
 changes you'll never deal with.

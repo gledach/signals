@@ -2,7 +2,9 @@
 // Tier 1 (default): YouTube captions via `youtube-transcript` — instant, free, zero deps.
 // Tier 2 (opt-in):  Local Whisper via `nodejs-whisper` — when captions don't exist.
 //
-// Whisper opt-in:
+// Whisper opt-in. `nodejs-whisper` is an OPTIONAL dependency — `npm install` pulls it in
+// by default but never fails the install if it cannot build, and `npm ci --ignore-scripts`
+// (what CI runs) skips its model download entirely:
 //   1. npm install nodejs-whisper  (adds ~200MB: whisper.cpp binary + base.en model download)
 //   1b. install yt-dlp and ffmpeg on PATH — audio download uses yt-dlp, not an npm library
 //   2. set CI_WHISPER_ENABLED=true in .env
@@ -19,8 +21,13 @@ import { spawn } from 'node:child_process';
 // Work around by importing the ESM build file directly.
 import { YoutubeTranscript } from 'youtube-transcript/dist/youtube-transcript.esm.js';
 import { TRANSCRIPTS_DIR } from '../runtime/paths.mjs';
+import { readJsonArtifact, writeJsonArtifact } from '../core/artifacts.mjs';
 
 const TRANSCRIPT_ROOT = TRANSCRIPTS_DIR;
+
+/** Artifact kind + key shape for a transcript. Keys are `<companyId>/<videoId>`. */
+export const TRANSCRIPT_KIND = 'transcript';
+export const transcriptKey = (companyId, videoId) => `${companyId}/${videoId}`;
 
 /**
  * @param {string} videoId   — YouTube video ID (11 chars, e.g. "dQw4w9WgXcQ")
@@ -172,20 +179,34 @@ export function extractVideoId(str) {
   return null;
 }
 
-// ─────────────────────────────── disk archive ──────────────────────────────
+// ─────────────────────────────── archive ────────────────────────────────────
+//
+// WHY THIS GOES THROUGH core/artifacts.mjs AND NOT STRAIGHT TO DISK
+//
+// The archive used to be disk-only, and `data/transcripts/` is listed in BOTH
+// .gitignore and .railwayignore. On Railway that meant three things, all silent:
+// `GET /api/transcript/...` could never return anything, every redeploy wiped the
+// archive, and the `hasTranscript` skip-guard below then re-fetched every video from
+// YouTube again. The excerpt survived only as far as the next deploy.
+//
+// So the archive is now an artifact like any other: the database is canonical, the file
+// is a mirror, and reads fall back to disk so an operator's existing local archive keeps
+// answering before anything has been synced. `RETAINED_CHARS` keeps a row at citation
+// size, not archive size, which is what makes storing it in the signal store defensible.
 
 export function transcriptPath(companyId, videoId) {
   return path.join(TRANSCRIPT_ROOT, companyId, `${videoId}.json`);
 }
 
-export function hasTranscript(companyId, videoId) {
-  return fs.existsSync(transcriptPath(companyId, videoId));
+/** True when this video is already archived — database first, disk mirror second. */
+export async function hasTranscript(companyId, videoId) {
+  return (await loadTranscript(companyId, videoId)) !== null;
 }
 
 /**
- * Save a transcript to `data/transcripts/<companyId>/<videoId>.json`.
- * Payload is the raw transcript + useful metadata (title, channel, source, lang, fetchedAt).
- * No-op if file already exists unless `overwrite: true`.
+ * Save a transcript: database row first, then the `data/transcripts/<companyId>/<videoId>.json`
+ * mirror. Payload is the retained excerpt + metadata (title, channel, source, lang, fetchedAt).
+ * No-op if already archived unless `overwrite: true`.
  */
 /**
  * How much transcript text is retained.
@@ -200,10 +221,8 @@ export function hasTranscript(companyId, videoId) {
  */
 export const RETAINED_CHARS = 6000;
 
-export function saveTranscript(companyId, videoId, { title, channelId, source, lang, text, extra }, { overwrite = false } = {}) {
-  const file = transcriptPath(companyId, videoId);
-  if (!overwrite && fs.existsSync(file)) return false;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+export async function saveTranscript(companyId, videoId, { title, channelId, source, lang, text, extra }, { overwrite = false } = {}) {
+  if (!overwrite && await hasTranscript(companyId, videoId)) return false;
 
   const full = text || '';
   const excerpt = truncateForClassifier(full, RETAINED_CHARS);
@@ -224,21 +243,25 @@ export function saveTranscript(companyId, videoId, { title, channelId, source, l
     excerpt,
     ...(extra || {}),
   };
-  fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+
+  await writeJsonArtifact({
+    kind: TRANSCRIPT_KIND,
+    artifactKey: transcriptKey(companyId, videoId),
+    companyId,
+    // `scope` is the kind's indexed secondary axis; for a transcript the question worth
+    // answering cheaply is "which of these did Whisper produce rather than captions".
+    scope: payload.source,
+    value: payload,
+  });
   return true;
 }
 
 /**
- * Load a previously saved transcript. Returns null if not present or unreadable.
+ * Load a previously archived transcript. Database first, disk mirror as fallback.
+ * Returns null if not present or unreadable.
  */
-export function loadTranscript(companyId, videoId) {
-  const file = transcriptPath(companyId, videoId);
-  if (!fs.existsSync(file)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
+export async function loadTranscript(companyId, videoId) {
+  return readJsonArtifact(TRANSCRIPT_KIND, transcriptKey(companyId, videoId));
 }
 
 // ─────────────────────────────── helpers ────────────────────────────────────

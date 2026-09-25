@@ -95,8 +95,8 @@ async function main() {
 
       console.log(`${transcript.source} (${transcript.text.length} chars)`);
 
-      // Archive the full transcript to disk before we classify + discard it.
-      saveTranscript(company.id, videoId, {
+      // Archive the retained excerpt before we classify + discard the full text.
+      await saveTranscript(company.id, videoId, {
         title: item.title,
         channelId: company.youtubeChannelId,
         source: transcript.source,
