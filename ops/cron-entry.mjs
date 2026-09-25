@@ -87,6 +87,11 @@ if (isDailyRun) {
   // that reads them, at a quarter of the cost.
   //
   // Run it on demand any time with `npm run refresh`.
+  // Model routing — what the market actually runs, and who actually processes tokens.
+  // Daily rather than 6-hourly for two reasons: routing share moves on model releases,
+  // not hours, and the Data API allows 500 requests a day SHARED with inference, so a
+  // 6-hourly sweep would spend budget the classifier needs. Two calls per run.
+  run('watch:routing',       'node --env-file-if-exists=.env watchers/model-routing-watch.mjs');
   run('refresh battlecards', 'node --env-file-if-exists=.env cli/refresh-battlecards.mjs');
   run('daily brief', 'node --env-file-if-exists=.env cli/analyst.mjs --mode=brief --force');
   run('daily scan',  'node --env-file-if-exists=.env cli/analyst.mjs --mode=scan --force');

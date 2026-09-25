@@ -86,6 +86,7 @@ Costs below assume default models (Haiku classifier, Sonnet synthesis).
 | `npm run watch:hn` | $0.03–$0.08 | Haiku classifier per new HN hit (this watcher classifies one at a time) |
 | `npm run watch:youtube` | $0.10–$0.30 | Haiku classifier per new video transcript (≤6k chars each) |
 | `npm run watch:tavily` | $0.08–$0.15 | Haiku classifier + ~8–24 Tavily search credits (free tier: 1000/mo) |
+| `npm run watch:routing` | **under $0.01** | Two API calls, then a classifier call per *movement* only — a flat week costs nothing. The OpenRouter Data API is free but shares a 500/day limit with inference, which is why this is daily and not 6-hourly |
 | `npm run watch:github` | under $0.01 | Haiku classifier over new releases/activity, batched. Most runs find nothing; this deployment's ledger shows $0.06 across 30 days |
 | `npm run watch:aeo` | ~$0.15 | 10 prompts × 5 answer engines = 50 calls, 500 max_tokens each, on the engine list rather than the classifier/synthesis knobs. Weekly by design — see the note under `CI_CLASSIFIER_MODEL` about not treating the engines as a cost dial |
 | `npm run reclassify` | **varies wildly** | Classifier × N signals, batched ~10 per call. `[reclassify] N candidates` and `[reclassify] N batch calls of B` both print before the first paid call — read them and kill the run if the count is bigger than you expected |

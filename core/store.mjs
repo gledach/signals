@@ -526,6 +526,60 @@ export async function listBriefs({ mode, scope, companyName, sinceDays = 30, lim
   }));
 }
 
+// ── collector state ────────────────────────────────────────────────────────
+//
+// Generic replacement for the bespoke table each stateful watcher grew. A collector's
+// state is opaque here — a cursor, an etag, a snapshot to diff — so it is stored and
+// returned verbatim and never interpreted.
+//
+// In the DATABASE rather than on disk, deliberately: this runs on ephemeral
+// infrastructure, and a watcher whose "have I seen this" check is a file on disk loses it
+// on every redeploy and re-collects everything for ever. That is not hypothetical — it is
+// exactly what happened to the transcript archive.
+
+/** @returns the collector's last `nextState`, or null on a first run. */
+export async function loadStateFor(stateKey) {
+  const client = getClient();
+  try {
+    const res = await client.execute({
+      sql: 'SELECT stateJson FROM collector_state WHERE stateKey = ?',
+      args: [stateKey],
+    });
+    if (!res.rows.length) return null;
+    return JSON.parse(res.rows[0].stateJson);
+  } catch (err) {
+    // A missing table (un-migrated database) or unparseable blob must read as "no state"
+    // rather than as a failure. A collector that cannot read its cursor should re-collect,
+    // which is wasteful; one that crashes collects nothing at all.
+    if (/no such table/i.test(err?.message || '')) return null;
+    try { return null; } finally { /* fall through */ }
+  }
+}
+
+/** Persist a collector's `nextState`. Upsert — one row per collector, always current. */
+export async function saveStateFor(stateKey, state) {
+  const client = getClient();
+  const now = new Date().toISOString();
+  await client.execute({
+    sql: `INSERT INTO collector_state (stateKey, stateJson, updatedAt)
+          VALUES (?, ?, ?)
+          ON CONFLICT(stateKey) DO UPDATE SET
+            stateJson = excluded.stateJson,
+            updatedAt = excluded.updatedAt`,
+    args: [stateKey, JSON.stringify(state ?? null), now],
+  });
+  return { stateKey, updatedAt: now };
+}
+
+/** Every collector's last-run time — what a health check asks. */
+export async function listCollectorState() {
+  const client = getClient();
+  try {
+    const res = await client.execute('SELECT stateKey, updatedAt FROM collector_state ORDER BY updatedAt DESC');
+    return res.rows.map((r) => ({ stateKey: r.stateKey, updatedAt: r.updatedAt }));
+  } catch { return []; }
+}
+
 // ── test utility — purge all rows for a given prefix (for test-store.mjs) ──
 
 export async function _testDeleteStateByPrefix(prefix) {

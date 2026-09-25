@@ -268,6 +268,7 @@ Rule of thumb: anything under `npm run <x>` here is safe to run as-is.
 | `npm run watch:tavily` | Tavily Search API queries for each competitor — mention discovery beyond RSS. Budget-guarded (~72% of free 1000/mo tier at the tracked roster daily, 2 queries each) | daily |
 | `npm run watch:tavily:dry` | Preview, no API spend, no DB writes | — |
 | `npm run watch:trends` | Google Trends spike detection — brand + "<competitor> alternative" queries. **Batched**: hits only the 8 stalest queries per run (rotates through all ~32 over 4 runs). Google's unofficial API rate-limits hard at 32-queries-in-a-row | weekly, scheduled 4× |
+| `npm run watch:routing` | **Model routing** — OpenRouter's public Data API (CC BY 4.0): which models the market routes tokens to, and which apps process them. Emits only movement above a threshold, so a flat week is silent. Needs `OPENROUTER_API_KEY`; skips cleanly without one | daily |
 | `npm run watch:trends:dry` | Preview spikes, write nothing | — |
 | `npm run watch:trends:full` | Override the batch — hit all ~32 queries in one run. Only when you know Google's rate-limiter is calm | manual |
 | `npm run watch:trends -- --geo=GB` | Regional scoping (default US) | — |
