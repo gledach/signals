@@ -127,9 +127,28 @@ export async function runCollector(collector, companies, deps, opts = {}) {
   stats.collected = collected.length;
   if (!collected.length) return { stats, nextState };
 
-  // ── 2. DEDUP in one query, not one per item.
+  // ── 2. DEDUP — against the store, and WITHIN the batch.
+  //
+  // The in-batch half is not theoretical and it is easy to lose. The same item legitimately
+  // arrives twice in one run: one story mentioning two tracked companies, or a category
+  // sweep overlapping a per-company sweep. `hn-watch.mjs` documents exactly this and keeps
+  // the earliest attribution.
+  //
+  // The old sequential watchers got that for free — `alreadySeen()` ran per item, so by the
+  // time the second copy was checked the first had already been written. Running items
+  // concurrently removes that accident, and the first version of this runner duly classified
+  // both copies. `INSERT OR IGNORE` on the hashId primary key meant no duplicate row ever
+  // landed, so the only visible symptom was a paid classification for a row that was then
+  // discarded — a silent waste of money, which is the hardest kind to notice.
   const already = await seenFn(collected.map((c) => c.item.hashId));
-  const fresh = collected.filter((c) => !already.has(c.item.hashId));
+  const withinBatch = new Set();
+  const fresh = [];
+  for (const c of collected) {
+    const id = c.item.hashId;
+    if (already.has(id) || withinBatch.has(id)) continue;  // first occurrence wins
+    withinBatch.add(id);
+    fresh.push(c);
+  }
   stats.duplicate = collected.length - fresh.length;
   if (!fresh.length) return { stats, nextState };
 

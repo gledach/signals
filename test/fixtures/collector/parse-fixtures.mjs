@@ -91,6 +91,51 @@ const baseDeps = {
   t('dryRun stores nothing but still counts', stats.stored === 1 && stats.duplicate === 1);
 }
 
+console.log('\n── idempotency ──');
+{
+  // The same item legitimately arrives twice in one run: one story mentioning two tracked
+  // companies, or a category sweep overlapping a per-company sweep.
+  //
+  // The sequential watchers got this for free — `alreadySeen()` ran per item, so the second
+  // copy saw the first already written. Running items concurrently removes that accident.
+  // The first version of this runner classified both copies; `INSERT OR IGNORE` meant no
+  // duplicate row landed, so the only symptom was a paid classification thrown away.
+  const dupe = defineCollector({
+    id: 'dupe',
+    async collect() { return { items: [{ hashId: 'dupe:SAME', sourceKind: 'dupe', title: 'one story, three companies' }] }; },
+  });
+  let classifyCalls = 0;
+  const stored = [];
+  const { stats } = await runCollector(dupe, [{ id: 'a' }, { id: 'b' }, { id: 'c' }], {
+    classify: async () => { classifyCalls++; return { signalType: 'product_launch', companyRelevance: 'direct', method: 'llm' }; },
+    isDegraded: () => false,
+    seen: async () => new Set(),
+    store: async (s) => { stored.push(s.hashId); },
+  }, { log: () => {} });
+  t('an in-batch duplicate is stored once', stored.length === 1);
+  t('an in-batch duplicate is CLASSIFIED once — duplicates must not cost money', classifyCalls === 1);
+  t('duplicates are counted, not hidden', stats.duplicate === 2 && stats.collected === 3);
+}
+{
+  // Re-running the same collection must be a no-op, not a second write.
+  const once = defineCollector({
+    id: 'once',
+    async collect() { return { items: [{ hashId: 'once:1', sourceKind: 'once', title: 'stable' }] }; },
+  });
+  const db = new Set();
+  const deps = {
+    classify: async () => ({ signalType: 'product_launch', companyRelevance: 'direct', method: 'llm' }),
+    isDegraded: () => false,
+    seen: async (ids) => new Set(ids.filter((i) => db.has(i))),
+    store: async (s) => { db.add(s.hashId); },
+  };
+  const first = await runCollector(once, [{ id: 'a' }], deps, { log: () => {} });
+  const second = await runCollector(once, [{ id: 'a' }], deps, { log: () => {} });
+  t('first run stores', first.stats.stored === 1);
+  t('re-running the same collection stores nothing', second.stats.stored === 0 && second.stats.duplicate === 1);
+  t('the store holds exactly one row', db.size === 1);
+}
+
 console.log('\n── the three failures this codebase has actually shipped ──');
 {
   // 1. A verdict the model never computed, written to permanent storage. 232 rows, 2026-09-22.

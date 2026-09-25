@@ -1971,6 +1971,52 @@ section('27. Collector boundary holds');
   }
 }
 
+// ───────── 28. every write is idempotent, or deliberately is not ────────────
+// "Idempotent retry, not dual-write" is one of this project's stated principles, and a
+// scheduler that runs every six hours re-collects the same items constantly — so a write
+// that is not idempotent produces duplicates on an ordinary day, not an exceptional one.
+//
+// Two tables are deliberately append-only: `cron_runs` and `llm_cost` are event logs,
+// where a second row IS a second event. Everything else must say so in SQL rather than
+// relying on a caller checking first, because the caller that forgets is the bug.
+
+section('28. Writes are idempotent by construction');
+{
+  const src = fs.readFileSync(path.join(ROOT, 'core', 'store.mjs'), 'utf8');
+  const APPEND_ONLY = new Set(['cron_runs', 'llm_cost']);
+
+  const inserts = [...src.matchAll(/INSERT (?:OR IGNORE )?INTO (\w+)/g)];
+  ok(`${inserts.length} INSERT statements found in the store`);
+
+  for (const m of inserts) {
+    const table = m[1];
+    const stmt = src.slice(m.index).split(';')[0];
+    const guarded = /OR IGNORE/.test(m[0]) || /ON CONFLICT/.test(stmt);
+    if (APPEND_ONLY.has(table)) {
+      if (!guarded) ok(`${table} is append-only by design — a second row is a second event`);
+      else bad(`${table} is an event log but deduplicates — events would be lost`);
+    } else if (guarded) {
+      ok(`${table} INSERT is idempotent (OR IGNORE / ON CONFLICT)`);
+    } else {
+      bad(`${table} INSERT has no OR IGNORE and no ON CONFLICT — a re-run duplicates rows`);
+    }
+  }
+
+  // The collector runner must deduplicate WITHIN a batch, not just against the store.
+  // Sequential watchers got this free; concurrency removed the accident, and the cost of
+  // losing it is a paid classification for a row `INSERT OR IGNORE` then discards.
+  const runner = fs.readFileSync(path.join(ROOT, 'core', 'collector-runner.mjs'), 'utf8');
+  if (/withinBatch/.test(runner)) ok('the runner deduplicates within a batch as well as against the store');
+  else bad('the runner only checks the store — an in-batch duplicate gets classified twice');
+
+  // A self-inflicted timeout must never be retried on a paid path: the model was still
+  // generating and every attempt is billed.
+  const or = fs.readFileSync(path.join(ROOT, 'pipeline', 'openrouter.mjs'), 'utf8');
+  if (/selfAborted/.test(or) && /if \(selfAborted\)[\s\S]{0,200}throw/.test(or)) {
+    ok('a self-inflicted timeout fails once instead of re-billing the same generation');
+  } else bad('a timeout is retried — each attempt bills for a response nobody reads');
+}
+
 // ────────────────────────────────── verdict ─────────────────────────────────
 
 console.log(FAIL ? '\nRED — smoke failed\n' : '\nGREEN — smoke passed\n');
