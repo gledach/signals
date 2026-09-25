@@ -41,8 +41,9 @@ npm run doctor         # confirm it worked, and see what each missing key unlock
 npm run view           # a populated dashboard at 127.0.0.1:5180
 ```
 
-That works offline on a fresh clone. There is no build step, no framework, and five
-runtime dependencies — two more are optional and lazy-loaded (plus Playwright, dev-only, for screenshots).
+That works offline on a fresh clone. There is no build step, no framework, and three
+runtime dependencies. Two more are optional and lazy-loaded, so a server or CI runner never
+pays for them (plus Playwright, dev-only, for screenshots).
 
 ## Who consumes it
 
@@ -79,17 +80,21 @@ scoring), `agent-policy` (what an MCP agent may do), `aeo-prompts`, and `feeds`.
 
 **Index:** [docs/README.md](./docs/README.md)
 
-| | |
+| Doc | When to read |
 |---|---|
-| [docs/start.md](./docs/start.md) | Install guide assuming no prior git/Node knowledge |
-| [docs/howto.md](./docs/howto.md) | Task-oriented "how do I…" |
+| [docs/start.md](./docs/start.md) | **Start here if you're new.** Install guide assuming no prior git/Node knowledge, ~15 min |
+| [docs/howto.md](./docs/howto.md) | Task-oriented "how do I…". The manual |
 | [docs/why.md](./docs/why.md) | Why this architecture — zero build step, 3 runtime deps (+2 optional) |
-| [docs/cost.md](./docs/cost.md) | LLM spend, model ladder, budget guardrails |
-| [docs/mcp.md](./docs/mcp.md) | The MCP server — tools, resources, agent policy |
+| [docs/cost.md](./docs/cost.md) | LLM spend, the model ladder, budget guardrails |
+| [docs/mcp.md](./docs/mcp.md) | The MCP server — tools, `signal://` resources, coverage block, agent policy |
 | [docs/gmail.md](./docs/gmail.md) | Google Alerts via Gmail (Path A′ zones) — setup, env, hard rules |
-| [docs/blindspots.md](./docs/blindspots.md) | What Signal cannot see. Honest audit |
-| [docs/decisions/](./docs/decisions/) | Accepted one-way doors (incl. Gmail vs IMAP) |
-| [docs/plans/](./docs/plans/) | Build plans by tier |
+| [docs/blindspots.md](./docs/blindspots.md) | What Signal cannot see. Honest audit + quarterly review |
+| [docs/decisions/](./docs/decisions/) | Accepted one-way doors, with the rejected option recorded too |
+| [docs/roadmap.md](./docs/roadmap.md) | Master roadmap and what has shipped |
+| [docs/plans/](./docs/plans/) | Plans against this codebase, plus [00-backlog](./docs/plans/00-backlog.md) for unbuilt ideas |
+| [docs/nextsteps.md](./docs/nextsteps.md) | Architectural direction — the knowledge-layer thesis |
+| [analyst/persona.md](./analyst/persona.md) | The analyst prompt behind `npm run analyst` — modes, output contract, banned words |
+| [chrome-extension/README.md](./chrome-extension/README.md) | Chrome side-panel extension (experimental) |
 
 ### Folder READMEs (code map)
 
@@ -392,21 +397,6 @@ Chromium download to avoid corporate-proxy TLS issues.
 
 The extension itself loads as an unpacked Chrome extension — see [`chrome-extension/README.md`](./chrome-extension/README.md) for install instructions.
 
-### Docs / first-time users
-
-| Doc | When to read |
-|---|---|
-| [docs/start.md](./docs/start.md) | First-time setup — zero prior knowledge of git / Node / terminals. ~15 min |
-| [docs/cost.md](./docs/cost.md) | Per-command cost ranges, model tiering (cheap → premium), BYOK, budget guardrails |
-| [docs/howto.md](./docs/howto.md) | Task-oriented ("how do I…"). The manual |
-| [docs/mcp.md](./docs/mcp.md) | The MCP server — tools, `signal://` resources, coverage block, agent policy |
-| [docs/nextsteps.md](./docs/nextsteps.md) | Where Signal is heading architecturally — the knowledge-graph direction |
-| [docs/blindspots.md](./docs/blindspots.md) | What Signal can't see. Honest audit + quarterly review checklist |
-| [docs/roadmap.md](./docs/roadmap.md) | Master roadmap; index of tiered plans |
-| [docs/plans/](./docs/plans/) | Individual plan files (quick wins → crazy ideas, plus approved 08 knowledge graph and 09 document ingest) |
-| [analyst/persona.md](./analyst/persona.md) | The senior CI analyst prompt that drives `npm run analyst` — five modes, output contract, hard rules, banned words |
-| [chrome-extension/README.md](./chrome-extension/README.md) | Chrome side-panel extension — install, features, architecture, data flow |
-
 ### Environment variables (summary)
 
 Model and notification defaults live in [.env.example](./.env.example); the config-layer
@@ -620,8 +610,3 @@ comments in here explain *why* rather than *what*:
 
 Neither is a dependency and neither ships in this repo. If you work with AI agents on a
 codebase you own, both are worth a look.
-
-## See also
-
-- [docs/roadmap.md](./docs/roadmap.md) — master roadmap
-- [docs/plans/](./docs/plans/) — plans, and [00-backlog](./docs/plans/00-backlog.md) for unbuilt ideas
