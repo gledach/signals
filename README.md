@@ -257,7 +257,7 @@ Rule of thumb: anything under `npm run <x>` here is safe to run as-is.
 | `npm run watch:youtube -- --company=claudecode` | One competitor only | — |
 | `npm run watch:youtube -- --limit=3` | Only 3 most-recent per channel (cheap test) | — |
 | `npm run watch:youtube -- --force-reclassify` | Re-classify videos even if hashId already seen | — |
-| `npm run watch:hn` | Query Algolia HN Search API per competitor + category, filter by points/recency, classify + store signals. Replaces the hnrss.org RSS feeds that previously sat in the feed list | daily |
+| `npm run watch:hn` | Query Algolia HN Search API per competitor + category, filter by points/recency, classify + store signals. Structured fields (points, comments, author, timestamps) rather than parsed RSS | daily |
 | `npm run watch:hn:dry` | Preview hits, classify, write nothing | — |
 | `npm run watch:hn -- --company=replit` | One competitor only | — |
 | `npm run watch:hn -- --no-llm` | Skip LLM classifier, use keyword only (free) | — |
@@ -553,30 +553,28 @@ Signal/
 │   ├── serve.mjs         Zero-dep localhost server + JSON endpoints
 │   └── viewer/           index.html + viewer.js + viewer.css (static, no build)
 │
-├── sql/                  001-init … 009-artifacts — nine migrations, applied in order
+├── sql/                  Numbered migrations, applied in order by `npm run db:migrate`
 ├── test/                 smoke.mjs (the gate) + store-roundtrip + fixtures/
-├── tools/                shot.mjs + inspect.mjs — Playwright visual tooling
+├── tools/                Playwright captures, skill-frontmatter validation
 │
 ├── analyst/persona.md    Senior CI analyst persona (loaded at runtime)
-├── battlecards/          MD files (HUMAN + AUTO sections)
+├── battlecards/          MD files, HUMAN + AUTO sections (gitignored; `_template.md` ships)
 ├── briefs/               Analyst CLI output (gitignored)
 ├── demo/                 seed-signals.jsonl — the shipped demo dataset
 ├── chrome-extension/     Side-panel extension (unpacked)
 ├── docs/                 start / howto / why / cost / mcp / blindspots / roadmap / plans
-├── data/                 gitignored runtime cache
-└── reference/            Pointer to the originating news-into-intelligence repo
+└── data/                 gitignored runtime cache
 ```
 
 ---
 
 ## Key decisions
 
-- **Standalone repo** — originally lived inside `news-into-intelligence/competitive/`; extracted when it proved 100% self-contained.
 - **libSQL** — plain SQL over HTTP, no schema-deploy step, and no reactive runtime this workload has any use for. Works behind a corporate proxy, and runs identically as a local file or a hosted database, which is what lets a fresh clone work with no account.
 - **Schema source of truth** — `sql/*.sql` migration files. Applied via `npm run db:migrate`. Never talk to the DB directly from caller code — use `core/store.mjs`.
-- **JSONL → Turso** — original signals were flat files; now stored in Turso with indexes for fast queries.
 - **Zero-dep philosophy** — only libSQL + a couple of adjacent tools added; everything else uses Node built-ins.
-- **Battlecards as Markdown in git** — versioning for free; HUMAN section never overwritten by LLM refreshes.
+- **Generated documents are canonical in the store, mirrored to Markdown on disk** — the mirror is what makes a battlecard editable in any editor; the store is what makes it survive a redeploy. The HUMAN section is never overwritten by a regeneration, which is the reason every writer read-modify-writes rather than replacing the file.
+- **Agent surface is read-only by default** — `run_analyst` is the only paid tool and it refuses until a deployment opts in, behind a spend ceiling shared with the cron and the CLI.
 
 ---
 
@@ -584,10 +582,19 @@ Signal/
 
 | Service | Monthly |
 |---|---|
-| OpenRouter (Haiku + Sonnet + occasional Opus) | ~$15–25 |
+| OpenRouter, at the shipped models and cadence | ~$15–25 |
 | Turso free tier (9 GB storage, 1B reads, 25M writes) | $0 |
 | Tavily free tier (1000 credits) | $0 |
-| **Total** | **~$20/mo** |
+
+**Cadence moves this number far more than model choice.** A job making one LLM call per
+tracked company costs four times as much on the 6-hourly tier as on the daily one, and the
+output is no fresher — that mistake cost this deployment ~$209/month on its own before it
+was caught. A reasoning model on the classifier is the other trap: it bills its
+deliberation as output tokens, which are the expensive side of every rate card.
+
+Do not trust the table. **`npm run cost:estimate` prices your next run from your own
+ledger**, and `npm run cost` reports what actually happened. Full detail, including the
+model ladder and the budget ceiling, in [docs/cost.md](./docs/cost.md).
 
 ---
 
